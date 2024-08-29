@@ -19,27 +19,27 @@ pub static FILE_NAME_WITH_EXT: Mutex<String> = Mutex::new(String::new());
 pub static FILE_PATH: Mutex<String> = Mutex::new(String::new());
 
 #[derive(Default, Clone)]
-pub struct LarkFile {
+pub struct ThrushFile {
     pub is_main: bool,
     pub name: String,
     pub path: PathBuf,
 }
 
 pub struct Compiler {
-    file: LarkFile,
+    file: ThrushFile,
     options: CompilerOptions,
 }
 
 #[derive(Default)]
-pub enum LarkError {
+pub enum ThrushError {
     Compile(String),
-    Parse(LarkErrorKind, String, String, String, TokenSpan, usize),
-    Lex(LarkErrorKind, String, String, String, TokenSpan, usize),
+    Parse(ThrushErrorKind, String, String, String, TokenSpan, usize),
+    Lex(ThrushErrorKind, String, String, String, TokenSpan, usize),
     #[default]
     None,
 }
 
-pub enum LarkErrorKind {
+pub enum ThrushErrorKind {
     SyntaxError,
     UnreachableNumber,
     ParsedNumber,
@@ -79,14 +79,14 @@ impl Default for CompilerOptions {
 }
 
 impl Compiler {
-    pub fn new(options: CompilerOptions, file: LarkFile) -> Self {
+    pub fn new(options: CompilerOptions, file: ThrushFile) -> Self {
         Self { options, file }
     }
 
     pub fn compile(&mut self) {
         if let Ok(content) = read_to_string(mem::take(&mut self.file.path)) {
             let mut lexer: Lexer = Lexer::new(content.as_bytes());
-            let tokens: Result<&[Token], LarkError> = lexer.lex();
+            let tokens: Result<&[Token], ThrushError> = lexer.lex();
 
             match tokens {
                 Ok(tokens) => {
@@ -108,7 +108,7 @@ impl Compiler {
                         }
 
                         Err(error) => {
-                            if let LarkError::Compile(error) = error {
+                            if let ThrushError::Compile(error) = error {
                                 Logging::new(error).error();
                             }
                         }
@@ -116,7 +116,7 @@ impl Compiler {
                 }
 
                 Err(error) => {
-                    if let LarkError::Compile(error) = error {
+                    if let ThrushError::Compile(error) = error {
                         Logging::new(error).error();
                     }
                 }

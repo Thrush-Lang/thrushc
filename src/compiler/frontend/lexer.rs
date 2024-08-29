@@ -1,6 +1,6 @@
 use {
     super::{
-        super::{LarkError, LarkErrorKind},
+        super::{ThrushError, ThrushErrorKind},
         diagnostic::Diagnostic,
     },
     core::str,
@@ -17,7 +17,7 @@ pub struct Lexer<'tokens> {
     start: usize,
     current: usize,
     line: usize,
-    errors: Vec<LarkError>,
+    errors: Vec<ThrushError>,
 }
 
 impl<'tokens> Lexer<'tokens> {
@@ -34,7 +34,7 @@ impl<'tokens> Lexer<'tokens> {
         }
     }
 
-    pub fn lex(&mut self) -> Result<&[Token], LarkError> {
+    pub fn lex(&mut self) -> Result<&[Token], ThrushError> {
         while !self.end() {
             if self.errors.len() >= 10 {
                 break;
@@ -53,7 +53,7 @@ impl<'tokens> Lexer<'tokens> {
                 Diagnostic::new(error).report();
             }
 
-            return Err(LarkError::Compile(String::from(
+            return Err(ThrushError::Compile(String::from(
                 "Compilation proccess ended with errors.",
             )));
         };
@@ -63,7 +63,7 @@ impl<'tokens> Lexer<'tokens> {
         Ok(self.tokens.as_slice())
     }
 
-    fn scan(&mut self) -> Result<(), LarkError> {
+    fn scan(&mut self) -> Result<(), ThrushError> {
         match self.advance() {
             b'[' => self.make(TokenKind::LeftBracket),
             b']' => self.make(TokenKind::RightBracket),
@@ -114,8 +114,8 @@ impl<'tokens> Lexer<'tokens> {
             b'0'..=b'9' => self.integer()?,
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => self.identifier()?,
             _ => {
-                return Err(LarkError::Lex(
-                    LarkErrorKind::UnknownChar,
+                return Err(ThrushError::Lex(
+                    ThrushErrorKind::UnknownChar,
                     self.lexeme(),
                     String::from("Unknown character."),
                     String::from("Did you provide a valid character?"),
@@ -128,7 +128,7 @@ impl<'tokens> Lexer<'tokens> {
         Ok(())
     }
 
-    fn identifier(&mut self) -> Result<(), LarkError> {
+    fn identifier(&mut self) -> Result<(), ThrushError> {
         self.begin_token();
 
         while self.is_alpha(self.peek()) {
@@ -194,7 +194,7 @@ impl<'tokens> Lexer<'tokens> {
         Ok(())
     }
 
-    fn integer(&mut self) -> Result<(), LarkError> {
+    fn integer(&mut self) -> Result<(), ThrushError> {
         self.begin_token();
 
         while self.peek().is_ascii_digit()
@@ -220,7 +220,7 @@ impl<'tokens> Lexer<'tokens> {
         Ok(())
     }
 
-    fn string(&mut self) -> Result<(), LarkError> {
+    fn string(&mut self) -> Result<(), ThrushError> {
         self.begin_token();
 
         while self.peek() != b'"' && !self.end() {
@@ -251,7 +251,7 @@ impl<'tokens> Lexer<'tokens> {
         lexeme: String,
         span: TokenSpan,
         line: usize,
-    ) -> Result<DataTypes, LarkError> {
+    ) -> Result<DataTypes, ThrushError> {
         if self.previous_token().kind == TokenKind::Minus {
             let lexeme: String = String::from("-") + &lexeme;
 
@@ -261,8 +261,8 @@ impl<'tokens> Lexer<'tokens> {
                     -32_768isize..=32_767_isize => Ok(DataTypes::I16),
                     -2147483648isize..=2147483647isize => Ok(DataTypes::I32),
                     -9223372036854775808isize..=9223372036854775807isize => Ok(DataTypes::I64),
-                    _ => Err(LarkError::Parse(
-                        LarkErrorKind::UnreachableNumber,
+                    _ => Err(ThrushError::Parse(
+                        ThrushErrorKind::UnreachableNumber,
                         lexeme,
                         String::from("The number is out of bounds."),
                         String::from("The size is out of bounds of an isize (-n to n)."),
@@ -270,8 +270,8 @@ impl<'tokens> Lexer<'tokens> {
                         line,
                     )),
                 },
-                Err(_) => Err(LarkError::Parse(
-                    LarkErrorKind::ParsedNumber,
+                Err(_) => Err(ThrushError::Parse(
+                    ThrushErrorKind::ParsedNumber,
                     lexeme,
                     String::from("The number is too long for an signed integer."),
                     String::from("Did you provide a valid number with the correct format and not out of bounds?"),
@@ -282,8 +282,8 @@ impl<'tokens> Lexer<'tokens> {
         } else if lexeme.contains(".") {
             return match lexeme.parse::<f64>() {
                 Ok(_) => Ok(DataTypes::F64),
-                Err(_) => Err(LarkError::Parse(
-                    LarkErrorKind::ParsedNumber,
+                Err(_) => Err(ThrushError::Parse(
+                    ThrushErrorKind::ParsedNumber,
                     lexeme,
                     String::from("The number is too big for an float."),
                     String::from("Did you provide a valid number with the correct format and not out of bounds?"),
@@ -299,8 +299,8 @@ impl<'tokens> Lexer<'tokens> {
                 0usize..=65_535usize => Ok(DataTypes::U16),
                 0usize..=4_294_967_295usize => Ok(DataTypes::U32),
                 0usize..=18_446_744_073_709_551_615usize => Ok(DataTypes::U64),
-                _ => Err(LarkError::Parse(
-                    LarkErrorKind::UnreachableNumber,
+                _ => Err(ThrushError::Parse(
+                    ThrushErrorKind::UnreachableNumber,
                     lexeme,
                     String::from("The number is out of bounds."),
                     String::from("The size is out of bounds of an usize (0 to n)."),
@@ -308,8 +308,8 @@ impl<'tokens> Lexer<'tokens> {
                     line,
                 )),
             },
-            Err(_) => Err(LarkError::Parse(
-                LarkErrorKind::ParsedNumber,
+            Err(_) => Err(ThrushError::Parse(
+                ThrushErrorKind::ParsedNumber,
                 lexeme,
                 String::from("The number is too long for an unsigned integer."),
                 String::from(

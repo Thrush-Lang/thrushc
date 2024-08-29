@@ -694,18 +694,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "larkr"
-version = "1.0.0"
-dependencies = [
- "ahash",
- "chrono",
- "colored",
- "inkwell",
- "llvm-sys",
- "llvmenv",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1419,6 +1407,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.74",
+]
+
+[[package]]
+name = "thrush"
+version = "1.0.0"
+dependencies = [
+ "ahash",
+ "chrono",
+ "colored",
+ "inkwell",
+ "llvm-sys",
+ "llvmenv",
 ]
 
 [[package]]

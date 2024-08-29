@@ -1,6 +1,6 @@
 use {
     super::{
-        super::{LarkError, LarkErrorKind, LarkFile},
+        super::{ThrushError, ThrushErrorKind, ThrushFile},
         diagnostic::Diagnostic,
         lexer::{DataTypes, Token, TokenKind},
     },
@@ -21,15 +21,15 @@ pub enum Instruction<'instr> {
 
 pub struct Parser<'parser, 'instr> {
     stmts: Vec<Instruction<'instr>>,
-    errors: Vec<LarkError>,
+    errors: Vec<ThrushError>,
     tokens: &'parser [Token],
     current: usize,
     scope: usize,
-    file: LarkFile,
+    file: ThrushFile,
 }
 
 impl<'parser, 'instr> Parser<'parser, 'instr> {
-    pub fn new(tokens: &'parser [Token], file: LarkFile) -> Self {
+    pub fn new(tokens: &'parser [Token], file: ThrushFile) -> Self {
         Self {
             stmts: Vec::new(),
             errors: Vec::with_capacity(10),
@@ -40,7 +40,7 @@ impl<'parser, 'instr> Parser<'parser, 'instr> {
         }
     }
 
-    pub fn parse(&mut self) -> Result<&[Instruction<'instr>], LarkError> {
+    pub fn parse(&mut self) -> Result<&[Instruction<'instr>], ThrushError> {
         while !self.end() {
             match self.def() {
                 Ok(instr) => {
@@ -61,7 +61,7 @@ impl<'parser, 'instr> Parser<'parser, 'instr> {
                 Diagnostic::new(error).report();
             }
 
-            return Err(LarkError::Compile(String::from(
+            return Err(ThrushError::Compile(String::from(
                 "Compilation proccess ended with errors.",
             )));
         }
@@ -71,7 +71,7 @@ impl<'parser, 'instr> Parser<'parser, 'instr> {
         Ok(self.stmts.as_slice())
     }
 
-    fn def(&mut self) -> Result<Instruction<'instr>, LarkError> {
+    fn def(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         match self.peek().kind {
             TokenKind::Puts => Ok(self.puts()?),
             TokenKind::Def => Ok(self.func()?),
@@ -80,7 +80,7 @@ impl<'parser, 'instr> Parser<'parser, 'instr> {
         }
     }
 
-    fn block(&mut self) -> Result<Instruction<'instr>, LarkError> {
+    fn block(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         self.advance();
 
         let mut stmts: Vec<Instruction> = Vec::new();
@@ -94,12 +94,12 @@ impl<'parser, 'instr> Parser<'parser, 'instr> {
         Ok(Instruction::Block(stmts))
     }
 
-    fn func(&mut self) -> Result<Instruction<'instr>, LarkError> {
+    fn func(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         self.advance();
 
         let name: Token = self.consume(
             TokenKind::Identifier,
-            LarkErrorKind::SyntaxError,
+            ThrushErrorKind::SyntaxError,
             String::from("Expected function name"),
             String::from("Expected def <name>."),
         )?;
@@ -107,21 +107,21 @@ impl<'parser, 'instr> Parser<'parser, 'instr> {
         if name.lexeme.as_ref().unwrap() == "main" && self.scope == 0 && self.file.is_main {
             self.consume(
                 TokenKind::LParen,
-                LarkErrorKind::SyntaxError,
+                ThrushErrorKind::SyntaxError,
                 String::from("Syntax Error"),
                 String::from("Expected '('."),
             )?;
 
             self.consume(
                 TokenKind::RParen,
-                LarkErrorKind::SyntaxError,
+                ThrushErrorKind::SyntaxError,
                 String::from("Syntax Error"),
                 String::from("Expected ')'."),
             )?;
 
             self.consume(
                 TokenKind::Colon,
-                LarkErrorKind::SyntaxError,
+                ThrushErrorKind::SyntaxError,
                 String::from("Syntax Error"),
                 String::from("Expected ':'."),
             )?;
@@ -131,8 +131,8 @@ impl<'parser, 'instr> Parser<'parser, 'instr> {
                     self.advance();
 
                     if self.peek().kind != TokenKind::LBrace {
-                        return Err(LarkError::Parse(
-                            LarkErrorKind::SyntaxError,
+                        return Err(ThrushError::Parse(
+                            ThrushErrorKind::SyntaxError,
                             self.peek().lexeme.as_ref().unwrap().to_string(),
                             String::from("Syntax Error"),
                             String::from("Expected '{'."),
@@ -147,8 +147,8 @@ impl<'parser, 'instr> Parser<'parser, 'instr> {
                 }
 
                 _ => {
-                    return Err(LarkError::Parse(
-                        LarkErrorKind::SyntaxError,
+                    return Err(ThrushError::Parse(
+                        ThrushErrorKind::SyntaxError,
                         self.peek().lexeme.as_ref().unwrap().to_string(),
                         String::from("Syntax Error"),
                         String::from("Expected type 'void' return."),
@@ -162,12 +162,12 @@ impl<'parser, 'instr> Parser<'parser, 'instr> {
         todo!()
     }
 
-    fn puts(&mut self) -> Result<Instruction<'instr>, LarkError> {
+    fn puts(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         self.advance();
 
         self.consume(
             TokenKind::LParen,
-            LarkErrorKind::SyntaxError,
+            ThrushErrorKind::SyntaxError,
             String::from("Syntax Error"),
             String::from("Expected '('."),
         )?;
@@ -176,14 +176,14 @@ impl<'parser, 'instr> Parser<'parser, 'instr> {
 
         self.consume(
             TokenKind::RParen,
-            LarkErrorKind::SyntaxError,
+            ThrushErrorKind::SyntaxError,
             String::from("Syntax Error"),
             String::from("Expected ')'."),
         )?;
 
         self.consume(
             TokenKind::SemiColon,
-            LarkErrorKind::SyntaxError,
+            ThrushErrorKind::SyntaxError,
             String::from("Syntax Error"),
             String::from("Expected ';'."),
         )?;
@@ -191,29 +191,29 @@ impl<'parser, 'instr> Parser<'parser, 'instr> {
         Ok(Instruction::Puts(Box::new(arg)))
     }
 
-    fn string(&mut self) -> Result<String, LarkError> {
+    fn string(&mut self) -> Result<String, ThrushError> {
         Ok(self.advance().lexeme.as_ref().unwrap().to_string())
     }
 
-    fn expr(&mut self) -> Result<Instruction<'instr>, LarkError> {
+    fn expr(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         self.expression()
     }
 
-    fn expression(&mut self) -> Result<Instruction<'instr>, LarkError> {
+    fn expression(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         let expr: Instruction = self.primary()?;
 
         Ok(expr)
     }
 
-    fn primary(&mut self) -> Result<Instruction<'instr>, LarkError> {
+    fn primary(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         let primary: Instruction = match &self.peek().kind {
             TokenKind::String => Instruction::String(self.string()?),
             kind => match kind {
                 TokenKind::RParen | TokenKind::RBrace => {
                     self.advance();
 
-                    return Err(LarkError::Parse(
-                            LarkErrorKind::SyntaxError,
+                    return Err(ThrushError::Parse(
+                            ThrushErrorKind::SyntaxError,
                             self.peek().lexeme.as_ref().unwrap().to_string(),
                             String::from("Syntax Error"),
                             format!("Expected expression, found '{}'. Is this a function call or an function definition?", kind),
@@ -224,8 +224,8 @@ impl<'parser, 'instr> Parser<'parser, 'instr> {
                 kind => {
                     self.advance();
 
-                    return Err(LarkError::Parse(
-                        LarkErrorKind::SyntaxError,
+                    return Err(ThrushError::Parse(
+                        ThrushErrorKind::SyntaxError,
                         self.peek().lexeme.as_ref().unwrap().to_string(),
                         String::from("Syntax Error"),
                         format!("Unexpected code '{}', check the code and review the syntax rules in the documentation.", kind),
@@ -242,15 +242,15 @@ impl<'parser, 'instr> Parser<'parser, 'instr> {
     fn consume(
         &mut self,
         kind: TokenKind,
-        error_kind: LarkErrorKind,
+        error_kind: ThrushErrorKind,
         error_title: String,
         help: String,
-    ) -> Result<Token, LarkError> {
+    ) -> Result<Token, ThrushError> {
         if self.peek().kind == kind {
             return Ok(self.advance());
         }
 
-        Err(LarkError::Parse(
+        Err(ThrushError::Parse(
             error_kind,
             self.peek().lexeme.as_ref().unwrap().to_string(),
             error_title,

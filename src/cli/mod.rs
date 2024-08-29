@@ -3,7 +3,7 @@ pub mod utils;
 
 use {
     super::compiler::{
-        Compiler, CompilerOptions, LarkFile, OptimizationLevel, FILE_NAME_WITH_EXT, FILE_PATH,
+        Compiler, CompilerOptions, OptimizationLevel, ThrushFile, FILE_NAME_WITH_EXT, FILE_PATH,
     },
     ahash::HashSet,
     colored::Colorize,
@@ -296,6 +296,45 @@ impl Cli {
                         return;
                     }
 
+                    let index: usize = self.args.len() - 1;
+                    let path: &Path = Path::new(&self.args[index]);
+
+                    if !path.exists() {
+                        Logging::new(format!(
+                            "The path or file '{}' cannot be accessed.",
+                            self.args[index]
+                        ))
+                        .error();
+                        return;
+                    }
+
+                    if !path.is_file() {
+                        Logging::new(format!(
+                            "The path '{}' ended with not a file.",
+                            self.args[index]
+                        ))
+                        .error();
+                        return;
+                    }
+
+                    if path.extension().is_none() {
+                        Logging::new(format!(
+                            "The file in path '{}' does not have an extension.",
+                            self.args[index]
+                        ))
+                        .error();
+                        return;
+                    }
+
+                    if path.extension().unwrap() != "th" {
+                        Logging::new(format!(
+                            "The file in path '{}' does not have the extension '.th'.",
+                            self.args[index]
+                        ))
+                        .error();
+                        return;
+                    }
+
                     for i in 1..self.args.len() - 1 {
                         match self.args[i].as_str() {
                             "--name" | "-n" => {
@@ -308,7 +347,7 @@ impl Cli {
                                 }
 
                                 Logging::new(format!(
-                                    "The target '{}' is not supported, see the list with larkr --print-targets.",
+                                    "The target '{}' is not supported, see the list with Thrushr --print-targets.",
                                     self.args[i + 1]
                                 ))
                                 .error();
@@ -337,54 +376,9 @@ impl Cli {
                             "--build" | "-b" => {
                                 self.options.build = true;
                             }
-                            "--path" | "-p" => match self.args[i + 1].as_str() {
-                                path if Path::new(path).exists() && !Path::new(path).is_dir() => {
-                                    FILE_NAME_WITH_EXT.lock().unwrap().push_str(
-                                        Path::new(path).file_name().unwrap().to_str().unwrap(),
-                                    );
-
-                                    Compiler::new(
-                                        mem::take(&mut self.options),
-                                        LarkFile {
-                                            is_main: self.is_main(Path::new(path)),
-                                            path: PathBuf::from(path),
-                                            name: Path::new(path)
-                                                .file_name()
-                                                .unwrap()
-                                                .to_str()
-                                                .unwrap()
-                                                .split(".")
-                                                .collect::<Vec<_>>()[0]
-                                                .to_string(),
-                                        },
-                                    )
-                                    .compile();
-
-                                    return;
-                                }
-                                _ => {
-                                    Logging::new(format!(
-                                        "The file '{}' cannot be accessed or is a dir.",
-                                        self.args[i + 1]
-                                    ))
-                                    .error();
-                                    return;
-                                }
-                            },
 
                             _ => continue,
                         }
-                    }
-
-                    let index: usize = self.args.len() - 1;
-
-                    if !Path::new(&self.args[index]).exists() {
-                        Logging::new(format!(
-                            "The file '{}' cannot be accessed.",
-                            self.args[index]
-                        ))
-                        .error();
-                        return;
                     }
 
                     FILE_NAME_WITH_EXT.lock().unwrap().push_str(
@@ -405,7 +399,7 @@ impl Cli {
 
                     Compiler::new(
                         mem::take(&mut self.options),
-                        LarkFile {
+                        ThrushFile {
                             is_main: self.is_main(Path::new(&self.args[index])),
                             path: PathBuf::from(&self.args[index]),
                             name: Path::new(&self.args[index])
@@ -420,9 +414,7 @@ impl Cli {
                     )
                     .compile();
                 }
-                "-i" | "interpret" => {
-                    self.options.interpret = true;
-                }
+                "-i" | "interpret" => {}
                 _ => {
                     self.help();
                 }
@@ -444,27 +436,25 @@ impl Cli {
     fn help(&self) {
         println!(
             "\n{} {}\n",
-            "Lark".bright_cyan().bold(),
+            "Thrush".bright_cyan().bold(),
             "Programming Language".bold()
         );
 
         println!(
-            "{} {} {} {} {}\n",
+            "{} {} {}\n",
             "The".bold(),
             "Bootstrap Compiler"
                 .bright_cyan()
                 .bold()
                 .italic()
                 .underline(),
-            "and".bold(),
-            "JIT Compiler".bright_cyan().bold().italic().underline(),
-            "for the Lark programming language.".bold(),
+            "for the Thrush programming language.".bold(),
         );
 
         println!(
             "{} {} {}\n",
             "Usage:".bold(),
-            "larkr".bright_cyan().bold(),
+            "thrush".bright_cyan().bold(),
             "[--flags]".bold()
         );
 
@@ -523,7 +513,7 @@ impl Cli {
         println!(
             "{} {} {} {}\n",
             "Usage:".bold(),
-            "larkr".bold().bright_cyan(),
+            "thrush".bold().bright_cyan(),
             "compile".bold(),
             "[--flags values]".bold().bright_cyan()
         );
@@ -568,14 +558,6 @@ impl Cli {
             "--build".bold().bright_cyan(),
             "-b".bold().bright_cyan(),
             "Compile the code into executable.".bold()
-        );
-
-        println!(
-            "{} ({} | {}) {}",
-            "•".bold(),
-            "--path [path]".bold().bright_cyan(),
-            "-p [path]".bold().bright_cyan(),
-            "Specify the path of an Lark File.".bold()
         );
     }
 }

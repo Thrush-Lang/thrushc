@@ -1,11 +1,11 @@
 use {
-    super::super::{LarkError, LarkErrorKind, FILE_NAME_WITH_EXT, FILE_PATH},
+    super::super::{ThrushError, ThrushErrorKind, FILE_NAME_WITH_EXT, FILE_PATH},
     colored::Colorize,
     std::{fs::read_to_string, mem},
 };
 
 pub struct Diagnostic {
-    error: LarkError,
+    error: ThrushError,
     buffer: String,
     drawer: String,
     span: (usize, usize),
@@ -14,22 +14,22 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
-    pub fn new(error: LarkError) -> Self {
+    pub fn new(error: ThrushError) -> Self {
         let span: (usize, usize) = match error {
-            LarkError::Parse(_, _, _, _, span, _) => span,
-            LarkError::Lex(_, _, _, _, span, _) => span,
+            ThrushError::Parse(_, _, _, _, span, _) => span,
+            ThrushError::Lex(_, _, _, _, span, _) => span,
             _ => (0, 0),
         };
 
         let line: usize = match error {
-            LarkError::Parse(_, _, _, _, _, line) => line,
-            LarkError::Lex(_, _, _, _, _, line) => line,
+            ThrushError::Parse(_, _, _, _, _, line) => line,
+            ThrushError::Lex(_, _, _, _, _, line) => line,
             _ => 0,
         };
 
         let msg: String = match error {
-            LarkError::Parse(_, _, ref msg, _, _, _) => msg.clone(),
-            LarkError::Lex(_, _, ref msg, _, _, _) => msg.clone(),
+            ThrushError::Parse(_, _, ref msg, _, _, _) => msg.clone(),
+            ThrushError::Lex(_, _, ref msg, _, _, _) => msg.clone(),
             _ => String::new(),
         };
 
@@ -47,24 +47,24 @@ impl Diagnostic {
         let content: String = read_to_string(FILE_PATH.lock().unwrap().as_str()).unwrap();
 
         match mem::take(&mut self.error) {
-            LarkError::Parse(kind, lexeme, _, help, _, _) => match kind {
-                LarkErrorKind::ParsedNumber => {
+            ThrushError::Parse(kind, lexeme, _, help, _, _) => match kind {
+                ThrushErrorKind::ParsedNumber => {
                     self.print_report(content, lexeme, help);
                 }
-                LarkErrorKind::UnreachableNumber => {
+                ThrushErrorKind::UnreachableNumber => {
                     self.print_report(content, lexeme, help);
                 }
-                LarkErrorKind::SyntaxError => {
+                ThrushErrorKind::SyntaxError => {
                     self.print_report(content, lexeme, help);
                 }
                 _ => {}
             },
 
-            LarkError::Lex(LarkErrorKind::UnknownChar, lexeme, _, help, _, _) => {
+            ThrushError::Lex(ThrushErrorKind::UnknownChar, lexeme, _, help, _, _) => {
                 self.print_report(content, lexeme, help);
             }
 
-            LarkError::Compile(_) => {}
+            ThrushError::Compile(_) => {}
             _ => {}
         }
     }

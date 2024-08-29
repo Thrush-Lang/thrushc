@@ -1,13 +1,12 @@
 use {
     super::super::{
-        frontend::parser::Instruction, CompilerOptions, LarkFile, Logging, OptimizationLevel,
+        frontend::parser::Instruction, CompilerOptions, Logging, OptimizationLevel, ThrushFile,
     },
     inkwell::{
         basic_block::BasicBlock,
         builder::Builder,
         context::Context,
         module::{Linkage, Module},
-        targets::TargetTriple,
         types::{ArrayType, FunctionType, IntType},
         values::{BasicMetadataValueEnum, FunctionValue, GlobalValue, PointerValue},
         AddressSpace,
@@ -22,7 +21,7 @@ pub struct CodeGen<'ctx, 'instr> {
     stmts: &'instr [Instruction<'instr>],
     current: usize,
     main: Option<FunctionValue<'ctx>>,
-    file: LarkFile,
+    file: ThrushFile,
     options: CompilerOptions,
 }
 
@@ -32,7 +31,7 @@ impl<'ctx, 'instr> CodeGen<'ctx, 'instr> {
         module: Module<'ctx>,
         builder: Builder<'ctx>,
         stmts: &'instr [Instruction<'ctx>],
-        file: LarkFile,
+        file: ThrushFile,
         options: CompilerOptions,
     ) -> Self {
         Self {

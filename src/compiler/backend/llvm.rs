@@ -4,7 +4,7 @@ use {
         builder::Builder,
         context::Context,
         module::Linkage,
-        types::{ArrayType, BasicMetadataTypeEnum, BasicType, FunctionType, IntType},
+        types::{ArrayType, BasicMetadataTypeEnum, FunctionType, IntType},
         values::{GlobalValue, InstructionValue, IntValue, PointerValue},
     },
 };

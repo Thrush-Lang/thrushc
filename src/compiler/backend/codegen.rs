@@ -382,17 +382,50 @@ impl<'ctx, 'instr> CodeGen<'ctx, 'instr> {
                 child.kill().unwrap();
 
                 if self.options.build {
-                    Command::new("clang-17")
-                        .arg("-opaque-pointers")
-                        .arg(linking)
-                        .arg(opt)
-                        .arg("-ffast-math")
-                        .arg(format!("{}.ll", self.file.name))
-                        .arg("-o")
-                        .arg(self.file.name.as_str())
-                        .output()
-                        .unwrap();
+                    match Command::new("opt-17").spawn() {
+                        Ok(mut child) => {
+                            child.kill().unwrap();
+
+                            Command::new("opt-17")
+                                .arg("-p=globalopt")
+                                .arg("-p=globaldce")
+                                .arg("-p=dce")
+                                .arg("-p=instcombine")
+                                .arg("-p=strip-dead-prototypes")
+                                .arg("-p=strip")
+                                .arg("-p=mem2reg")
+                                .arg("-p=memcpyopt")
+                                .arg("-S")
+                                .arg(format!("{}.ll", self.file.name))
+                                .arg("-o")
+                                .arg(format!("{}.ll", self.file.name))
+                                .output()
+                                .unwrap();
+
+                            Command::new("clang-17")
+                                .arg("-opaque-pointers")
+                                .arg(linking)
+                                .arg(opt)
+                                .arg("-ffast-math")
+                                .arg(format!("{}.ll", self.file.name))
+                                .arg("-o")
+                                .arg(self.file.name.as_str())
+                                .output()
+                                .unwrap();
+                        }
+
+                        Err(_) => {
+                            Logging::new(
+                                "Compilation failed. Opt 17 is not installed.".to_string(),
+                            )
+                            .error();
+                        }
+                    }
                 } else {
+                    self.module
+                        .print_to_file(format!("{}.ll", self.file.name))
+                        .unwrap();
+
                     Command::new("clang-17")
                         .arg("-opaque-pointers")
                         .arg(linking)

@@ -16,7 +16,7 @@ use {
         values::{BasicMetadataValueEnum, FunctionValue, GlobalValue, PointerValue},
         AddressSpace,
     },
-    std::{fs::remove_file, process::Command},
+    std::{fs::remove_file, path::Path, process::Command},
 };
 
 pub struct CodeGen<'ctx, 'instr> {
@@ -358,14 +358,15 @@ impl<'ctx, 'instr> CodeGen<'ctx, 'instr> {
             self.module
                 .print_to_file(format!("{}.ll", self.file.name))
                 .unwrap();
+
             return;
         }
 
-        let opt: &str = match self.options.optimization {
-            OptimizationLevel::None => "-O0",
-            OptimizationLevel::Low => "-O1",
-            OptimizationLevel::Mid => "-O2",
-            OptimizationLevel::Mcqueen => "-O3",
+        let opt_level: &str = match self.options.optimization {
+            OptimizationLevel::None => "O0",
+            OptimizationLevel::Low => "O1",
+            OptimizationLevel::Mid => "O2",
+            OptimizationLevel::Mcqueen => "O3",
         };
 
         let linking: &str = match self.options.linking {
@@ -374,76 +375,82 @@ impl<'ctx, 'instr> CodeGen<'ctx, 'instr> {
         };
 
         self.module
-            .print_to_file(format!("{}.ll", self.file.name))
-            .unwrap();
+            .write_bitcode_to_path(Path::new(&format!("{}.bc", self.file.name)));
 
         match Command::new("clang-17").spawn() {
             Ok(mut child) => {
                 child.kill().unwrap();
 
                 if self.options.build {
-                    match Command::new("opt-17").spawn() {
-                        Ok(mut child) => {
-                            child.kill().unwrap();
-
-                            Command::new("opt-17")
-                                .arg("-p=globalopt")
-                                .arg("-p=globaldce")
-                                .arg("-p=dce")
-                                .arg("-p=instcombine")
-                                .arg("-p=strip-dead-prototypes")
-                                .arg("-p=strip")
-                                .arg("-p=mem2reg")
-                                .arg("-p=memcpyopt")
-                                .arg("-S")
-                                .arg(format!("{}.ll", self.file.name))
-                                .arg("-o")
-                                .arg(format!("{}.ll", self.file.name))
-                                .output()
-                                .unwrap();
-
+                    match self.opt(opt_level) {
+                        Ok(()) => {
                             Command::new("clang-17")
                                 .arg("-opaque-pointers")
                                 .arg(linking)
-                                .arg(opt)
                                 .arg("-ffast-math")
-                                .arg(format!("{}.ll", self.file.name))
+                                .arg(format!("{}.bc", self.file.name))
                                 .arg("-o")
                                 .arg(self.file.name.as_str())
                                 .output()
                                 .unwrap();
                         }
-
-                        Err(_) => {
-                            Logging::new(
-                                "Compilation failed. Opt 17 is not installed.".to_string(),
-                            )
-                            .error();
+                        Err(err) => {
+                            Logging::new(err).error();
+                            return;
                         }
                     }
                 } else {
-                    self.module
-                        .print_to_file(format!("{}.ll", self.file.name))
-                        .unwrap();
-
-                    Command::new("clang-17")
-                        .arg("-opaque-pointers")
-                        .arg(linking)
-                        .arg(opt)
-                        .arg("-ffast-math")
-                        .arg("-c")
-                        .arg(format!("{}.ll", self.file.name))
-                        .arg("-o")
-                        .arg(format!("{}.o", self.file.name))
-                        .output()
-                        .unwrap();
+                    match self.opt(opt_level) {
+                        Ok(()) => {
+                            Command::new("clang-17")
+                                .arg("-opaque-pointers")
+                                .arg(linking)
+                                .arg("-ffast-math")
+                                .arg("-c")
+                                .arg(format!("{}.bc", self.file.name))
+                                .arg("-o")
+                                .arg(format!("{}.o", self.file.name))
+                                .output()
+                                .unwrap();
+                        }
+                        Err(err) => {
+                            Logging::new(err).error();
+                            return;
+                        }
+                    }
                 }
 
-                remove_file(format!("{}.ll", self.file.name)).unwrap();
+                remove_file(format!("{}.bc", self.file.name)).unwrap();
             }
             Err(_) => {
                 Logging::new("Compilation failed. Clang 17 is not installed.".to_string()).error();
             }
+        }
+    }
+
+    fn opt(&self, opt_level: &str) -> Result<(), String> {
+        match Command::new("opt-17").spawn() {
+            Ok(mut child) => {
+                child.kill().unwrap();
+
+                Command::new("opt-17")
+                    .arg(format!("-p={}", opt_level))
+                    .arg("-p=globalopt")
+                    .arg("-p=globaldce")
+                    .arg("-p=dce")
+                    .arg("-p=instcombine")
+                    .arg("-p=strip-dead-prototypes")
+                    .arg("-p=strip")
+                    .arg("-p=mem2reg")
+                    .arg("-p=memcpyopt")
+                    .arg(format!("{}.bc", self.file.name))
+                    .output()
+                    .unwrap();
+
+                Ok(())
+            }
+
+            Err(_) => Err(String::from("Compilation failed. Opt 17 is not installed.")),
         }
     }
 }

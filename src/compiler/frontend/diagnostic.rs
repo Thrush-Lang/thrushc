@@ -60,11 +60,21 @@ impl Diagnostic {
                 _ => {}
             },
 
-            ThrushError::Lex(ThrushErrorKind::UnknownChar, lexeme, _, help, _, _) => {
-                self.print_report(content, lexeme, help);
-            }
+            ThrushError::Lex(kind, lexeme, _, help, _, _) => match kind {
+                ThrushErrorKind::SyntaxError => {
+                    self.print_report(content, lexeme, help);
+                }
 
-            ThrushError::Compile(_) => {}
+                ThrushErrorKind::ParsedNumber => {
+                    self.print_report(content, lexeme, help);
+                }
+
+                ThrushErrorKind::UnreachableNumber => {
+                    self.print_report(content, lexeme, help);
+                }
+                _ => {}
+            },
+
             _ => {}
         }
     }
@@ -75,7 +85,7 @@ impl Diagnostic {
         let line: &str = content
             .lines()
             .find(|line| line.contains(&lexeme))
-            .expect("lexeme not found in file")
+            .expect("line not found in file.")
             .trim();
 
         self.add_space_to_line();

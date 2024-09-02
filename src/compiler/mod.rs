@@ -40,6 +40,7 @@ pub enum ThrushError {
 }
 
 pub enum ThrushErrorKind {
+    TooManyArguments,
     SyntaxError,
     UnreachableNumber,
     ParsedNumber,
@@ -55,6 +56,13 @@ pub enum OptimizationLevel {
     Mcqueen,
 }
 
+#[derive(Default, Debug)]
+pub enum Linking {
+    #[default]
+    Static,
+    Dynamic,
+}
+
 #[derive(Debug)]
 pub struct CompilerOptions {
     pub name: String,
@@ -63,6 +71,7 @@ pub struct CompilerOptions {
     pub interpret: bool,
     pub emit_llvm: bool,
     pub build: bool,
+    pub linking: Linking,
 }
 
 impl Default for CompilerOptions {
@@ -74,6 +83,7 @@ impl Default for CompilerOptions {
             interpret: false,
             emit_llvm: false,
             build: false,
+            linking: Linking::default(),
         }
     }
 }
@@ -91,8 +101,7 @@ impl Compiler {
             match tokens {
                 Ok(tokens) => {
                     let mut parser: Parser = Parser::new(tokens, self.file.clone());
-
-                    match parser.parse() {
+                    match parser.start() {
                         Ok(instructions) => {
                             let context: Context = Context::create();
 

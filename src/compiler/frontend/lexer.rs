@@ -4,7 +4,7 @@ use {
         diagnostic::Diagnostic,
     },
     core::str,
-    std::mem,
+    std::{mem, num::ParseFloatError},
 };
 
 pub type TokenSpan = (usize, usize);
@@ -79,16 +79,26 @@ impl<'tokens> Lexer<'tokens> {
                 if self.peek() == b'\n' || self.end() {
                     break;
                 }
+
                 self.advance();
             },
             b'/' if self.char_match(b'*') => loop {
                 if self.char_match(b'*') && self.char_match(b'/') {
                     break;
                 } else if self.end() {
-                    unimplemented!()
-                } else {
-                    self.advance();
+                    return Err(ThrushError::Lex(
+                        ThrushErrorKind::SyntaxError,
+                        self.lexeme(),
+                        String::from("Syntax Error"),
+                        String::from(
+                            "Unterminated multiline comment. Did you forget to close the string with a '*/'?",
+                        ),
+                        (self.token_start, self.token_end),
+                        self.line,
+                    ));
                 }
+
+                self.advance();
             },
             b'/' => self.make(TokenKind::Slash),
             b';' => self.make(TokenKind::SemiColon),
@@ -131,7 +141,7 @@ impl<'tokens> Lexer<'tokens> {
     fn identifier(&mut self) -> Result<(), ThrushError> {
         self.begin_token();
 
-        while self.is_alpha(self.peek()) {
+        while self.is_alpha(self.peek()) || self.peek().is_ascii_digit() {
             self.advance();
         }
 
@@ -158,6 +168,7 @@ impl<'tokens> Lexer<'tokens> {
             "super" => self.make(TokenKind::Super),
             "this" => self.make(TokenKind::This),
             "extends" => self.make(TokenKind::Extends),
+            "pub" => self.make(TokenKind::Pub),
             "null" => self.make(TokenKind::Null),
 
             "u8" => self.make(TokenKind::DataType(DataTypes::U8)),
@@ -207,12 +218,27 @@ impl<'tokens> Lexer<'tokens> {
 
         self.end_token();
 
-        let number_type: DataTypes =
+        let kind: DataTypes =
             self.eval_integer_type(self.lexeme(), (self.token_start, self.token_end), self.line)?;
 
+        let num: Result<f64, ParseFloatError> = self.lexeme().parse::<f64>();
+
+        if num.is_err() {
+            return Err(ThrushError::Parse(
+                ThrushErrorKind::ParsedNumber,
+                self.lexeme(),
+                String::from("The number is too big for an integer."),
+                String::from(
+                    "Did you provide a valid number with the correct format and not out of bounds?",
+                ),
+                (self.token_start, self.token_end),
+                self.line,
+            ));
+        }
+
         self.tokens.push(Token {
-            kind: TokenKind::Integer(number_type),
-            lexeme: Some(self.lexeme()),
+            kind: TokenKind::Integer(kind, num.unwrap()),
+            lexeme: None,
             line: self.line,
             span: (self.token_start, self.token_end),
         });
@@ -228,17 +254,31 @@ impl<'tokens> Lexer<'tokens> {
         }
 
         if self.peek() != b'"' {
-            unimplemented!();
+            return Err(ThrushError::Lex(
+                ThrushErrorKind::SyntaxError,
+                self.lexeme(),
+                String::from("Syntax Error"),
+                String::from(
+                    "Unterminated string. Did you forget to close the string with a '\"'?",
+                ),
+                (self.token_start, self.token_end),
+                self.line,
+            ));
         }
 
         self.advance();
         self.end_token();
 
+        let mut string: String =
+            String::from_utf8_lossy(&self.code[self.start + 1..self.current - 1]).to_string();
+
+        string.push_str("\0A\x00");
+
+        string = string.replace("\\n", "\n");
+
         self.tokens.push(Token {
             kind: TokenKind::String,
-            lexeme: Some(
-                String::from_utf8_lossy(&self.code[self.start + 1..self.current - 1]).to_string(),
-            ),
+            lexeme: Some(string),
             line: self.line,
             span: (self.token_start, self.token_end),
         });
@@ -252,7 +292,7 @@ impl<'tokens> Lexer<'tokens> {
         span: TokenSpan,
         line: usize,
     ) -> Result<DataTypes, ThrushError> {
-        if self.previous_token().kind == TokenKind::Minus {
+        if self.previous_token().kind == TokenKind::Minus && !lexeme.contains(".") {
             let lexeme: String = String::from("-") + &lexeme;
 
             return match lexeme.parse::<isize>() {
@@ -430,11 +470,12 @@ pub enum TokenKind {
 
     // --- Literals ---
     Identifier,
-    Integer(DataTypes),
+    Integer(DataTypes, f64),
     DataType(DataTypes),
     String,
 
     // --- Keywords ---
+    Pub,
     And,
     Struct,
     Else,
@@ -502,6 +543,7 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Break => write!(f, "break"),
             TokenKind::If => write!(f, "if"),
             TokenKind::Elif => write!(f, "elif"),
+            TokenKind::Pub => write!(f, "pub"),
             TokenKind::Null => write!(f, "null"),
             TokenKind::Or => write!(f, "or"),
             TokenKind::Print => write!(f, "print"),
@@ -515,7 +557,7 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Const => write!(f, "const"),
             TokenKind::While => write!(f, "while"),
             TokenKind::Extends => write!(f, "extends"),
-            TokenKind::Integer(_) => write!(f, "Integer"),
+            TokenKind::Integer(_, _) => write!(f, "Integer"),
             TokenKind::String => write!(f, "String"),
             TokenKind::Eof => write!(f, "EOF"),
             TokenKind::DataType(datatype) => write!(f, "{}", datatype),

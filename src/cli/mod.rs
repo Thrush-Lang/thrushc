@@ -1,11 +1,10 @@
 pub mod logging;
-pub mod utils;
 
 use {
     super::compiler::{
-        Compiler, CompilerOptions, OptimizationLevel, ThrushFile, FILE_NAME_WITH_EXT, FILE_PATH,
+        Compiler, CompilerOptions, Linking, OptimizationLevel, ThrushFile, FILE_NAME_WITH_EXT,
+        FILE_PATH,
     },
-    ahash::HashSet,
     colored::Colorize,
     inkwell::targets::{TargetMachine, TargetTriple},
     logging::Logging,
@@ -261,7 +260,6 @@ pub const TARGETS: [&str; 240] = [
 pub struct Cli {
     args: Vec<String>,
     options: CompilerOptions,
-    targets: HashSet<&'static str>,
 }
 
 impl Cli {
@@ -271,7 +269,6 @@ impl Cli {
         Self {
             args,
             options: CompilerOptions::default(),
-            targets: HashSet::from_iter(TARGETS),
         }
     }
 
@@ -281,10 +278,10 @@ impl Cli {
                 "-h" | "help" => {
                     self.help();
                 }
-                "-pt" | "print-targets" => self.targets.iter().for_each(|target| {
+                "-t" | "targets" => TARGETS.iter().for_each(|target| {
                     println!("{}", target.bold());
                 }),
-                "-pnt" | "print-native-target" => {
+                "-nt" | "native-target" => {
                     println!("{}", TargetMachine::get_default_triple().to_string().bold());
                 }
                 "-v" | "version" => {
@@ -341,7 +338,7 @@ impl Cli {
                                 self.options.name = mem::take(&mut self.args[i + 1]);
                             }
                             "--target" | "-t" => {
-                                if self.targets.contains(&self.args[i + 1].as_str()) {
+                                if TARGETS.contains(&self.args[i + 1].as_str()) {
                                     self.options.target = TargetTriple::create(&self.args[i + 1]);
                                     continue;
                                 }
@@ -372,6 +369,12 @@ impl Cli {
                             },
                             "--emit-llvm" | "-emit-llvm" => {
                                 self.options.emit_llvm = true;
+                            }
+                            "--static" | "-s" => {
+                                self.options.linking = Linking::Static;
+                            }
+                            "--dynamic" | "-d" => {
+                                self.options.linking = Linking::Dynamic;
                             }
                             "--build" | "-b" => {
                                 self.options.build = true;
@@ -495,16 +498,16 @@ impl Cli {
         println!(
             "{} ({} | {}) {}",
             "•".bold(),
-            "print-targets".bold().bright_cyan(),
-            "-pt".bold().bright_cyan(),
+            "targets".bold().bright_cyan(),
+            "-t".bold().bright_cyan(),
             "Print the list of supported targets machines.".bold()
         );
 
         println!(
             "{} ({} | {}) {}",
             "•".bold(),
-            "print-native-target".bold().bright_cyan(),
-            "-pnt".bold().bright_cyan(),
+            "native-target".bold().bright_cyan(),
+            "-nt".bold().bright_cyan(),
             "Print the native target of this machine.".bold()
         )
     }
@@ -550,6 +553,22 @@ impl Cli {
             "--emit-llvm".bold().bright_cyan(),
             "-emit-llvm".bold().bright_cyan(),
             "Compile the code to LLVM IR.".bold()
+        );
+
+        println!(
+            "{} ({} | {}) {}",
+            "•".bold(),
+            "--static".bold().bright_cyan(),
+            "-s".bold().bright_cyan(),
+            "Link the executable statically.".bold()
+        );
+
+        println!(
+            "{} ({} | {}) {}",
+            "•".bold(),
+            "--dynamic".bold().bright_cyan(),
+            "-s".bold().bright_cyan(),
+            "Link the executable dynamically.".bold()
         );
 
         println!(

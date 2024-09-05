@@ -1,22 +1,25 @@
 use {
-    super::super::{
-        frontend::{lexer::DataTypes, parser::Instruction},
-        CompilerOptions, Linking, Logging, OptimizationLevel, ThrushFile,
-    },
-    super::llvm::{
-        build_const_integer, build_int_array_type_from_size, datatype_to_fn_type,
-        set_globals_options,
+    super::{
+        super::{
+            frontend::{lexer::DataTypes, parser::Instruction},
+            CompilerOptions, Linking, Logging, Optimization, ThrushFile,
+        },
+        llvm::{
+            build_const_integer, build_int_array_type_from_size, datatype_to_fn_type,
+            set_globals_options,
+        },
     },
     inkwell::{
         basic_block::BasicBlock,
         builder::Builder,
         context::Context,
         module::{Linkage, Module},
+        targets::{CodeModel, RelocMode, Target, TargetMachine},
         types::{ArrayType, FunctionType, IntType},
         values::{BasicMetadataValueEnum, FunctionValue, GlobalValue, PointerValue},
-        AddressSpace,
+        AddressSpace, OptimizationLevel,
     },
-    std::{fs::remove_file, path::Path, process::Command},
+    std::{fs::remove_file, mem, path::Path, process::Command},
 };
 
 pub struct CodeGen<'ctx, 'instr> {
@@ -59,7 +62,22 @@ impl<'ctx, 'instr> CodeGen<'ctx, 'instr> {
             self.codegen(instr);
         }
 
-        self.module.set_triple(&self.options.target);
+        self.module.set_triple(&self.options.target_triple);
+
+        let target_machine: TargetMachine = Target::from_triple(&self.module.get_triple())
+            .unwrap()
+            .create_target_machine(
+                &self.module.get_triple(),
+                "generic",
+                "",
+                OptimizationLevel::Default,
+                RelocMode::Default,
+                CodeModel::Default,
+            )
+            .unwrap();
+
+        self.module
+            .set_data_layout(&target_machine.get_target_data().get_data_layout());
 
         self.module.strip_debug_info();
 
@@ -81,6 +99,15 @@ impl<'ctx, 'instr> CodeGen<'ctx, 'instr> {
                 Instruction::Null
             }
 
+            Instruction::Var { name, kind, value } => match value {
+                Some(value) => {
+                    let value = self.codegen(value);
+                    /* self.define_variable(name, kind, value); */
+                    Instruction::Null
+                }
+                None => Instruction::Null,
+            },
+
             Instruction::Function {
                 name,
                 params,
@@ -88,7 +115,7 @@ impl<'ctx, 'instr> CodeGen<'ctx, 'instr> {
                 return_kind,
                 is_public,
             } => {
-                self.define_function(name, params, body, return_kind.as_ref(), *is_public);
+                self.define_function(name, params, body, return_kind, *is_public);
 
                 Instruction::Null
             }
@@ -111,7 +138,7 @@ impl<'ctx, 'instr> CodeGen<'ctx, 'instr> {
             }
 
             Instruction::String(string) => {
-                Instruction::PointerValue(self.emit_global_string_constant(string.as_str(), ""))
+                Instruction::PointerValue(self.emit_global_string_constant(string, ""))
             }
 
             Instruction::EntryPoint { body } => {
@@ -167,7 +194,7 @@ impl<'ctx, 'instr> CodeGen<'ctx, 'instr> {
         name: &str,
         params: &[Instruction<'_>],
         body: &Instruction,
-        return_kind: Option<&DataTypes>,
+        return_kind: &Option<DataTypes>,
         is_public: bool,
     ) {
         let kind: FunctionType = datatype_to_fn_type(self.context, return_kind, params, None);
@@ -363,10 +390,10 @@ impl<'ctx, 'instr> CodeGen<'ctx, 'instr> {
         }
 
         let opt_level: &str = match self.options.optimization {
-            OptimizationLevel::None => "O0",
-            OptimizationLevel::Low => "O1",
-            OptimizationLevel::Mid => "O2",
-            OptimizationLevel::Mcqueen => "O3",
+            Optimization::None => "O0",
+            Optimization::Low => "O1",
+            Optimization::Mid => "O2",
+            Optimization::Mcqueen => "O3",
         };
 
         let linking: &str = match self.options.linking {

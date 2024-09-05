@@ -10,7 +10,7 @@ use {
     },
     inkwell::{
         context::Context,
-        targets::{TargetMachine, TargetTriple},
+        targets::{InitializationConfig, Target, TargetMachine, TargetTriple},
     },
     std::{fs::read_to_string, mem, path::PathBuf, sync::Mutex},
 };
@@ -48,7 +48,7 @@ pub enum ThrushErrorKind {
 }
 
 #[derive(Default, Debug)]
-pub enum OptimizationLevel {
+pub enum Optimization {
     #[default]
     None,
     Low,
@@ -66,8 +66,8 @@ pub enum Linking {
 #[derive(Debug)]
 pub struct CompilerOptions {
     pub name: String,
-    pub target: TargetTriple,
-    pub optimization: OptimizationLevel,
+    pub target_triple: TargetTriple,
+    pub optimization: Optimization,
     pub interpret: bool,
     pub emit_llvm: bool,
     pub build: bool,
@@ -78,8 +78,8 @@ impl Default for CompilerOptions {
     fn default() -> Self {
         Self {
             name: String::from("main"),
-            target: TargetMachine::get_default_triple(),
-            optimization: OptimizationLevel::default(),
+            target_triple: TargetMachine::get_default_triple(),
+            optimization: Optimization::default(),
             interpret: false,
             emit_llvm: false,
             build: false,
@@ -103,7 +103,11 @@ impl Compiler {
                     let mut parser: Parser = Parser::new(tokens, self.file.clone());
                     match parser.start() {
                         Ok(instructions) => {
-                            let context: Context = Context::create();
+                            Target::initialize_all(&InitializationConfig::default());
+
+                            println!("{:?}", instructions);
+
+                            /* let context: Context = Context::create();
 
                             CodeGen::new(
                                 &context,
@@ -113,7 +117,7 @@ impl Compiler {
                                 mem::take(&mut self.file),
                                 mem::take(&mut self.options),
                             )
-                            .compile();
+                            .compile(); */
                         }
 
                         Err(error) => {

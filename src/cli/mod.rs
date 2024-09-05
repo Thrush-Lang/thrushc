@@ -2,11 +2,10 @@ pub mod logging;
 
 use {
     super::compiler::{
-        Compiler, CompilerOptions, Linking, OptimizationLevel, ThrushFile, FILE_NAME_WITH_EXT,
-        FILE_PATH,
+        Compiler, CompilerOptions, Linking, Optimization, ThrushFile, FILE_NAME_WITH_EXT, FILE_PATH,
     },
     colored::Colorize,
-    inkwell::targets::{TargetMachine, TargetTriple},
+    inkwell::targets::{Target, TargetMachine, TargetTriple},
     logging::Logging,
     std::{
         mem,
@@ -339,7 +338,9 @@ impl Cli {
                             }
                             "--target" | "-t" => {
                                 if TARGETS.contains(&self.args[i + 1].as_str()) {
-                                    self.options.target = TargetTriple::create(&self.args[i + 1]);
+                                    self.options.target_triple =
+                                        TargetTriple::create(&self.args[i + 1]);
+
                                     continue;
                                 }
 
@@ -352,19 +353,19 @@ impl Cli {
                             }
                             "--optimization" | "-opt" => match self.args[i + 1].as_str() {
                                 "none" => {
-                                    self.options.optimization = OptimizationLevel::None;
+                                    self.options.optimization = Optimization::None;
                                 }
                                 "low" => {
-                                    self.options.optimization = OptimizationLevel::Low;
+                                    self.options.optimization = Optimization::Low;
                                 }
                                 "mid" => {
-                                    self.options.optimization = OptimizationLevel::Mid;
+                                    self.options.optimization = Optimization::Mid;
                                 }
                                 "mcqueen" => {
-                                    self.options.optimization = OptimizationLevel::Mcqueen;
+                                    self.options.optimization = Optimization::Mcqueen;
                                 }
                                 _ => {
-                                    self.options.optimization = OptimizationLevel::None;
+                                    self.options.optimization = Optimization::None;
                                 }
                             },
                             "--emit-llvm" | "-emit-llvm" => {

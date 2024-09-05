@@ -120,7 +120,7 @@ pub fn set_globals_options<'ctx>(
 
 pub fn datatype_to_fn_type<'ctx>(
     context: &'ctx Context,
-    kind: Option<&DataTypes>,
+    kind: &Option<DataTypes>,
     params: &[Instruction<'_>],
     string: Option<String>,
 ) -> FunctionType<'ctx> {

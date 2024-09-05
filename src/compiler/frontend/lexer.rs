@@ -292,6 +292,8 @@ impl<'tokens> Lexer<'tokens> {
         span: TokenSpan,
         line: usize,
     ) -> Result<DataTypes, ThrushError> {
+        /* --> ARREGLAR DE MANERA QUE DETECTE SI NO LLEVA NEGATIVOS <-- */
+
         if self.previous_token().kind == TokenKind::Minus && !lexeme.contains(".") {
             let lexeme: String = String::from("-") + &lexeme;
 

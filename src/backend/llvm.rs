@@ -1,13 +1,52 @@
 use {
-    super::super::frontend::{lexer::DataTypes, parser::Instruction},
+    super::super::frontend::lexer::DataTypes,
+    super::compiler::Instruction,
     inkwell::{
         builder::Builder,
         context::Context,
         module::Linkage,
-        types::{ArrayType, BasicMetadataTypeEnum, FunctionType, IntType},
-        values::{GlobalValue, InstructionValue, IntValue, PointerValue},
+        types::{ArrayType, BasicMetadataTypeEnum, FloatType, FunctionType, IntType},
+        values::{FloatValue, GlobalValue, InstructionValue, IntValue, PointerValue},
     },
 };
+
+pub fn datatype_integer_to_type<'ctx>(context: &'ctx Context, kind: &DataTypes) -> IntType<'ctx> {
+    match kind {
+        DataTypes::I8 => context.i8_type(),
+        DataTypes::I16 => context.i16_type(),
+        DataTypes::I32 => context.i32_type(),
+        DataTypes::I64 => context.i64_type(),
+
+        DataTypes::U8 => context.i8_type(),
+        DataTypes::U16 => context.i16_type(),
+        DataTypes::U32 => context.i32_type(),
+        DataTypes::U64 => context.i64_type(),
+
+        _ => unreachable!(),
+    }
+}
+
+pub fn datatype_float_to_type<'ctx>(context: &'ctx Context, kind: &DataTypes) -> FloatType<'ctx> {
+    match kind {
+        DataTypes::F32 => context.f32_type(),
+        DataTypes::F64 => context.f64_type(),
+
+        _ => unreachable!(),
+    }
+}
+
+pub fn build_const_float<'ctx>(
+    context: &'ctx Context,
+    kind: &'ctx DataTypes,
+    num: f64,
+) -> FloatValue<'ctx> {
+    match kind {
+        DataTypes::F32 => context.f32_type().const_float(num),
+        DataTypes::F64 => context.f64_type().const_float(num),
+
+        _ => unreachable!(),
+    }
+}
 
 pub fn build_const_integer<'ctx>(
     context: &'ctx Context,
@@ -28,64 +67,26 @@ pub fn build_const_integer<'ctx>(
     }
 }
 
-pub fn build_alloca<'ctx>(builder: &'ctx Builder, kind: IntType<'ctx>) -> PointerValue<'ctx> {
-    builder.build_alloca(kind, "").unwrap()
+pub fn build_alloca_with_integer<'a, 'ctx>(
+    builder: &'a Builder<'ctx>,
+    kind: IntType<'ctx>,
+) -> PointerValue<'ctx> {
+    let alloca: PointerValue<'ctx> = builder.build_alloca(kind, "").unwrap();
+
+    alloca.as_instruction().unwrap().set_alignment(4).unwrap();
+
+    alloca
 }
 
-pub fn build_store_with_integer<'ctx>(
-    context: &'ctx Context,
-    builder: &'ctx Builder,
-    kind: &DataTypes,
-    value: f64,
-    ptr: PointerValue<'ctx>,
-) -> InstructionValue<'ctx> {
-    match kind {
-        DataTypes::U8 => builder
-            .build_store(ptr, context.i8_type().const_int(value as u64, false))
-            .unwrap(),
+pub fn build_alloca_with_float<'a, 'ctx>(
+    builder: &'a Builder<'ctx>,
+    kind: FloatType<'ctx>,
+) -> PointerValue<'ctx> {
+    let alloca: PointerValue<'ctx> = builder.build_alloca(kind, "").unwrap();
 
-        DataTypes::U16 => builder
-            .build_store(ptr, context.i16_type().const_int(value as u64, false))
-            .unwrap(),
+    alloca.as_instruction().unwrap().set_alignment(4).unwrap();
 
-        DataTypes::U32 => builder
-            .build_store(ptr, context.i32_type().const_int(value as u64, false))
-            .unwrap(),
-
-        DataTypes::U64 => builder
-            .build_store(ptr, context.i64_type().const_int(value as u64, false))
-            .unwrap(),
-
-        DataTypes::I8 => builder
-            .build_store(
-                ptr,
-                context.i8_type().const_int(value as u64, true).const_neg(),
-            )
-            .unwrap(),
-
-        DataTypes::I16 => builder
-            .build_store(
-                ptr,
-                context.i16_type().const_int(value as u64, true).const_neg(),
-            )
-            .unwrap(),
-
-        DataTypes::I32 => builder
-            .build_store(
-                ptr,
-                context.i32_type().const_int(value as u64, true).const_neg(),
-            )
-            .unwrap(),
-
-        DataTypes::I64 => builder
-            .build_store(
-                ptr,
-                context.i64_type().const_int(value as u64, true).const_neg(),
-            )
-            .unwrap(),
-
-        _ => todo!(),
-    }
+    alloca
 }
 
 pub fn build_int_array_type_from_size(

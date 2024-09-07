@@ -1,7 +1,7 @@
 use {
-    super::{
-        super::{ThrushError, ThrushErrorKind},
+    super::super::{
         diagnostic::Diagnostic,
+        error::{ThrushError, ThrushErrorKind},
     },
     core::str,
     std::{mem, num::ParseFloatError},
@@ -9,19 +9,19 @@ use {
 
 pub type TokenSpan = (usize, usize);
 
-pub struct Lexer<'tokens> {
-    tokens: Vec<Token>,
-    code: &'tokens [u8],
-    token_start: usize,
-    token_end: usize,
-    start: usize,
-    current: usize,
-    line: usize,
-    errors: Vec<ThrushError>,
+pub struct Lexer<'a> {
+    pub tokens: Vec<Token>,
+    pub code: &'a [u8],
+    pub token_start: usize,
+    pub token_end: usize,
+    pub start: usize,
+    pub current: usize,
+    pub line: usize,
+    pub errors: Vec<ThrushError>,
 }
 
-impl<'tokens> Lexer<'tokens> {
-    pub fn new(code: &'tokens [u8]) -> Self {
+impl<'a> Lexer<'a> {
+    pub fn new(code: &'a [u8]) -> Self {
         Self {
             tokens: Vec::new(),
             code,
@@ -34,7 +34,7 @@ impl<'tokens> Lexer<'tokens> {
         }
     }
 
-    pub fn lex(&mut self) -> Result<&[Token], ThrushError> {
+    pub fn lex(&mut self) -> Result<&[Token], String> {
         while !self.end() {
             if self.errors.len() >= 10 {
                 break;
@@ -53,9 +53,7 @@ impl<'tokens> Lexer<'tokens> {
                 Diagnostic::new(error).report();
             }
 
-            return Err(ThrushError::Compile(String::from(
-                "Compilation proccess ended with errors.",
-            )));
+            return Err(String::from("Compilation proccess ended with errors."));
         };
 
         self.make(TokenKind::Eof);
@@ -210,7 +208,6 @@ impl<'tokens> Lexer<'tokens> {
 
         while self.peek().is_ascii_digit()
             || self.peek() == b'_' && self.peek_next().is_ascii_digit()
-            || self.peek() == b'-' && self.peek_next().is_ascii_digit()
             || self.peek() == b'.' && self.peek_next().is_ascii_digit()
         {
             self.advance();
@@ -292,8 +289,6 @@ impl<'tokens> Lexer<'tokens> {
         span: TokenSpan,
         line: usize,
     ) -> Result<DataTypes, ThrushError> {
-        /* --> ARREGLAR DE MANERA QUE DETECTE SI NO LLEVA NEGATIVOS <-- */
-
         if self.previous_token().kind == TokenKind::Minus && !lexeme.contains(".") {
             let lexeme: String = String::from("-") + &lexeme;
 

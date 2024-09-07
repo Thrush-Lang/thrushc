@@ -1,5 +1,6 @@
 use {
-    super::super::{ThrushError, ThrushErrorKind, FILE_NAME_WITH_EXT, FILE_PATH},
+    super::error::{ThrushError, ThrushErrorKind},
+    super::{FILE_NAME_WITH_EXT, FILE_PATH},
     colored::Colorize,
     std::{fs::read_to_string, mem},
 };

@@ -6,7 +6,7 @@ use {
         context::Context,
         module::Linkage,
         types::{ArrayType, BasicMetadataTypeEnum, FloatType, FunctionType, IntType},
-        values::{FloatValue, GlobalValue, InstructionValue, IntValue, PointerValue},
+        values::{FloatValue, GlobalValue, IntValue, PointerValue},
     },
 };
 

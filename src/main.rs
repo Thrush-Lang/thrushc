@@ -192,6 +192,8 @@ fn main() {
                         .unwrap(),
                 );
 
+                FILE_PATH.lock().unwrap().push_str(&parameters[index]);
+
                 options.path = Path::new(&parameters[index]).to_path_buf();
 
                 compile = true;
@@ -225,12 +227,12 @@ fn main() {
         }
     }
 
-    let extract_content: String = read_to_string(&options.path).unwrap_or_else(|error| {
+    let origin_content: String = read_to_string(&options.path).unwrap_or_else(|error| {
         Logging::new(error.to_string()).error();
         panic!()
     });
 
-    let content: &[u8] = extract_content.as_bytes();
+    let content: &[u8] = origin_content.as_bytes();
 
     let mut lexer: Lexer = Lexer::new(content);
     let mut parser: Parser = Parser::new();
@@ -257,12 +259,14 @@ fn main() {
 
                 Err(msg) => {
                     Logging::new(msg).error();
+                    return;
                 }
             }
         }
 
         Err(msg) => {
             Logging::new(msg).error();
+            return;
         }
     }
 

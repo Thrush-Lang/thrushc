@@ -624,6 +624,26 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             args.push(self.expr()?);
         }
 
+        if args.len() <= 1 {
+            self.consume(
+                TokenKind::SemiColon,
+                ThrushErrorKind::SyntaxError,
+                String::from("Syntax Error"),
+                String::from("Expected ';'."),
+            )?;
+
+            return Err(ThrushError::Parse(
+                ThrushErrorKind::SyntaxError,
+                self.peek().lexeme.as_ref().unwrap().to_string(),
+                String::from("Syntax Error"),
+                String::from(
+                    "Expected at least 2 arguments for 'println' call. Like 'println(`%d`, 2);'",
+                ),
+                self.peek().span,
+                self.peek().line,
+            ));
+        }
+
         self.consume(
             TokenKind::SemiColon,
             ThrushErrorKind::SyntaxError,
@@ -727,7 +747,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 TokenKind::Identifier => {
                     self.advance();
 
-                    let scope: Scope = self.find_scope(self.previous().lexeme.as_ref().unwrap());
+                    let scope: Scope = self.find_scope(self.previous().lexeme.as_ref().unwrap())?;
 
                     Instruction::RefVar {
                         name: self.previous().lexeme.unwrap().to_string(),
@@ -803,30 +823,24 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         ))
     }
 
-    fn find(&self, name: &str) -> bool {
-        let was_finded: bool = if self.scope == 0 {
-            false
-        } else {
-            self.locals[self.scope - 1].contains_key(name)
-                || self.functions.contains_key(name)
-                || self.globals.contains_key(name)
-        };
-
-        was_finded
-    }
-
-    fn find_scope(&self, name: &str) -> Scope {
-        let scope: Scope = if self.scope == 0 {
-            Scope::Unreachable
-        } else if self.locals[self.scope - 1].contains_key(name) {
-            Scope::Local
+    fn find_scope(&self, name: &str) -> Result<Scope, ThrushError> {
+        if self.locals[self.scope - 1].contains_key(name) {
+            return Ok(Scope::Local);
         } else if self.functions.contains_key(name) | self.globals.contains_key(name) {
-            Scope::Global
-        } else {
-            Scope::Unreachable
-        };
+            return Ok(Scope::Global);
+        }
 
-        scope
+        Err(ThrushError::Parse(
+            ThrushErrorKind::UnreachableVariable,
+            self.peek().lexeme.as_ref().unwrap().to_string(),
+            String::from("Syntax Error"),
+            format!(
+                "Variable '{}' was not defined. You like to declare as let {} = ?;",
+                name, name
+            ),
+            self.peek().span,
+            self.peek().line,
+        ))
     }
 
     #[inline]

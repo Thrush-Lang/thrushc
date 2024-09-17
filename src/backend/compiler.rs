@@ -67,9 +67,13 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     fn codegen(&mut self, instr: &'ctx Instruction<'ctx>) {
         match instr {
             Instruction::Block(body) => {
+                self.begin_scope();
+
                 body.iter().for_each(|instr| {
                     self.codegen(instr);
                 });
+
+                self.end_scope();
             }
 
             Instruction::Function {
@@ -191,12 +195,16 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 Scope::Local => {
                     let var: &Instruction<'_> = self.get_local(name);
 
-                    if let Instruction::PointerValue(pointer) = var {
-                        args.push((*pointer).into())
+                    if let Instruction::Value(pointer) = var {
+                        match pointer {
+                            BasicValueEnum::IntValue(value) => {
+                                args.push((*value).into());
+                            }
+
+                            _ => todo!(),
+                        }
                     }
                 }
-
-                Scope::Unreachable => todo!(),
             },
 
             _ => todo!(),
@@ -208,7 +216,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     }
 
     fn emit_puts(&mut self, instr: &Instruction) {
-        let pointer = match instr {
+        let pointer: PointerValue<'ctx> = match instr {
             Instruction::String(string) => {
                 let kind: ArrayType<'_> = build_int_array_type_from_size(
                     self.context,
@@ -333,16 +341,15 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             _ => todo!(),
         }
 
-        let ptr_load: BasicValueEnum<'ctx> = self.builder.build_load(ptr_kind, ptr, name).unwrap();
+        let load: BasicValueEnum<'ctx> = self.builder.build_load(ptr_kind, ptr, name).unwrap();
 
-        ptr_load
-            .as_instruction_value()
+        load.as_instruction_value()
             .unwrap()
             .set_alignment(4)
             .unwrap();
 
         self.locals
-            .insert(name.to_string(), Instruction::PointerValue(ptr));
+            .insert(name.to_string(), Instruction::Value(load));
     }
 
     fn emit_return(&mut self, instr: &Instruction) {
@@ -434,6 +441,16 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         pointer
     }
 
+    #[inline(always)]
+    fn begin_scope(&mut self) {
+        self.locals.clear();
+    }
+
+    #[inline(always)]
+    fn end_scope(&mut self) {
+        self.locals.clear();
+    }
+
     fn build_const_integer_return(&mut self, kind: IntType, value: u64, signed: bool) {
         self.builder
             .build_return(Some(&kind.const_int(value, signed)))
@@ -460,7 +477,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 pub enum Scope {
     Global,
     Local,
-    Unreachable,
 }
 
 #[derive(Debug, Clone)]
@@ -473,7 +489,7 @@ pub enum Instruction<'ctx> {
     EntryPoint {
         body: Box<Instruction<'ctx>>,
     },
-    PointerValue(PointerValue<'ctx>),
+    Value(BasicValueEnum<'ctx>),
     Param(String, DataTypes),
     Function {
         name: String,

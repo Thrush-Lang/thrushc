@@ -16,4 +16,5 @@ pub enum ThrushErrorKind {
     UnreachableNumber,
     ParsedNumber,
     UnknownChar,
+    UnreachableVariable,
 }

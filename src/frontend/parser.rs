@@ -626,7 +626,18 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             args.push(self.expr()?);
         }
 
-        if let Instruction::String(str) = &args[args.len() - 1] {
+        if args.is_empty() {
+            return Err(ThrushError::Parse(
+                ThrushErrorKind::SyntaxError,
+                self.peek().lexeme.as_ref().unwrap().to_string(),
+                String::from("Syntax Error"),
+                String::from(
+                    "Expected at least 1 argument for 'println' call. Like 'println(`Hi!`);'",
+                ),
+                self.peek().span,
+                self.peek().line,
+            ));
+        } else if let Instruction::String(str) = &args[0] {
             if args.len() <= 1 && C_FMTS.iter().any(|fmt| str.contains(*fmt)) {
                 self.consume(
                     TokenKind::SemiColon,

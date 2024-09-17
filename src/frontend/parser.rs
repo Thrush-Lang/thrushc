@@ -10,6 +10,8 @@ use {
     std::{collections::HashMap, mem},
 };
 
+const C_FMTS: [&str; 2] = ["%s", "%d"];
+
 pub struct Parser<'instr, 'a> {
     stmts: Vec<Instruction<'instr>>,
     errors: Vec<ThrushError>,
@@ -125,7 +127,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 format!("let {}", name.lexeme.as_ref().unwrap()),
                 String::from("Syntax Error"),
                 String::from(
-                    "Variable type mismatch undefined. Did you forget to specify the variable type to undefined variable?",
+                    "Variable type is undefined. Did you forget to specify the variable type to undefined variable?",
                 ),
                 name.span,
                 name.line,
@@ -624,24 +626,26 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             args.push(self.expr()?);
         }
 
-        if args.len() <= 1 {
-            self.consume(
-                TokenKind::SemiColon,
-                ThrushErrorKind::SyntaxError,
-                String::from("Syntax Error"),
-                String::from("Expected ';'."),
-            )?;
+        if let Instruction::String(str) = &args[args.len() - 1] {
+            if args.len() <= 1 && C_FMTS.iter().any(|fmt| str.contains(*fmt)) {
+                self.consume(
+                    TokenKind::SemiColon,
+                    ThrushErrorKind::SyntaxError,
+                    String::from("Syntax Error"),
+                    String::from("Expected ';'."),
+                )?;
 
-            return Err(ThrushError::Parse(
-                ThrushErrorKind::SyntaxError,
-                self.peek().lexeme.as_ref().unwrap().to_string(),
-                String::from("Syntax Error"),
-                String::from(
-                    "Expected at least 2 arguments for 'println' call. Like 'println(`%d`, 2);'",
-                ),
-                self.peek().span,
-                self.peek().line,
-            ));
+                return Err(ThrushError::Parse(
+                    ThrushErrorKind::SyntaxError,
+                    self.peek().lexeme.as_ref().unwrap().to_string(),
+                    String::from("Syntax Error"),
+                    String::from(
+                        "Expected at least 2 arguments for 'println' call. Like 'println(`%d`, 2);'",
+                    ),
+                    self.peek().span,
+                    self.peek().line,
+                ));
+            }
         }
 
         self.consume(

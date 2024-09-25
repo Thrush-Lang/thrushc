@@ -6,7 +6,7 @@ mod logging;
 
 use {
     backend::compiler::{Compiler, FileBuilder, Instruction, Linking, Optimization, Options},
-    colored::Colorize,
+    colored::{Colorize, CustomColor},
     frontend::{
         lexer::{Lexer, Token},
         parser::Parser,
@@ -36,24 +36,24 @@ fn main() {
         match parameter.as_str() {
             "-h" | "--help" => {
                 help();
-                break;
+                return;
             }
 
             "-t" | "targets" => {
                 TARGETS.iter().for_each(|target| {
                     println!("{}", target.bold());
                 });
-                break;
+                return;
             }
 
             "-nt" | "native-target" => {
                 println!("{}", TargetMachine::get_default_triple().to_string().bold());
-                break;
+                return;
             }
 
             "-v" | "--version" => {
                 println!("{}", env!("CARGO_PKG_VERSION").bold());
-                break;
+                return;
             }
 
             "-c" | "compile" => {
@@ -173,7 +173,10 @@ fn main() {
 
             "-i" | "interpret" => {}
 
-            _ => help(),
+            _ => {
+                help();
+                return;
+            }
         }
     }
 
@@ -252,27 +255,19 @@ fn main() {
 
 fn help() {
     println!(
-        "\n{} {}\n",
-        "Thrush".bright_cyan().bold(),
-        "Programming Language".bold()
-    );
-
-    println!(
-        "{} {} {}\n",
-        "The".bold(),
-        "Bootstrap Compiler"
-            .bright_cyan()
+        "\n{}\n",
+        "Thrush Compiler"
+            .custom_color(CustomColor::new(141, 141, 142))
             .bold()
-            .italic()
-            .underline(),
-        "for the Thrush programming language.".bold(),
     );
 
     println!(
         "{} {} {}\n",
         "Usage:".bold(),
-        "thrush".bright_cyan().bold(),
-        "[--flags]".bold()
+        "thrushc"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "[--flags] [file]".bold()
     );
 
     println!("{}", "Available Commands:\n".bold());
@@ -280,48 +275,62 @@ fn help() {
     println!(
         "{} ({} | {}) {}",
         "•".bold(),
-        "help".bold().bright_cyan(),
-        "-h".bold().bright_cyan(),
+        "help".custom_color(CustomColor::new(141, 141, 142)).bold(),
+        "-h".custom_color(CustomColor::new(141, 141, 142)).bold(),
         "Show help message.".bold()
     );
 
     println!(
         "{} ({} | {}) {}",
         "•".bold(),
-        "version".bold().bright_cyan(),
-        "-v".bold().bright_cyan(),
+        "version"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "-v".custom_color(CustomColor::new(141, 141, 142)).bold(),
         "Show the version.".bold()
     );
 
     println!(
         "{} ({} | {}) {}",
         "•".bold(),
-        "interpret [--flags] [file]".bold().bright_cyan(),
-        "-i [--flags] [file]".bold().bright_cyan(),
-        "Interpret the code provided using the JIT compiler.".bold()
+        "interpret [--flags] [file]"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "-i [--flags] [file]"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "Interpret the code provided using the Interpreter.".bold()
     );
 
     println!(
         "{} ({} | {}) {}",
         "•".bold(),
-        "compile [--flags] [file]".bold().bright_cyan(),
-        "-c [--flags] [file]".bold().bright_cyan(),
+        "compile [--flags] [file]"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "-c [--flags] [file]"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
         "Compile the code provided into executable.".bold()
     );
 
     println!(
         "{} ({} | {}) {}",
         "•".bold(),
-        "targets".bold().bright_cyan(),
-        "-t".bold().bright_cyan(),
+        "targets"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "-t".custom_color(CustomColor::new(141, 141, 142)).bold(),
         "Print the list of supported targets machines.".bold()
     );
 
     println!(
         "{} ({} | {}) {}",
         "•".bold(),
-        "native-target".bold().bright_cyan(),
-        "-nt".bold().bright_cyan(),
+        "native-target"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "-nt".custom_color(CustomColor::new(141, 141, 142)).bold(),
         "Print the native target of this machine.".bold()
     )
 }
@@ -330,9 +339,14 @@ fn compile_help() {
     println!(
         "{} {} {} {}\n",
         "Usage:".bold(),
-        "thrush".bold().bright_cyan(),
+        "thrushc"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
         "compile".bold(),
-        "[--flags values]".bold().bright_cyan()
+        "[--flags] [file]"
+            .bold()
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
     );
 
     println!("{}", "Available Flags:\n".bold());
@@ -340,56 +354,78 @@ fn compile_help() {
     println!(
         "{} ({} | {}) {}",
         "•".bold(),
-        "--name [name]".bold().bright_cyan(),
-        "-n [name]".bold().bright_cyan(),
+        "--name [name]"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "-n [name]"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
         "Name of the executable (Compiler dispatches it).".bold()
     );
 
     println!(
         "{} ({} | {}) {}",
         "•".bold(),
-        "--target [x86_64]".bold().bright_cyan(),
-        "-t [x86_64]".bold().bright_cyan(),
-        "Target architecture for the Compiler or JIT compiler.".bold()
+        "--target [target]"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "-t [target]"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "Target architecture for the Compiler or Interpreter.".bold()
     );
 
     println!(
         "{} ({} | {}) {}",
         "•".bold(),
-        "--optimization [opt-level]".bold().bright_cyan(),
-        "-opt [opt-level]".bold().bright_cyan(),
+        "--optimization [opt-level]"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "-opt [opt-level]"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
         "Optimization level for the JIT compiler or the Compiler.".bold()
     );
 
     println!(
         "{} ({} | {}) {}",
         "•".bold(),
-        "--emit-llvm".bold().bright_cyan(),
-        "-emit-llvm".bold().bright_cyan(),
+        "--emit-llvm"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "-emit-llvm"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
         "Compile the code to LLVM IR.".bold()
     );
 
     println!(
         "{} ({} | {}) {}",
         "•".bold(),
-        "--static".bold().bright_cyan(),
-        "-s".bold().bright_cyan(),
+        "--static"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "-s".custom_color(CustomColor::new(141, 141, 142)).bold(),
         "Link the executable statically.".bold()
     );
 
     println!(
         "{} ({} | {}) {}",
         "•".bold(),
-        "--dynamic".bold().bright_cyan(),
-        "-s".bold().bright_cyan(),
+        "--dynamic"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "-s".custom_color(CustomColor::new(141, 141, 142)).bold(),
         "Link the executable dynamically.".bold()
     );
 
     println!(
         "{} ({} | {}) {}",
         "•".bold(),
-        "--build".bold().bright_cyan(),
-        "-b".bold().bright_cyan(),
+        "--build"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "-b".custom_color(CustomColor::new(141, 141, 142)).bold(),
         "Compile the code into executable.".bold()
     );
 }

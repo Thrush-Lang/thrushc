@@ -10,36 +10,12 @@ impl Logging {
     }
 
     #[inline]
-    pub fn log(&self) {
-        eprintln!(
-            "- {} - {}{}{} {}",
-            Local::now().to_string().bold(),
-            "[".bold(),
-            "LOG".bold().bright_cyan(),
-            "]".bold(),
-            self.text.bold()
-        );
-    }
-
-    #[inline]
     pub fn error(&self) {
         eprintln!(
             "- {} - {}{}{} {}",
-            Local::now().to_string().bold(),
+            Local::now().format("Y-%m-%d %H:%M:%S").to_string().bold(),
             "[".bold(),
             "ERROR".bold().bright_red(),
-            "]".bold(),
-            self.text.bold()
-        );
-    }
-
-    #[inline]
-    pub fn warning(&self) {
-        eprintln!(
-            "- {} - {}{}{} {}",
-            Local::now().to_string().bold(),
-            "[".bold(),
-            "WARN".bold().bright_yellow(),
             "]".bold(),
             self.text.bold()
         );
@@ -49,9 +25,9 @@ impl Logging {
     pub fn info(&self) {
         println!(
             "- {} - {}{}{} {}",
-            Local::now().to_string().bold(),
+            Local::now().format("Y-%m-%d %H:%M:%S").to_string().bold(),
             "[".bold(),
-            "INFO".bold().bright_black(),
+            "INFO".bold().bright_green(),
             "]".bold(),
             self.text.bold()
         );

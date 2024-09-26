@@ -85,7 +85,7 @@ impl Diagnostic {
 
         let line: &str = content
             .lines()
-            .find(|line| line.contains(&lexeme))
+            .find(|line| line.trim().contains(lexeme.trim()))
             .expect("line not found in file.")
             .trim();
 

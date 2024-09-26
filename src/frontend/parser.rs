@@ -74,8 +74,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
     fn parse(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         match &self.peek().kind {
-            TokenKind::Puts => Ok(self.puts()?),
-            TokenKind::Println => Ok(self.println()?),
+            TokenKind::Print => Ok(self.print()?),
             TokenKind::Def => Ok(self.def(false)?),
             TokenKind::LBrace => Ok(self.block()?),
             TokenKind::Return => Ok(self.ret()?),
@@ -595,7 +594,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         })
     }
 
-    fn println(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+    fn print(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         self.advance();
 
         self.consume(
@@ -666,47 +665,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             String::from("Expected ';'."),
         )?;
 
-        Ok(Instruction::Println(args))
-    }
-
-    fn puts(&mut self) -> Result<Instruction<'instr>, ThrushError> {
-        self.advance();
-
-        self.consume(
-            TokenKind::LParen,
-            ThrushErrorKind::SyntaxError,
-            String::from("Syntax Error"),
-            String::from("Expected '('."),
-        )?;
-
-        let arg: Instruction<'instr> = self.parse()?;
-
-        if arg != Instruction::String(String::from("")) {
-            return Err(ThrushError::Parse(
-                ThrushErrorKind::SyntaxError,
-                self.peek().lexeme.as_ref().unwrap().to_string(),
-                String::from("Syntax Error"),
-                String::from("Expected string for 'puts' call."),
-                self.peek().span,
-                self.peek().line,
-            ));
-        }
-
-        self.consume(
-            TokenKind::RParen,
-            ThrushErrorKind::SyntaxError,
-            String::from("Syntax Error"),
-            String::from("Expected ')'."),
-        )?;
-
-        self.consume(
-            TokenKind::SemiColon,
-            ThrushErrorKind::SyntaxError,
-            String::from("Syntax Error"),
-            String::from("Expected ';'."),
-        )?;
-
-        Ok(Instruction::Puts(Box::new(arg)))
+        Ok(Instruction::Print(args))
     }
 
     fn expr(&mut self) -> Result<Instruction<'instr>, ThrushError> {

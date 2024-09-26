@@ -13,7 +13,7 @@ use {
         context::Context,
         module::{Linkage, Module},
         targets::{TargetMachine, TargetTriple},
-        types::{ArrayType, FunctionType, IntType},
+        types::{ArrayType, FloatType, FunctionType, IntType},
         values::{
             BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, GlobalValue,
             InstructionValue, PointerValue,
@@ -94,12 +94,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 self.emit_global_string_constant(string, "");
             }
 
-            Instruction::Println(args) => {
-                self.emit_println(args);
-            }
-
-            Instruction::Puts(instr) => {
-                self.emit_puts(instr);
+            Instruction::Print(args) => {
+                self.emit_print(args);
             }
 
             Instruction::Var { name, kind, value } => match value {
@@ -122,7 +118,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     }
 
     fn define_standard_functions(&mut self) {
-        self.define_puts();
         self.define_printf();
     }
 
@@ -135,16 +130,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             .add_function("printf", printf, Some(Linkage::External));
     }
 
-    fn define_puts(&mut self) {
-        let puts: FunctionType = self.context.i32_type().fn_type(
-            &[self.context.ptr_type(AddressSpace::default()).into()],
-            true,
-        );
-
-        self.module
-            .add_function("puts", puts, Some(Linkage::External));
-    }
-
     fn emit_main(&mut self) {
         let main_kind: FunctionType = self.context.i32_type().fn_type(&[], false);
         let main: FunctionValue = self.module.add_function("main", main_kind, None);
@@ -154,7 +139,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         self.builder.position_at_end(entry_point);
     }
 
-    fn emit_println(&mut self, instrs: &[Instruction]) {
+    fn emit_print(&mut self, instrs: &[Instruction]) {
         let mut args: Vec<BasicMetadataValueEnum> = Vec::with_capacity(24);
 
         instrs.iter().for_each(|instr| match instr {
@@ -201,7 +186,15 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                                 args.push((*value).into());
                             }
 
-                            _ => todo!(),
+                            BasicValueEnum::PointerValue(value) => {
+                                args.push((*value).into());
+                            }
+
+                            e => {
+                                println!("{:?}", e);
+
+                                todo!()
+                            }
                         }
                     }
                 }
@@ -215,7 +208,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             .unwrap();
     }
 
-    fn emit_puts(&mut self, instr: &Instruction) {
+    /* fn emit_puts(&mut self, instr: &Instruction) {
         let pointer: PointerValue<'ctx> = match instr {
             Instruction::String(string) => {
                 let kind: ArrayType<'_> = build_int_array_type_from_size(
@@ -249,107 +242,165 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 "",
             )
             .unwrap();
-    }
+    } */
 
     fn emit_variable(&mut self, name: &str, kind: &DataTypes, value: &Instruction) {
-        let ptr_kind: IntType<'_> = datatype_integer_to_type(self.context, kind);
+        match kind {
+            DataTypes::I8
+            | DataTypes::I16
+            | DataTypes::I32
+            | DataTypes::I64
+            | DataTypes::U8
+            | DataTypes::U16
+            | DataTypes::U32
+            | DataTypes::U64 => {
+                let ptr_kind: IntType<'_> = datatype_integer_to_type(self.context, kind);
 
-        let ptr: PointerValue<'_> = match kind {
-            DataTypes::I8 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
+                let ptr: PointerValue<'_> = match kind {
+                    DataTypes::I8 => build_alloca_with_integer(
+                        self.builder,
+                        datatype_integer_to_type(self.context, kind),
+                    ),
 
-            DataTypes::I16 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
+                    DataTypes::I16 => build_alloca_with_integer(
+                        self.builder,
+                        datatype_integer_to_type(self.context, kind),
+                    ),
 
-            DataTypes::I32 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
+                    DataTypes::I32 => build_alloca_with_integer(
+                        self.builder,
+                        datatype_integer_to_type(self.context, kind),
+                    ),
 
-            DataTypes::I64 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
+                    DataTypes::I64 => build_alloca_with_integer(
+                        self.builder,
+                        datatype_integer_to_type(self.context, kind),
+                    ),
 
-            DataTypes::U8 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
+                    DataTypes::U8 => build_alloca_with_integer(
+                        self.builder,
+                        datatype_integer_to_type(self.context, kind),
+                    ),
 
-            DataTypes::U16 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
+                    DataTypes::U16 => build_alloca_with_integer(
+                        self.builder,
+                        datatype_integer_to_type(self.context, kind),
+                    ),
 
-            DataTypes::U32 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
+                    DataTypes::U32 => build_alloca_with_integer(
+                        self.builder,
+                        datatype_integer_to_type(self.context, kind),
+                    ),
 
-            DataTypes::U64 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
+                    DataTypes::U64 => build_alloca_with_integer(
+                        self.builder,
+                        datatype_integer_to_type(self.context, kind),
+                    ),
 
-            DataTypes::F32 => {
-                build_alloca_with_float(self.builder, datatype_float_to_type(self.context, kind))
-            }
+                    _ => todo!(),
+                };
 
-            DataTypes::F64 => {
-                build_alloca_with_float(self.builder, datatype_float_to_type(self.context, kind))
-            }
+                match value {
+                    Instruction::Null => {}
 
-            _ => todo!(),
-        };
+                    Instruction::Integer(kind, num) => match kind {
+                        DataTypes::I8
+                        | DataTypes::I16
+                        | DataTypes::I32
+                        | DataTypes::I64
+                        | DataTypes::U8
+                        | DataTypes::U16
+                        | DataTypes::U32
+                        | DataTypes::U64 => {
+                            let store: InstructionValue<'_> = self
+                                .builder
+                                .build_store(ptr, build_const_integer(self.context, kind, *num))
+                                .unwrap();
 
-        match value {
-            Instruction::Null => {}
+                            store.set_alignment(4).unwrap();
+                        }
 
-            Instruction::Integer(kind, num) => match kind {
-                DataTypes::I8
-                | DataTypes::I16
-                | DataTypes::I32
-                | DataTypes::I64
-                | DataTypes::U8
-                | DataTypes::U16
-                | DataTypes::U32
-                | DataTypes::U64 => {
-                    let store: InstructionValue<'_> = self
-                        .builder
-                        .build_store(ptr, build_const_integer(self.context, kind, *num))
-                        .unwrap();
+                        _ => todo!(),
+                    },
 
-                    store.set_alignment(4).unwrap();
+                    _ => unreachable!(),
                 }
 
-                DataTypes::F32 | DataTypes::F64 => {
-                    let store: InstructionValue<'_> = self
-                        .builder
-                        .build_store(ptr, build_const_float(self.context, kind, *num))
-                        .unwrap();
+                let load: BasicValueEnum<'ctx> =
+                    self.builder.build_load(ptr_kind, ptr, name).unwrap();
 
-                    store.set_alignment(4).unwrap();
+                load.as_instruction_value()
+                    .unwrap()
+                    .set_alignment(4)
+                    .unwrap();
+
+                self.locals
+                    .insert(name.to_string(), Instruction::Value(load));
+            }
+
+            DataTypes::F32 | DataTypes::F64 => {
+                let ptr_kind: FloatType<'_> = datatype_float_to_type(self.context, kind);
+
+                let ptr: PointerValue<'_> = match kind {
+                    DataTypes::F32 => build_alloca_with_float(
+                        self.builder,
+                        datatype_float_to_type(self.context, kind),
+                    ),
+
+                    DataTypes::F64 => build_alloca_with_float(
+                        self.builder,
+                        datatype_float_to_type(self.context, kind),
+                    ),
+
+                    _ => unreachable!(),
+                };
+
+                match value {
+                    Instruction::Null => {}
+
+                    Instruction::Integer(kind, num) => match kind {
+                        DataTypes::F32 | DataTypes::F64 => {
+                            let store: InstructionValue<'_> = self
+                                .builder
+                                .build_store(ptr, build_const_float(self.context, kind, *num))
+                                .unwrap();
+
+                            store.set_alignment(4).unwrap();
+                        }
+
+                        _ => todo!(),
+                    },
+
+                    _ => unreachable!(),
                 }
 
-                _ => todo!(),
+                let load: BasicValueEnum<'ctx> =
+                    self.builder.build_load(ptr_kind, ptr, name).unwrap();
+
+                load.as_instruction_value()
+                    .unwrap()
+                    .set_alignment(4)
+                    .unwrap();
+
+                self.locals
+                    .insert(name.to_string(), Instruction::Value(load));
+            }
+
+            DataTypes::String => match value {
+                Instruction::String(string) => {
+                    /* let ptr: PointerValue<'_> = self.emit_global_string_constant(string, name);
+
+                    self.locals
+                        .insert(name.to_string(), Instruction::Value(ptr.into())); */
+
+                    todo!()
+                }
+
+                _ => unreachable!(),
             },
 
             _ => todo!(),
         }
-
-        let load: BasicValueEnum<'ctx> = self.builder.build_load(ptr_kind, ptr, name).unwrap();
-
-        load.as_instruction_value()
-            .unwrap()
-            .set_alignment(4)
-            .unwrap();
-
-        self.locals
-            .insert(name.to_string(), Instruction::Value(load));
     }
 
     fn emit_return(&mut self, instr: &Instruction) {
@@ -362,19 +413,9 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             }
 
             Instruction::String(string) => {
-                let kind: ArrayType<'_> = build_int_array_type_from_size(
-                    self.context,
-                    DataTypes::I8,
-                    string.len() as u32,
-                );
-
-                let global: GlobalValue<'ctx> =
-                    self.module
-                        .add_global(kind, Some(AddressSpace::default()), "");
-
-                set_globals_options(self.context, global, Some(instr));
-
-                self.builder.build_return(Some(&global)).unwrap();
+                self.builder
+                    .build_return(Some(&self.emit_global_string_constant(string, "")))
+                    .unwrap();
             }
 
             _ => todo!(),
@@ -420,7 +461,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         }
     }
 
-    fn emit_global_string_constant(&mut self, string: &str, name: &str) -> PointerValue {
+    fn emit_global_string_constant(&mut self, string: &str, name: &str) -> PointerValue<'ctx> {
         let ty: ArrayType<'_> = self.context.i8_type().array_type(string.len() as u32);
         let gv: GlobalValue<'_> = self
             .module
@@ -481,8 +522,7 @@ pub enum Scope {
 
 #[derive(Debug, Clone)]
 pub enum Instruction<'ctx> {
-    Puts(Box<Instruction<'ctx>>),
-    Println(Vec<Instruction<'ctx>>),
+    Print(Vec<Instruction<'ctx>>),
     String(String),
     Integer(DataTypes, f64),
     Block(Vec<Instruction<'ctx>>),
@@ -569,6 +609,8 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
     }
 
     pub fn build(self) {
+        self.module.set_triple(&self.options.target_triple);
+
         let opt_level: &str = match self.options.optimization {
             Optimization::None => "O0",
             Optimization::Low => "O1",

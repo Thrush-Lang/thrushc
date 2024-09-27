@@ -230,6 +230,8 @@ fn main() {
 
             match instructions {
                 Ok(instructions) => {
+                    module.set_triple(&options.target_triple);
+
                     Compiler::compile(&module, &builder, &context, instructions);
                     let optimized_module: &Module<'_> =
                         Optimizer::new(&module, instructions).optimize();

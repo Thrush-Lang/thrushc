@@ -13,7 +13,7 @@ impl<'a, 'ctx> Optimizer<'a, 'ctx> {
     pub fn optimize(&mut self) -> &'a Module<'ctx> {
         self.module.strip_debug_info();
 
-        self.destroy_unused_standard_functions();
+        /* self.destroy_unused_standard_functions(); */
 
         self.module
     }

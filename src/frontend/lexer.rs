@@ -601,3 +601,23 @@ impl std::fmt::Display for DataTypes {
         }
     }
 }
+
+impl DataTypes {
+    pub fn dereference(&self) -> DataTypes {
+        match &self {
+            DataTypes::U8 => DataTypes::I8,
+            DataTypes::U16 => DataTypes::I16,
+            DataTypes::U32 => DataTypes::I32,
+            DataTypes::U64 => DataTypes::I64,
+            DataTypes::I8 => DataTypes::I8,
+            DataTypes::I16 => DataTypes::I16,
+            DataTypes::I32 => DataTypes::I32,
+            DataTypes::I64 => DataTypes::I64,
+            DataTypes::F32 => DataTypes::F32,
+            DataTypes::F64 => DataTypes::F64,
+            DataTypes::Bool => DataTypes::Bool,
+            DataTypes::String => DataTypes::String,
+            DataTypes::Void => DataTypes::Void,
+        }
+    }
+}

@@ -13,10 +13,10 @@ use {
         context::Context,
         module::{Linkage, Module},
         targets::{TargetMachine, TargetTriple},
-        types::{ArrayType, FloatType, FunctionType, IntType},
+        types::{ArrayType, FloatType, FunctionType, IntType, VectorType},
         values::{
             BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, GlobalValue,
-            InstructionValue, PointerValue,
+            InstructionValue, IntValue, PointerValue,
         },
         AddressSpace,
     },
@@ -181,20 +181,30 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     let var: &Instruction<'_> = self.get_local(name);
 
                     if let Instruction::Value(pointer) = var {
-                        match pointer {
-                            BasicValueEnum::IntValue(value) => {
-                                args.push((*value).into());
+                        match pointer.kind {
+                            DataTypes::String => match pointer.value {
+                                BasicValueEnum::PointerValue(vector) => {
+                                    args.push(vector.into());
+                                }
+
+                                _ => todo!(),
+                            },
+
+                            DataTypes::F32
+                            | DataTypes::F64
+                            | DataTypes::I8
+                            | DataTypes::I16
+                            | DataTypes::I32
+                            | DataTypes::I64
+                            | DataTypes::U8
+                            | DataTypes::U16
+                            | DataTypes::U32
+                            | DataTypes::U64
+                            | DataTypes::Bool => {
+                                args.push(pointer.value.into());
                             }
 
-                            BasicValueEnum::PointerValue(value) => {
-                                args.push((*value).into());
-                            }
-
-                            e => {
-                                println!("{:?}", e);
-
-                                todo!()
-                            }
+                            _ => todo!(),
                         }
                     }
                 }
@@ -334,8 +344,10 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .set_alignment(4)
                     .unwrap();
 
-                self.locals
-                    .insert(name.to_string(), Instruction::Value(load));
+                self.locals.insert(
+                    name.to_string(),
+                    Instruction::Value(ThrushBasicValueEnum::new(kind.dereference(), load)),
+                );
             }
 
             DataTypes::F32 | DataTypes::F64 => {
@@ -382,18 +394,23 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .set_alignment(4)
                     .unwrap();
 
-                self.locals
-                    .insert(name.to_string(), Instruction::Value(load));
+                self.locals.insert(
+                    name.to_string(),
+                    Instruction::Value(ThrushBasicValueEnum::new(kind.dereference(), load)),
+                );
             }
 
             DataTypes::String => match value {
                 Instruction::String(string) => {
-                    /* let ptr: PointerValue<'_> = self.emit_global_string_constant(string, name);
+                    let string: PointerValue<'_> = self.emit_global_string(string, name);
 
-                    self.locals
-                        .insert(name.to_string(), Instruction::Value(ptr.into())); */
-
-                    todo!()
+                    self.locals.insert(
+                        name.to_string(),
+                        Instruction::Value(ThrushBasicValueEnum::new(
+                            DataTypes::String,
+                            string.into(),
+                        )),
+                    );
                 }
 
                 _ => unreachable!(),
@@ -462,24 +479,45 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     }
 
     fn emit_global_string_constant(&mut self, string: &str, name: &str) -> PointerValue<'ctx> {
-        let ty: ArrayType<'_> = self.context.i8_type().array_type(string.len() as u32);
-        let gv: GlobalValue<'_> = self
-            .module
-            .add_global(ty, Some(AddressSpace::default()), name);
-        gv.set_linkage(Linkage::Private);
-        gv.set_initializer(&self.context.const_string(string.as_ref(), false));
-        gv.set_constant(true);
+        let kind: ArrayType<'_> = self.context.i8_type().array_type(string.len() as u32);
+        let global: GlobalValue<'_> =
+            self.module
+                .add_global(kind, Some(AddressSpace::default()), name);
+        global.set_linkage(Linkage::Private);
+        global.set_initializer(&self.context.const_string(string.as_ref(), false));
+        global.set_constant(true);
 
-        let pointer: PointerValue<'_> = self
-            .builder
+        self.builder
             .build_pointer_cast(
-                gv.as_pointer_value(),
+                global.as_pointer_value(),
                 self.context.ptr_type(AddressSpace::default()),
                 name,
             )
-            .unwrap();
+            .unwrap()
+    }
 
-        pointer
+    fn emit_global_string(&mut self, string: &str, name: &str) -> PointerValue<'ctx> {
+        let mut buffer: Vec<IntValue> = Vec::with_capacity(string.len());
+        string
+            .as_bytes()
+            .iter()
+            .for_each(|b| buffer.push(self.context.i8_type().const_int(*b as u64, false)));
+
+        let kind: VectorType = self.context.i8_type().vec_type(string.len() as u32);
+        let global: GlobalValue<'_> =
+            self.module
+                .add_global(kind, Some(AddressSpace::default()), name);
+        global.set_linkage(Linkage::Private);
+        global.set_initializer(&VectorType::const_vector(&buffer));
+        global.set_constant(false);
+
+        self.builder
+            .build_pointer_cast(
+                global.as_pointer_value(),
+                self.context.ptr_type(AddressSpace::default()),
+                name,
+            )
+            .unwrap()
     }
 
     #[inline(always)]
@@ -529,7 +567,7 @@ pub enum Instruction<'ctx> {
     EntryPoint {
         body: Box<Instruction<'ctx>>,
     },
-    Value(BasicValueEnum<'ctx>),
+    Value(ThrushBasicValueEnum<'ctx>),
     Param(String, DataTypes),
     Function {
         name: String,
@@ -551,6 +589,18 @@ pub enum Instruction<'ctx> {
     Boolean(bool),
     Null,
     End,
+}
+
+#[derive(Debug, Clone)]
+pub struct ThrushBasicValueEnum<'ctx> {
+    pub kind: DataTypes,
+    pub value: BasicValueEnum<'ctx>,
+}
+
+impl<'ctx> ThrushBasicValueEnum<'ctx> {
+    pub fn new(kind: DataTypes, value: BasicValueEnum<'ctx>) -> Self {
+        Self { kind, value }
+    }
 }
 
 #[derive(Default, Debug)]
@@ -609,8 +659,6 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
     }
 
     pub fn build(self) {
-        self.module.set_triple(&self.options.target_triple);
-
         let opt_level: &str = match self.options.optimization {
             Optimization::None => "O0",
             Optimization::Low => "O1",

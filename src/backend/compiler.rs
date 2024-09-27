@@ -586,6 +586,11 @@ pub enum Instruction<'ctx> {
         name: String,
         scope: Scope,
     },
+    MutVar {
+        name: String,
+        value: Box<Instruction<'ctx>>,
+        scope: Scope,
+    },
     Boolean(bool),
     Null,
     End,

@@ -723,6 +723,35 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
                     let scope: Scope = self.find_scope(self.previous().lexeme.as_ref().unwrap())?;
 
+                    if self.peek().kind == TokenKind::Eq {
+                        let name: String = self.previous().lexeme.unwrap().to_string();
+                        self.advance();
+
+                        let expr: Instruction<'instr> = self.expr()?;
+
+                        match scope {
+                            Scope::Global => match self.globals.get(&name) {
+                                None => {}
+                                Some(instr) => {
+                                    todo!()
+                                }
+                            },
+
+                            Scope::Local => match self.locals[self.scope].get(&name) {
+                                None => {}
+                                Some(instr) => {
+                                    todo!()
+                                }
+                            },
+                        }
+
+                        return Ok(Instruction::MutVar {
+                            name,
+                            value: Box::new(expr),
+                            scope,
+                        });
+                    }
+
                     Instruction::RefVar {
                         name: self.previous().lexeme.unwrap().to_string(),
                         scope,

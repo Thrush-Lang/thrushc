@@ -5,10 +5,7 @@ mod frontend;
 mod logging;
 
 use {
-    backend::{
-        compiler::{Compiler, FileBuilder, Instruction, Linking, Optimization, Options},
-        optimizer::Optimizer,
-    },
+    backend::compiler::{Compiler, FileBuilder, Instruction, Linking, Optimization, Options},
     colored::{Colorize, CustomColor},
     frontend::{
         lexer::{Lexer, Token},
@@ -231,16 +228,15 @@ fn main() {
             match instructions {
                 Ok(instructions) => {
                     module.set_triple(&options.target_triple);
+                    module.strip_debug_info();
 
                     Compiler::compile(&module, &builder, &context, instructions);
-                    let optimized_module: &Module<'_> =
-                        Optimizer::new(&module, instructions).optimize();
 
                     if !compile {
                         todo!()
                     }
 
-                    FileBuilder::new(&options, optimized_module).build();
+                    FileBuilder::new(&options, &module).build();
                 }
 
                 Err(msg) => {

@@ -6,6 +6,7 @@ use {
             build_const_integer, build_int_array_type_from_size, datatype_float_to_type,
             datatype_integer_to_type, datatype_to_fn_type, set_globals_options,
         },
+        objects::ThrushBasicValueEnum,
     },
     inkwell::{
         basic_block::BasicBlock,
@@ -110,8 +111,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 self.codegen(body);
                 self.build_const_integer_return(self.context.i32_type(), 0, false);
             }
-
-            Instruction::End => (),
 
             _ => todo!(),
         }
@@ -460,7 +459,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         let mut index: usize = 0;
 
         function.get_params().iter().for_each(|param| {
-            if let Some(Instruction::Param(name, _)) = params.get(index) {
+            if let Some(Instruction::Param { name, .. }) = params.get(index) {
                 param.set_name(name);
             }
 
@@ -520,12 +519,10 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             .unwrap()
     }
 
-    #[inline(always)]
     fn begin_scope(&mut self) {
         self.locals.clear();
     }
 
-    #[inline(always)]
     fn end_scope(&mut self) {
         self.locals.clear();
     }
@@ -568,9 +565,12 @@ pub enum Instruction<'ctx> {
         body: Box<Instruction<'ctx>>,
     },
     Value(ThrushBasicValueEnum<'ctx>),
-    Param(String, DataTypes),
+    Param {
+        name: &'ctx str,
+        kind: DataTypes,
+    },
     Function {
-        name: String,
+        name: &'ctx str,
         params: Vec<Instruction<'ctx>>,
         body: Box<Instruction<'ctx>>,
         return_kind: Option<DataTypes>,
@@ -578,34 +578,21 @@ pub enum Instruction<'ctx> {
     },
     Return(Box<Instruction<'ctx>>),
     Var {
-        name: String,
+        name: &'ctx str,
         kind: DataTypes,
         value: Option<Box<Instruction<'ctx>>>,
     },
     RefVar {
-        name: String,
+        name: &'ctx str,
         scope: Scope,
     },
     MutVar {
-        name: String,
+        name: &'ctx str,
         value: Box<Instruction<'ctx>>,
         scope: Scope,
     },
     Boolean(bool),
     Null,
-    End,
-}
-
-#[derive(Debug, Clone)]
-pub struct ThrushBasicValueEnum<'ctx> {
-    pub kind: DataTypes,
-    pub value: BasicValueEnum<'ctx>,
-}
-
-impl<'ctx> ThrushBasicValueEnum<'ctx> {
-    pub fn new(kind: DataTypes, value: BasicValueEnum<'ctx>) -> Self {
-        Self { kind, value }
-    }
 }
 
 #[derive(Default, Debug)]

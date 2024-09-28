@@ -7,7 +7,8 @@ use {
         },
         lexer::{DataTypes, Token, TokenKind},
     },
-    std::{collections::HashMap, mem},
+    ahash::AHashMap as HashMap,
+    std::mem,
 };
 
 const C_FMTS: [&str; 2] = ["%s", "%d"];
@@ -17,12 +18,11 @@ pub struct Parser<'instr, 'a> {
     errors: Vec<ThrushError>,
     pub tokens: Option<&'instr [Token]>,
     pub options: Option<&'a Options>,
-    fun: u16,
+    function: u16,
     ret: Option<DataTypes>,
     current: usize,
-    functions: HashMap<String, DataTypes>,
-    globals: HashMap<String, Instruction<'instr>>,
-    locals: Vec<HashMap<String, Instruction<'instr>>>,
+    globals: HashMap<&'instr str, DataTypes>,
+    locals: Vec<HashMap<&'instr str, DataTypes>>,
     scope: usize,
 }
 
@@ -35,10 +35,9 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             options: None,
             current: 0,
             ret: None,
-            fun: 0,
-            functions: HashMap::with_capacity(255),
-            globals: HashMap::with_capacity(255),
-            locals: Vec::with_capacity(255),
+            function: 0,
+            globals: HashMap::new(),
+            locals: Vec::new(),
             scope: 0,
         }
     }
@@ -67,8 +66,6 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             return Err(String::from("Compilation proccess ended with errors."));
         }
 
-        self.stmts.push(Instruction::End);
-
         Ok(self.stmts.as_slice())
     }
 
@@ -87,7 +84,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     fn var(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         self.advance();
 
-        let name: Token = self.consume(
+        let name: &'instr Token = self.consume(
             TokenKind::Identifier,
             ThrushErrorKind::SyntaxError,
             String::from("Expected variable name"),
@@ -98,21 +95,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             TokenKind::DataType(kind) => {
                 self.advance();
 
-                match kind {
-                    DataTypes::Bool => Some(DataTypes::Bool),
-                    DataTypes::U8 => Some(DataTypes::U8),
-                    DataTypes::U16 => Some(DataTypes::U16),
-                    DataTypes::U32 => Some(DataTypes::U32),
-                    DataTypes::U64 => Some(DataTypes::U64),
-                    DataTypes::I8 => Some(DataTypes::I8),
-                    DataTypes::I16 => Some(DataTypes::I16),
-                    DataTypes::I32 => Some(DataTypes::I32),
-                    DataTypes::I64 => Some(DataTypes::I64),
-                    DataTypes::F32 => Some(DataTypes::F32),
-                    DataTypes::F64 => Some(DataTypes::F64),
-                    DataTypes::String => Some(DataTypes::String),
-                    DataTypes::Void => Some(DataTypes::Void),
-                }
+                Some(kind.dereference())
             }
 
             _ => None,
@@ -140,7 +123,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             )?;
 
             return Ok(Instruction::Var {
-                name: name.lexeme.unwrap().to_string(),
+                name: name.lexeme.as_ref().unwrap(),
                 kind: kind.unwrap(),
                 value: None,
             });
@@ -209,21 +192,21 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             }
         }
 
-        self.define_local(name.lexeme.as_ref().unwrap().to_string(), value.clone());
-
-        let var: Instruction<'_> = if kind.as_ref().is_none() {
+        let variable: Instruction<'_> = if kind.as_ref().is_none() {
             Instruction::Var {
-                name: name.lexeme.unwrap().to_string(),
+                name: name.lexeme.as_ref().unwrap(),
                 kind: value.get_data_type(),
                 value: Some(Box::new(value)),
             }
         } else {
             Instruction::Var {
-                name: name.lexeme.unwrap().to_string(),
+                name: name.lexeme.as_ref().unwrap(),
                 kind: kind.unwrap(),
                 value: Some(Box::new(value)),
             }
         };
+
+        self.define_local(name.lexeme.as_ref().unwrap(), variable.get_kind().unwrap());
 
         self.consume(
             TokenKind::SemiColon,
@@ -232,7 +215,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             String::from("Expected ';'."),
         )?;
 
-        Ok(var)
+        Ok(variable)
     }
 
     fn pub_def(&mut self) -> Result<Instruction<'instr>, ThrushError> {
@@ -240,14 +223,14 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
         match &self.peek().kind {
             TokenKind::Def => Ok(self.def(true)?),
-            _ => todo!(),
+            _ => unimplemented!(),
         }
     }
 
     fn ret(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         self.advance();
 
-        if self.fun == 0 {
+        if self.function == 0 {
             return Err(ThrushError::Parse(
                 ThrushErrorKind::SyntaxError,
                 self.peek().lexeme.as_ref().unwrap().to_string(),
@@ -326,7 +309,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
         self.begin_function();
 
-        let name: Token = self.consume(
+        let name: &'instr Token = self.consume(
             TokenKind::Identifier,
             ThrushErrorKind::SyntaxError,
             String::from("Expected function name"),
@@ -427,7 +410,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 ));
             }
 
-            let ident: String = self.previous().lexeme.as_ref().unwrap().to_string();
+            let ident: &str = self.previous().lexeme.as_ref().unwrap();
 
             if !self.match_token(TokenKind::ColonColon) {
                 return Err(ThrushError::Parse(
@@ -444,26 +427,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 TokenKind::DataType(kind) => {
                     self.advance();
 
-                    match kind {
-                        DataTypes::I8 => DataTypes::I8,
-                        DataTypes::I16 => DataTypes::I16,
-                        DataTypes::I32 => DataTypes::I32,
-                        DataTypes::I64 => DataTypes::I64,
-
-                        DataTypes::U8 => DataTypes::U8,
-                        DataTypes::U16 => DataTypes::U16,
-                        DataTypes::U32 => DataTypes::U32,
-                        DataTypes::U64 => DataTypes::U64,
-
-                        DataTypes::F32 => DataTypes::F32,
-                        DataTypes::F64 => DataTypes::F64,
-
-                        DataTypes::Bool => DataTypes::Bool,
-
-                        DataTypes::String => DataTypes::String,
-
-                        DataTypes::Void => DataTypes::Void,
-                    }
+                    kind.dereference()
                 }
                 _ => {
                     return Err(ThrushError::Parse(
@@ -477,7 +441,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 }
             };
 
-            params.push(Instruction::Param(ident, kind))
+            params.push(Instruction::Param { name: ident, kind })
         }
 
         if self.peek().kind == TokenKind::Colon {
@@ -492,57 +456,10 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         let return_kind: Option<DataTypes> = match &self.peek().kind {
             TokenKind::DataType(kind) => {
                 self.advance();
-
-                match kind {
-                    DataTypes::I8 => Some(DataTypes::I8),
-                    DataTypes::I16 => Some(DataTypes::I16),
-                    DataTypes::I32 => Some(DataTypes::I32),
-                    DataTypes::I64 => Some(DataTypes::I64),
-
-                    DataTypes::U8 => Some(DataTypes::U8),
-                    DataTypes::U16 => Some(DataTypes::U16),
-                    DataTypes::U32 => Some(DataTypes::U32),
-                    DataTypes::U64 => Some(DataTypes::U64),
-
-                    DataTypes::F32 => Some(DataTypes::F32),
-                    DataTypes::F64 => Some(DataTypes::F64),
-
-                    DataTypes::Bool => Some(DataTypes::Bool),
-
-                    DataTypes::String => Some(DataTypes::String),
-
-                    DataTypes::Void => Some(DataTypes::Void),
-                }
+                Some(kind.dereference())
             }
             _ => None,
         };
-
-        let kind: DataTypes = match &return_kind {
-            Some(kind) => match kind {
-                DataTypes::I8 => DataTypes::I8,
-                DataTypes::I16 => DataTypes::I16,
-                DataTypes::I32 => DataTypes::I32,
-                DataTypes::I64 => DataTypes::I64,
-
-                DataTypes::U8 => DataTypes::U8,
-                DataTypes::U16 => DataTypes::U16,
-                DataTypes::U32 => DataTypes::U32,
-                DataTypes::U64 => DataTypes::U64,
-
-                DataTypes::F32 => DataTypes::F32,
-                DataTypes::F64 => DataTypes::F64,
-
-                DataTypes::Bool => DataTypes::Bool,
-
-                DataTypes::String => DataTypes::String,
-
-                DataTypes::Void => DataTypes::Void,
-            },
-
-            None => DataTypes::Void,
-        };
-
-        self.define_function(name.lexeme.as_ref().unwrap().to_string(), kind);
 
         let body: Box<Instruction> = Box::new(self.block()?);
 
@@ -585,8 +502,18 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
         self.end_function();
 
+        match &return_kind {
+            Some(kind) => {
+                self.define_global(name.lexeme.as_ref().unwrap(), kind.dereference());
+            }
+
+            None => {
+                self.define_global(name.lexeme.as_ref().unwrap(), DataTypes::Void);
+            }
+        }
+
         Ok(Instruction::Function {
-            name: name.lexeme.unwrap().to_string(),
+            name: name.lexeme.as_ref().unwrap(),
             params,
             body,
             return_kind,
@@ -625,7 +552,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             args.push(self.expr()?);
         }
 
-        if args.is_empty() {
+        if args.is_empty() && self.match_token(TokenKind::SemiColon) {
             return Err(ThrushError::Parse(
                 ThrushErrorKind::SyntaxError,
                 self.peek().lexeme.as_ref().unwrap().to_string(),
@@ -724,20 +651,20 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     let scope: Scope = self.find_scope(self.previous().lexeme.as_ref().unwrap())?;
 
                     if self.peek().kind == TokenKind::Eq {
-                        let name: String = self.previous().lexeme.unwrap().to_string();
+                        let name: &str = self.previous().lexeme.as_ref().unwrap();
                         self.advance();
 
                         let expr: Instruction<'instr> = self.expr()?;
 
                         match scope {
-                            Scope::Global => match self.globals.get(&name) {
+                            Scope::Global => match self.globals.get(name) {
                                 None => {}
                                 Some(instr) => {
                                     todo!()
                                 }
                             },
 
-                            Scope::Local => match self.locals[self.scope].get(&name) {
+                            Scope::Local => match self.locals[self.scope].get(name) {
                                 None => {}
                                 Some(instr) => {
                                     todo!()
@@ -753,7 +680,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     }
 
                     Instruction::RefVar {
-                        name: self.previous().lexeme.unwrap().to_string(),
+                        name: self.previous().lexeme.as_ref().unwrap(),
                         scope,
                     }
                 }
@@ -809,7 +736,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         error_kind: ThrushErrorKind,
         error_title: String,
         help: String,
-    ) -> Result<Token, ThrushError> {
+    ) -> Result<&'instr Token, ThrushError> {
         if self.peek().kind == kind {
             return Ok(self.advance());
         }
@@ -829,7 +756,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     fn find_scope(&self, name: &str) -> Result<Scope, ThrushError> {
         if self.locals[self.scope - 1].contains_key(name) {
             return Ok(Scope::Local);
-        } else if self.functions.contains_key(name) | self.globals.contains_key(name) {
+        } else if self.globals.contains_key(name) {
             return Ok(Scope::Global);
         }
 
@@ -846,41 +773,30 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         ))
     }
 
-    #[inline]
-    fn define_function(&mut self, name: String, kind: DataTypes) {
-        self.functions.insert(name, kind);
+    fn define_global(&mut self, name: &'instr str, kind: DataTypes) {
+        self.globals.insert(name, kind);
     }
 
-    #[inline]
-    fn define_global(&mut self, name: String, value: Instruction<'instr>) {
-        self.globals.insert(name, value);
+    fn define_local(&mut self, name: &'instr str, kind: DataTypes) {
+        self.locals[self.scope].insert(name, kind);
     }
 
-    #[inline]
-    fn define_local(&mut self, name: String, value: Instruction<'instr>) {
-        self.locals[self.scope - 1].insert(name, value);
-    }
-
-    #[inline]
     fn begin_scope(&mut self) {
         self.locals.push(HashMap::new());
         self.scope += 1;
     }
 
-    #[inline]
     fn end_scope(&mut self) {
         self.locals.pop();
         self.scope -= 1;
     }
 
-    #[inline]
     fn begin_function(&mut self) {
-        self.fun += 1;
+        self.function += 1;
     }
 
-    #[inline]
     fn end_function(&mut self) {
-        self.fun -= 1;
+        self.function -= 1;
     }
 
     fn check(&mut self, kind: TokenKind) -> bool {
@@ -902,20 +818,20 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         false
     }
 
-    fn advance(&mut self) -> Token {
+    fn advance(&mut self) -> &'instr Token {
         if !self.end() {
             self.current += 1;
         }
 
-        self.previous().clone()
+        self.previous()
     }
 
     fn peek(&self) -> Token {
         self.tokens.unwrap()[self.current].clone()
     }
 
-    fn previous(&self) -> Token {
-        self.tokens.unwrap()[self.current - 1].clone()
+    fn previous(&self) -> &'instr Token {
+        &self.tokens.unwrap()[self.current - 1]
     }
 
     fn end(&self) -> bool {
@@ -963,6 +879,13 @@ impl<'instr> Instruction<'instr> {
             Instruction::Boolean(_) => DataTypes::Bool,
 
             _ => unreachable!(),
+        }
+    }
+
+    pub fn get_kind(&self) -> Option<DataTypes> {
+        match self {
+            Instruction::Var { kind, .. } => Some(kind.dereference()),
+            _ => None,
         }
     }
 }

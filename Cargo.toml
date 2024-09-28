@@ -5,6 +5,7 @@ version = "1.0.0"
 edition = "2021"
 
 [dependencies]
+ahash = "*"
 chrono = "0.4.38"
 colored = "2.1.0"
 llvmenv = "0.3.2"

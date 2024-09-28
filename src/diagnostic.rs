@@ -81,13 +81,13 @@ impl Diagnostic {
     }
 
     fn print_report(&mut self, content: String, lexeme: String, help: String) {
-        self.print_header();
-
         let line: &str = content
             .lines()
-            .find(|line| line.trim().contains(lexeme.trim()))
+            .find(|line| line.contains(&lexeme))
             .expect("line not found in file.")
             .trim();
+
+        self.print_header();
 
         self.add_space_to_line();
         self.draw_line(line);

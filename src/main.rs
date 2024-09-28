@@ -227,7 +227,7 @@ fn main() {
 
             match instructions {
                 Ok(instructions) => {
-                    module.set_triple(&options.target_triple);
+                    /* module.set_triple(&options.target_triple);
                     module.strip_debug_info();
 
                     Compiler::compile(&module, &builder, &context, instructions);
@@ -236,7 +236,7 @@ fn main() {
                         todo!()
                     }
 
-                    FileBuilder::new(&options, &module).build();
+                    FileBuilder::new(&options, &module).build(); */
                 }
 
                 Err(msg) => {

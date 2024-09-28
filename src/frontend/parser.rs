@@ -1,9 +1,13 @@
 use {
     super::{
         super::{
-            backend::compiler::{Instruction, Options, Scope},
+            backend::{
+                compiler::{Instruction, Options, Scope},
+                objects::ThrushScoper,
+            },
             diagnostic::Diagnostic,
             error::{ThrushError, ThrushErrorKind},
+            logging::Logging,
         },
         lexer::{DataTypes, Token, TokenKind},
     },
@@ -24,6 +28,7 @@ pub struct Parser<'instr, 'a> {
     globals: HashMap<&'instr str, DataTypes>,
     locals: Vec<HashMap<&'instr str, DataTypes>>,
     scope: usize,
+    scoper: ThrushScoper<'instr>,
 }
 
 impl<'instr, 'a> Parser<'instr, 'a> {
@@ -37,8 +42,9 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             ret: None,
             function: 0,
             globals: HashMap::new(),
-            locals: Vec::new(),
+            locals: vec![HashMap::new()],
             scope: 0,
+            scoper: ThrushScoper::new(),
         }
     }
 
@@ -60,6 +66,11 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
         if !self.errors.is_empty() {
             for error in mem::take(&mut self.errors) {
+                if let ThrushError::Compile(msg) = error {
+                    Logging::new(msg).error();
+                    continue;
+                }
+
                 Diagnostic::new(error).report();
             }
 
@@ -73,7 +84,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         match &self.peek().kind {
             TokenKind::Print => Ok(self.print()?),
             TokenKind::Def => Ok(self.def(false)?),
-            TokenKind::LBrace => Ok(self.block()?),
+            TokenKind::LBrace => Ok(self.block(false, false)?),
             TokenKind::Return => Ok(self.ret()?),
             TokenKind::Pub => Ok(self.pub_def()?),
             TokenKind::Let => Ok(self.var()?),
@@ -288,7 +299,11 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         Ok(Instruction::Return(Box::new(value)))
     }
 
-    fn block(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+    fn block(
+        &mut self,
+        in_function: bool,
+        in_loop: bool,
+    ) -> Result<Instruction<'instr>, ThrushError> {
         self.advance();
 
         self.begin_scope();
@@ -300,6 +315,11 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         }
 
         self.end_scope();
+
+        self.scoper
+            .begin_scope(Instruction::Block(stmts.clone()), in_function, in_loop);
+
+        self.scoper.analyze()?;
 
         Ok(Instruction::Block(stmts))
     }
@@ -356,9 +376,20 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                         ));
                     }
 
-                    return Ok(Instruction::EntryPoint {
-                        body: Box::new(self.parse()?),
-                    });
+                    if self.peek().kind == TokenKind::LBrace {
+                        return Ok(Instruction::EntryPoint {
+                            body: Box::new(self.block(true, false)?),
+                        });
+                    } else {
+                        return Err(ThrushError::Parse(
+                            ThrushErrorKind::SyntaxError,
+                            self.peek().lexeme.as_ref().unwrap().to_string(),
+                            String::from("Syntax Error"),
+                            String::from("Expected 'block' for the function body."),
+                            self.peek().span,
+                            self.peek().line,
+                        ));
+                    }
                 }
 
                 _ => {
@@ -461,7 +492,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             _ => None,
         };
 
-        let body: Box<Instruction> = Box::new(self.block()?);
+        let body: Box<Instruction> = Box::new(self.block(true, false)?);
 
         match &return_kind {
             Some(kind) => {
@@ -648,7 +679,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 TokenKind::Identifier => {
                     self.advance();
 
-                    let scope: Scope = self.find_scope(self.previous().lexeme.as_ref().unwrap())?;
+                    let scope: Scope = self.find_scope(self.previous().lexeme.as_ref().unwrap());
 
                     if self.peek().kind == TokenKind::Eq {
                         let name: &str = self.previous().lexeme.as_ref().unwrap();
@@ -670,6 +701,8 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                                     todo!()
                                 }
                             },
+
+                            Scope::Unreachable => {}
                         }
 
                         return Ok(Instruction::MutVar {
@@ -753,24 +786,14 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         ))
     }
 
-    fn find_scope(&self, name: &str) -> Result<Scope, ThrushError> {
+    fn find_scope(&self, name: &str) -> Scope {
         if self.locals[self.scope - 1].contains_key(name) {
-            return Ok(Scope::Local);
+            return Scope::Local;
         } else if self.globals.contains_key(name) {
-            return Ok(Scope::Global);
+            return Scope::Global;
         }
 
-        Err(ThrushError::Parse(
-            ThrushErrorKind::UnreachableVariable,
-            self.peek().lexeme.as_ref().unwrap().to_string(),
-            String::from("Syntax Error"),
-            format!(
-                "Variable '{}' was not defined. You like to declare as let {} = ?;",
-                name, name
-            ),
-            self.peek().span,
-            self.peek().line,
-        ))
+        Scope::Unreachable
     }
 
     fn define_global(&mut self, name: &'instr str, kind: DataTypes) {
@@ -778,16 +801,14 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     }
 
     fn define_local(&mut self, name: &'instr str, kind: DataTypes) {
-        self.locals[self.scope].insert(name, kind);
+        self.locals[self.scope - 1].insert(name, kind);
     }
 
     fn begin_scope(&mut self) {
-        self.locals.push(HashMap::new());
         self.scope += 1;
     }
 
     fn end_scope(&mut self) {
-        self.locals.pop();
         self.scope -= 1;
     }
 

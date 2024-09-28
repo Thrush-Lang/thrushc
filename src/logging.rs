@@ -13,7 +13,7 @@ impl Logging {
     pub fn error(&self) {
         eprintln!(
             "- {} - {}{}{} {}",
-            Local::now().format("Y-%m-%d %H:%M:%S").to_string().bold(),
+            Local::now().format("%H:%M:%S").to_string().bold(),
             "[".bold(),
             "ERROR".bold().bright_red(),
             "]".bold(),
@@ -25,7 +25,7 @@ impl Logging {
     pub fn info(&self) {
         println!(
             "- {} - {}{}{} {}",
-            Local::now().format("Y-%m-%d %H:%M:%S").to_string().bold(),
+            Local::now().format("%H:%M:%S").to_string().bold(),
             "[".bold(),
             "INFO".bold().bright_green(),
             "]".bold(),

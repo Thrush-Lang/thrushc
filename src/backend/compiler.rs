@@ -207,6 +207,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         }
                     }
                 }
+
+                Scope::Unreachable => {}
             },
 
             _ => todo!(),
@@ -553,6 +555,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 pub enum Scope {
     Global,
     Local,
+    Unreachable,
 }
 
 #[derive(Debug, Clone)]

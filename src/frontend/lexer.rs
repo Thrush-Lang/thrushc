@@ -145,7 +145,7 @@ impl<'a> Lexer<'a> {
 
         match str::from_utf8(&self.code[self.start..self.current]).unwrap() {
             "let" => self.make(TokenKind::Let),
-            "def" => self.make(TokenKind::Def),
+            "fn" => self.make(TokenKind::Fn),
             "if" => self.make(TokenKind::If),
             "elif" => self.make(TokenKind::Elif),
             "else" => self.make(TokenKind::Else),
@@ -160,11 +160,12 @@ impl<'a> Lexer<'a> {
             "return" => self.make(TokenKind::Return),
             "break" => self.make(TokenKind::Break),
             "continue" => self.make(TokenKind::Continue),
+            "println" => self.make(TokenKind::Println),
             "print" => self.make(TokenKind::Print),
             "super" => self.make(TokenKind::Super),
             "this" => self.make(TokenKind::This),
             "extends" => self.make(TokenKind::Extends),
-            "pub" => self.make(TokenKind::Pub),
+            "public" => self.make(TokenKind::Public),
             "null" => self.make(TokenKind::Null),
 
             "u8" => self.make(TokenKind::DataType(DataTypes::U8)),
@@ -267,7 +268,7 @@ impl<'a> Lexer<'a> {
         let mut string: String =
             String::from_utf8_lossy(&self.code[self.start + 1..self.current - 1]).to_string();
 
-        string.push_str("\0A\x00");
+        string.push('\0');
 
         string = string.replace("\\n", "\n");
 
@@ -470,12 +471,12 @@ pub enum TokenKind {
     String,
 
     // --- Keywords ---
-    Pub,
+    Public,
     And,
     Struct,
     Else,
     False,
-    Def,
+    Fn,
     For,
     Continue,
     Break,
@@ -483,6 +484,7 @@ pub enum TokenKind {
     Elif,
     Null,
     Or,
+    Println,
     Print,
     Return,
     Super,
@@ -530,15 +532,16 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Struct => write!(f, "struct"),
             TokenKind::Else => write!(f, "else"),
             TokenKind::False => write!(f, "false"),
-            TokenKind::Def => write!(f, "def"),
+            TokenKind::Fn => write!(f, "fn"),
             TokenKind::For => write!(f, "for"),
             TokenKind::Continue => write!(f, "continue"),
             TokenKind::Break => write!(f, "break"),
             TokenKind::If => write!(f, "if"),
             TokenKind::Elif => write!(f, "elif"),
-            TokenKind::Pub => write!(f, "pub"),
+            TokenKind::Public => write!(f, "public"),
             TokenKind::Null => write!(f, "null"),
             TokenKind::Or => write!(f, "or"),
+            TokenKind::Println => write!(f, "println"),
             TokenKind::Print => write!(f, "print"),
             TokenKind::Return => write!(f, "return"),
             TokenKind::Super => write!(f, "super"),

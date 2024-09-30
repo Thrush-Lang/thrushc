@@ -79,11 +79,12 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
     fn parse(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         match &self.peek().kind {
+            TokenKind::Println => Ok(self.println()?),
             TokenKind::Print => Ok(self.print()?),
-            TokenKind::Def => Ok(self.def(false)?),
+            TokenKind::Fn => Ok(self.function(false)?),
             TokenKind::LBrace => Ok(self.block(false, false)?),
             TokenKind::Return => Ok(self.ret()?),
-            TokenKind::Pub => Ok(self.pub_def()?),
+            TokenKind::Public => Ok(self.public()?),
             TokenKind::Let => Ok(self.var()?),
             _ => Ok(self.expr()?),
         }
@@ -226,11 +227,11 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         Ok(variable)
     }
 
-    fn pub_def(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+    fn public(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         self.advance();
 
         match &self.peek().kind {
-            TokenKind::Def => Ok(self.def(true)?),
+            TokenKind::Fn => Ok(self.function(true)?),
             _ => unimplemented!(),
         }
     }
@@ -321,7 +322,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         Ok(Instruction::Block(stmts))
     }
 
-    fn def(&mut self, is_public: bool) -> Result<Instruction<'instr>, ThrushError> {
+    fn function(&mut self, is_public: bool) -> Result<Instruction<'instr>, ThrushError> {
         self.advance();
 
         self.begin_function();
@@ -351,54 +352,30 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 String::from("Expected ')'."),
             )?;
 
-            self.consume(
-                TokenKind::Colon,
-                ThrushErrorKind::SyntaxError,
-                String::from("Syntax Error"),
-                String::from("Expected ':' for the return."),
-            )?;
+            if self.peek().kind != TokenKind::LBrace {
+                return Err(ThrushError::Parse(
+                    ThrushErrorKind::SyntaxError,
+                    self.peek().lexeme.as_ref().unwrap().to_string(),
+                    String::from("Syntax Error"),
+                    String::from("Expected '{'."),
+                    self.peek().span,
+                    self.peek().line,
+                ));
+            }
 
-            match self.peek().kind {
-                TokenKind::DataType(DataTypes::Void) => {
-                    self.advance();
-
-                    if self.peek().kind != TokenKind::LBrace {
-                        return Err(ThrushError::Parse(
-                            ThrushErrorKind::SyntaxError,
-                            self.peek().lexeme.as_ref().unwrap().to_string(),
-                            String::from("Syntax Error"),
-                            String::from("Expected '{'."),
-                            self.peek().span,
-                            self.peek().line,
-                        ));
-                    }
-
-                    if self.peek().kind == TokenKind::LBrace {
-                        return Ok(Instruction::EntryPoint {
-                            body: Box::new(self.block(true, false)?),
-                        });
-                    } else {
-                        return Err(ThrushError::Parse(
-                            ThrushErrorKind::SyntaxError,
-                            self.peek().lexeme.as_ref().unwrap().to_string(),
-                            String::from("Syntax Error"),
-                            String::from("Expected 'block' for the function body."),
-                            self.peek().span,
-                            self.peek().line,
-                        ));
-                    }
-                }
-
-                _ => {
-                    return Err(ThrushError::Parse(
-                        ThrushErrorKind::SyntaxError,
-                        self.peek().lexeme.as_ref().unwrap().to_string(),
-                        String::from("Syntax Error"),
-                        String::from("Expected 'void' type return."),
-                        self.peek().span,
-                        self.peek().line,
-                    ));
-                }
+            if self.peek().kind == TokenKind::LBrace {
+                return Ok(Instruction::EntryPoint {
+                    body: Box::new(self.block(true, false)?),
+                });
+            } else {
+                return Err(ThrushError::Parse(
+                    ThrushErrorKind::SyntaxError,
+                    self.peek().lexeme.as_ref().unwrap().to_string(),
+                    String::from("Syntax Error"),
+                    String::from("Expected 'block' for the function body."),
+                    self.peek().span,
+                    self.peek().line,
+                ));
             }
         }
 
@@ -586,6 +563,108 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 self.peek().lexeme.as_ref().unwrap().to_string(),
                 String::from("Syntax Error"),
                 String::from(
+                    "Expected at least 1 argument for 'println' call. Like 'print(`Hi!`);'",
+                ),
+                self.peek().span,
+                self.peek().line,
+            ));
+        } else if let Instruction::String(str) = &args[0] {
+            if args.len() <= 1 && C_FMTS.iter().any(|fmt| str.contains(*fmt)) {
+                self.consume(
+                    TokenKind::SemiColon,
+                    ThrushErrorKind::SyntaxError,
+                    String::from("Syntax Error"),
+                    String::from("Expected ';'."),
+                )?;
+
+                return Err(ThrushError::Parse(
+                    ThrushErrorKind::SyntaxError,
+                    self.peek().lexeme.as_ref().unwrap().to_string(),
+                    String::from("Syntax Error"),
+                    String::from(
+                        "Expected at least 2 arguments for 'println' call. Like 'print(`%d`, 2);'",
+                    ),
+                    self.peek().span,
+                    self.peek().line,
+                ));
+            }
+        }
+
+        self.consume(
+            TokenKind::SemiColon,
+            ThrushErrorKind::SyntaxError,
+            String::from("Syntax Error"),
+            String::from("Expected ';'."),
+        )?;
+
+        args.iter().try_for_each(|arg| match arg {
+            Instruction::String(str) => {
+                if str.contains("\n") {
+                    return Err(ThrushError::Parse(
+                        ThrushErrorKind::SyntaxError,
+                        self.peek().lexeme.as_ref().unwrap().to_string(),
+                        String::from("Syntax Error"),
+                        String::from(
+                            "You can't print strings that contain newlines. Use 'println' instead.",
+                        ),
+                        self.peek().span,
+                        self.peek().line,
+                    ));
+                }
+
+                Ok(())
+            }
+            _ => Ok(()),
+        })?;
+
+        Ok(Instruction::Print(args))
+    }
+
+    fn println(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+        self.advance();
+
+        self.consume(
+            TokenKind::LParen,
+            ThrushErrorKind::SyntaxError,
+            String::from("Syntax Error"),
+            String::from("Expected '('."),
+        )?;
+
+        let mut args: Vec<Instruction<'instr>> = Vec::with_capacity(24);
+
+        while !self.match_token(TokenKind::RParen) {
+            if self.match_token(TokenKind::Comma) {
+                continue;
+            }
+
+            if args.len() >= 24 {
+                return Err(ThrushError::Parse(
+                    ThrushErrorKind::TooManyArguments,
+                    self.peek().lexeme.as_ref().unwrap().to_string(),
+                    String::from("Syntax Error"),
+                    String::from("Expected ')'. Too many arguments. Max is 24."),
+                    self.peek().span,
+                    self.peek().line,
+                ));
+            }
+
+            let expr: Instruction<'_> = match self.expr()? {
+                Instruction::String(mut str) => {
+                    str.push('\n');
+                    Instruction::String(str)
+                }
+                expr => expr,
+            };
+
+            args.push(expr);
+        }
+
+        if args.is_empty() && self.match_token(TokenKind::SemiColon) {
+            return Err(ThrushError::Parse(
+                ThrushErrorKind::SyntaxError,
+                self.peek().lexeme.as_ref().unwrap().to_string(),
+                String::from("Syntax Error"),
+                String::from(
                     "Expected at least 1 argument for 'println' call. Like 'println(`Hi!`);'",
                 ),
                 self.peek().span,
@@ -620,7 +699,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             String::from("Expected ';'."),
         )?;
 
-        Ok(Instruction::Print(args))
+        Ok(Instruction::Println(args))
     }
 
     fn expr(&mut self) -> Result<Instruction<'instr>, ThrushError> {
@@ -985,7 +1064,7 @@ impl<'ctx> ThrushScoper<'ctx> {
             self.analyze_instruction(body, depth)?;
         }
 
-        if let Instruction::Print(params) = instr {
+        if let Instruction::Println(params) = instr {
             for instr in params {
                 self.analyze_instruction(instr, depth)?;
             }
@@ -1021,8 +1100,24 @@ impl<'ctx> ThrushScoper<'ctx> {
                 Ok(())
             }
 
-            e => {
-                println!("{:?}", e);
+            Instruction::Println(params) => {
+                for instr in params {
+                    self.analyze_instruction(instr, depth)?;
+                }
+
+                Ok(())
+            }
+
+            Instruction::Print(params) => {
+                for instr in params {
+                    self.analyze_instruction(instr, depth)?;
+                }
+
+                Ok(())
+            }
+
+            stmt => {
+                println!("{:?}", stmt);
 
                 todo!()
             }

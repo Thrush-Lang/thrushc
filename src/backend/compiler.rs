@@ -95,8 +95,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 self.emit_global_string_constant(string, "");
             }
 
-            Instruction::Print(args) => {
-                self.emit_print(args);
+            Instruction::Println(data) | Instruction::Print(data) => {
+                self.emit_print(data);
             }
 
             Instruction::Var { name, kind, value } => match value {
@@ -560,6 +560,7 @@ pub enum Scope {
 
 #[derive(Debug, Clone)]
 pub enum Instruction<'ctx> {
+    Println(Vec<Instruction<'ctx>>),
     Print(Vec<Instruction<'ctx>>),
     String(String),
     Integer(DataTypes, f64),

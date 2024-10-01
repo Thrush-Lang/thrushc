@@ -61,6 +61,8 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             }
         }
 
+        println!("{:?}", self.scoper.analyze()?);
+
         if !self.errors.is_empty() {
             for error in mem::take(&mut self.errors) {
                 if let ThrushError::Compile(msg) = error {
@@ -135,6 +137,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 name: name.lexeme.as_ref().unwrap(),
                 kind: kind.unwrap(),
                 value: None,
+                line: name.line,
             });
         }
 
@@ -206,12 +209,14 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 name: name.lexeme.as_ref().unwrap(),
                 kind: value.get_data_type(),
                 value: Some(Box::new(value)),
+                line: name.line,
             }
         } else {
             Instruction::Var {
                 name: name.lexeme.as_ref().unwrap(),
                 kind: kind.unwrap(),
                 value: Some(Box::new(value)),
+                line: name.line,
             }
         };
 
@@ -302,7 +307,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         in_function: bool,
         in_loop: bool,
     ) -> Result<Instruction<'instr>, ThrushError> {
-        self.advance();
+        let line: usize = self.advance().line;
 
         self.begin_scope();
 
@@ -314,12 +319,16 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
         self.end_scope();
 
-        self.scoper
-            .begin_scope(Instruction::Block(stmts.clone()), in_function, in_loop);
+        self.scoper.begin_scope(
+            Instruction::Block {
+                stmts: stmts.clone(),
+                line,
+            },
+            in_function,
+            in_loop,
+        );
 
-        self.scoper.analyze()?;
-
-        Ok(Instruction::Block(stmts))
+        Ok(Instruction::Block { stmts, line })
     }
 
     fn function(&mut self, is_public: bool) -> Result<Instruction<'instr>, ThrushError> {
@@ -791,6 +800,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     Instruction::RefVar {
                         name: self.previous().lexeme.as_ref().unwrap(),
                         scope,
+                        line: self.previous().line,
                     }
                 }
 
@@ -877,15 +887,17 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     }
 
     fn define_local(&mut self, name: &'instr str, kind: DataTypes) {
-        self.locals[self.scope - 1].insert(name, kind);
+        self.locals[self.scope].insert(name, kind);
     }
 
     fn begin_scope(&mut self) {
         self.scope += 1;
+        self.locals.push(HashMap::new());
     }
 
     fn end_scope(&mut self) {
         self.scope -= 1;
+        self.locals.pop();
     }
 
     fn begin_function(&mut self) {
@@ -894,14 +906,6 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
     fn end_function(&mut self) {
         self.function -= 1;
-    }
-
-    fn check(&mut self, kind: TokenKind) -> bool {
-        if self.end() {
-            return false;
-        }
-
-        self.peek().kind == kind
     }
 
     fn match_token(&mut self, kind: TokenKind) -> bool {
@@ -999,6 +1003,7 @@ pub struct ThrushBlock<'ctx> {
     position: usize,
     in_function: bool,
     in_loop: bool,
+    line: usize,
 }
 
 #[derive(Debug)]
@@ -1018,42 +1023,51 @@ impl<'ctx> ThrushScoper<'ctx> {
     pub fn begin_scope(&mut self, instr: Instruction<'ctx>, in_function: bool, in_loop: bool) {
         self.count += 1;
 
-        if let Instruction::Block(body) = instr {
-            let mut instructions: Vec<ThrushInstruction> = Vec::with_capacity(body.len());
+        if let Instruction::Block { stmts, line } = instr {
+            let mut instructions: Vec<ThrushInstruction> = Vec::with_capacity(stmts.len());
+            let mut depth: usize = 0;
 
-            for (depth, instr) in body.iter().enumerate() {
+            stmts.iter().for_each(|instr| {
                 instructions.push(ThrushInstruction {
                     instr: instr.clone(),
                     depth,
                 });
-            }
+
+                depth += 1;
+            });
 
             self.blocks.push(ThrushBlock::new(
                 instructions,
                 self.count,
                 in_function,
                 in_loop,
+                line,
             ));
         }
     }
 
-    pub fn analyze(&self) -> Result<(), ThrushError> {
-        for instr in &self.blocks[self.count - 1].instructions {
-            self.analyze_instruction(&instr.instr, instr.depth)?;
-        }
+    pub fn analyze(&self) -> Result<(), String> {
+        self.blocks[self.count - 1]
+            .instructions
+            .iter()
+            .try_for_each(
+                |instr| match self.analyze_instruction(&instr.instr, instr.depth) {
+                    Ok(()) => Ok(()),
+                    Err(e) => Err(e),
+                },
+            )?;
 
         Ok(())
     }
 
-    fn analyze_instruction(
-        &self,
-        instr: &Instruction<'ctx>,
-        depth: usize,
-    ) -> Result<(), ThrushError> {
-        if let Instruction::Block(body) = instr {
-            for instr in body {
-                self.analyze_instruction(instr, depth + 1)?;
-            }
+    fn analyze_instruction(&self, instr: &Instruction<'ctx>, depth: usize) -> Result<(), String> {
+        if let Instruction::Block { stmts, .. } = instr {
+            stmts
+                .iter()
+                .try_for_each(|instr| match self.analyze_instruction(instr, depth) {
+                    Ok(()) => Ok(()),
+                    Err(e) => Err(e),
+                })?;
         }
 
         if let Instruction::Function { body, .. } = instr {
@@ -1065,53 +1079,70 @@ impl<'ctx> ThrushScoper<'ctx> {
         }
 
         if let Instruction::Println(params) = instr {
-            for instr in params {
-                self.analyze_instruction(instr, depth)?;
-            }
+            params
+                .iter()
+                .try_for_each(|instr| match self.analyze_instruction(instr, depth) {
+                    Ok(()) => Ok(()),
+                    Err(e) => Err(e),
+                })?;
         }
 
         match instr {
             Instruction::String(_) => Ok(()),
             Instruction::Var { .. } => Ok(()),
-            Instruction::RefVar { name, .. } => {
+            Instruction::RefVar { name, line, .. } => {
                 if !self.is_at_current_scope(name) && !self.is_at_top_scope(name) {
-                    return Err(ThrushError::Compile(format!(
-                        "Variable: `{}` is not defined.",
-                        name
-                    )));
+                    return Err(format!("Variable: `{}` is not defined.", name));
                 }
 
                 if self.is_at_current_scope(name)
-                    && !self.is_reacheable_at_curret_scope(name, depth)
+                    && !self.is_reacheable_at_current_scope(name, *line)
                 {
-                    return Err(ThrushError::Compile(format!(
+                    return Err(format!(
                         "Variable: `{}` is unreacheable in this scope.",
                         name
-                    )));
+                    ));
                 }
 
-                if self.is_at_top_scope(name) && !self.is_reacheable_at_top_scope(name, depth) {
-                    return Err(ThrushError::Compile(format!(
+                if self.is_at_top_scope(name) && !self.is_reacheable_at_top_scope(name) {
+                    return Err(format!(
                         "Variable: `{}` is unreacheable in the top scope.",
                         name
-                    )));
+                    ));
                 }
 
                 Ok(())
             }
 
             Instruction::Println(params) => {
-                for instr in params {
-                    self.analyze_instruction(instr, depth)?;
-                }
+                params.iter().try_for_each(|instr| {
+                    match self.analyze_instruction(instr, depth) {
+                        Ok(()) => Ok(()),
+                        Err(e) => Err(e),
+                    }
+                })?;
 
                 Ok(())
             }
 
             Instruction::Print(params) => {
-                for instr in params {
-                    self.analyze_instruction(instr, depth)?;
-                }
+                params.iter().try_for_each(|instr| {
+                    match self.analyze_instruction(instr, depth) {
+                        Ok(()) => Ok(()),
+                        Err(e) => Err(e),
+                    }
+                })?;
+
+                Ok(())
+            }
+
+            Instruction::Block { stmts, .. } => {
+                stmts.iter().try_for_each(|instr| {
+                    match self.analyze_instruction(instr, depth) {
+                        Ok(()) => Ok(()),
+                        Err(e) => Err(e),
+                    }
+                })?;
 
                 Ok(())
             }
@@ -1124,12 +1155,20 @@ impl<'ctx> ThrushScoper<'ctx> {
         }
     }
 
-    fn is_reacheable_at_curret_scope(&self, name: &str, depth: usize) -> bool {
+    fn is_reacheable_at_current_scope(&self, name: &str, refvar_line: usize) -> bool {
         self.blocks[self.count - 1]
             .instructions
             .iter()
             .any(|instr| match instr.instr {
-                Instruction::Var { name: n, .. } => *n == *name && depth >= instr.depth,
+                Instruction::Var { name: n, line, .. } if *n == *name => {
+                    if line > refvar_line {
+                        println!("yei");
+
+                        return false;
+                    }
+
+                    true
+                }
                 _ => false,
             })
     }
@@ -1144,18 +1183,24 @@ impl<'ctx> ThrushScoper<'ctx> {
             })
     }
 
-    fn is_reacheable_at_top_scope(&self, name: &str, depth: usize) -> bool {
-        for block in &self.blocks {
-            if block.in_function || block.in_loop {
-                continue;
-            }
-
-            if block.position == self.blocks[self.count - 1].position {
+    fn is_reacheable_at_top_scope(&self, name: &str) -> bool {
+        for (index, block) in self.blocks.iter().rev().enumerate() {
+            if index >= self.count - 1 {
                 return false;
             }
 
             if block.instructions.iter().any(|instr| match instr.instr {
-                Instruction::Var { name: n, .. } => *n == *name && depth >= instr.depth,
+                Instruction::Var { name: n, line, .. } if *n == *name => {
+                    if block.line > self.blocks[self.count - 1].line {
+                        return false;
+                    }
+
+                    if line > self.blocks[self.count - 1].line {
+                        return false;
+                    }
+
+                    true
+                }
                 _ => false,
             }) {
                 return true;
@@ -1166,15 +1211,7 @@ impl<'ctx> ThrushScoper<'ctx> {
     }
 
     fn is_at_top_scope(&self, name: &str) -> bool {
-        for block in &self.blocks {
-            if block.in_function || block.in_loop {
-                continue;
-            }
-
-            if block.position == self.blocks[self.count - 1].position {
-                return false;
-            }
-
+        for block in self.blocks.iter().rev() {
             if block.instructions.iter().any(|instr| match instr.instr {
                 Instruction::Var { name: n, .. } => *n == *name,
                 _ => false,
@@ -1198,12 +1235,14 @@ impl<'ctx> ThrushBlock<'ctx> {
         position: usize,
         in_function: bool,
         in_loop: bool,
+        line: usize,
     ) -> Self {
         Self {
             instructions,
             position,
             in_function,
             in_loop,
+            line,
         }
     }
 }

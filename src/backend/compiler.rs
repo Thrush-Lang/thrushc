@@ -67,10 +67,10 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
     fn codegen(&mut self, instr: &'ctx Instruction<'ctx>) {
         match instr {
-            Instruction::Block(body) => {
+            Instruction::Block { stmts, .. } => {
                 self.begin_scope();
 
-                body.iter().for_each(|instr| {
+                stmts.iter().for_each(|instr| {
                     self.codegen(instr);
                 });
 
@@ -99,7 +99,9 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 self.emit_print(data);
             }
 
-            Instruction::Var { name, kind, value } => match value {
+            Instruction::Var {
+                name, kind, value, ..
+            } => match value {
                 Some(value) => {
                     self.emit_variable(name, kind, value);
                 }
@@ -171,7 +173,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 args.push(build_const_integer(self.context, kind, *num).into());
             }
 
-            Instruction::RefVar { name, scope } => match scope {
+            Instruction::RefVar { name, scope, .. } => match scope {
                 Scope::Global => {
                     todo!()
                 }
@@ -564,7 +566,10 @@ pub enum Instruction<'ctx> {
     Print(Vec<Instruction<'ctx>>),
     String(String),
     Integer(DataTypes, f64),
-    Block(Vec<Instruction<'ctx>>),
+    Block {
+        stmts: Vec<Instruction<'ctx>>,
+        line: usize,
+    },
     EntryPoint {
         body: Box<Instruction<'ctx>>,
     },
@@ -585,10 +590,12 @@ pub enum Instruction<'ctx> {
         name: &'ctx str,
         kind: DataTypes,
         value: Option<Box<Instruction<'ctx>>>,
+        line: usize,
     },
     RefVar {
         name: &'ctx str,
         scope: Scope,
+        line: usize,
     },
     MutVar {
         name: &'ctx str,

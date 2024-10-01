@@ -58,6 +58,14 @@ impl Diagnostic {
                 ThrushErrorKind::SyntaxError => {
                     self.print_report(content, lexeme, help);
                 }
+
+                ThrushErrorKind::UnreachableVariable => {
+                    self.print_report(content, lexeme, help);
+                }
+
+                ThrushErrorKind::VariableNotDefined => {
+                    self.print_report(content, lexeme, help);
+                }
                 _ => {}
             },
 

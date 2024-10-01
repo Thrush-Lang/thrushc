@@ -1,10 +1,4 @@
-use {
-    super::{
-        super::{error::ThrushError, frontend::lexer::DataTypes},
-        compiler::Instruction,
-    },
-    inkwell::values::BasicValueEnum,
-};
+use {super::super::frontend::lexer::DataTypes, inkwell::values::BasicValueEnum};
 
 #[derive(Debug, Clone)]
 pub struct ThrushBasicValueEnum<'ctx> {

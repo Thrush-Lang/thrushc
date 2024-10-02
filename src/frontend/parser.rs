@@ -1091,22 +1091,15 @@ impl<'ctx> ThrushScoper<'ctx> {
             Instruction::String(_) => Ok(()),
             Instruction::Var { .. } => Ok(()),
             Instruction::RefVar { name, line, .. } => {
-                if !self.is_at_current_scope(name) && !self.is_at_top_scope(name) {
+                if !self.is_at_current_scope(name, None) {
                     return Err(format!("Variable: `{}` is not defined.", name));
                 }
 
-                if self.is_at_current_scope(name)
-                    && !self.is_reacheable_at_current_scope(name, *line)
+                if self.is_at_current_scope(name, None)
+                    && !self.is_reacheable_at_current_scope(name, *line, None)
                 {
                     return Err(format!(
                         "Variable: `{}` is unreacheable in this scope.",
-                        name
-                    ));
-                }
-
-                if self.is_at_top_scope(name) && !self.is_reacheable_at_top_scope(name) {
-                    return Err(format!(
-                        "Variable: `{}` is unreacheable in the top scope.",
                         name
                     ));
                 }
@@ -1155,77 +1148,73 @@ impl<'ctx> ThrushScoper<'ctx> {
         }
     }
 
-    fn is_reacheable_at_current_scope(&self, name: &str, refvar_line: usize) -> bool {
-        self.blocks[self.count - 1]
+    fn is_reacheable_at_current_scope(
+        &self,
+        name: &str,
+        refvar_line: usize,
+        block: Option<&Instruction<'ctx>>,
+    ) -> bool {
+        if block.is_some() {
+            if let Instruction::Block { stmts, .. } = block.as_ref().unwrap() {
+                return stmts.iter().rev().any(|instr| match instr {
+                    Instruction::Var { name: n, line, .. } if *n == name => {
+                        if *line > refvar_line {
+                            return false;
+                        }
+
+                        true
+                    }
+                    Instruction::Block { .. } => self.is_at_current_scope(name, Some(instr)),
+                    _ => false,
+                });
+            }
+        }
+
+        /* SOLUCIONAR EL UNREACHEABLE  */
+
+        self.blocks
+            .last()
+            .unwrap()
             .instructions
             .iter()
+            .rev()
             .any(|instr| match instr.instr {
                 Instruction::Var { name: n, line, .. } if *n == *name => {
                     if line > refvar_line {
-                        println!("yei");
-
                         return false;
                     }
 
                     true
                 }
+                Instruction::Block { .. } => {
+                    self.is_reacheable_at_current_scope(name, refvar_line, Some(&instr.instr))
+                }
                 _ => false,
             })
     }
 
-    fn is_at_current_scope(&self, name: &str) -> bool {
-        self.blocks[self.count - 1]
+    fn is_at_current_scope(&self, name: &str, block: Option<&Instruction<'ctx>>) -> bool {
+        if block.is_some() {
+            if let Instruction::Block { stmts, .. } = block.as_ref().unwrap() {
+                return stmts.iter().rev().any(|instr| match instr {
+                    Instruction::Var { name: n, .. } if *n == name => true,
+                    Instruction::Block { .. } => self.is_at_current_scope(name, Some(instr)),
+                    _ => false,
+                });
+            }
+        }
+
+        self.blocks
+            .last()
+            .unwrap()
             .instructions
             .iter()
-            .any(|instr| match instr.instr {
-                Instruction::Var { name: n, .. } => *n == *name,
+            .rev()
+            .any(|instr| match &instr.instr {
+                Instruction::Var { name: n, .. } => *n == name,
+                Instruction::Block { .. } => self.is_at_current_scope(name, Some(&instr.instr)),
                 _ => false,
             })
-    }
-
-    fn is_reacheable_at_top_scope(&self, name: &str) -> bool {
-        for (index, block) in self.blocks.iter().rev().enumerate() {
-            if index >= self.count - 1 {
-                return false;
-            }
-
-            if block.instructions.iter().any(|instr| match instr.instr {
-                Instruction::Var { name: n, line, .. } if *n == *name => {
-                    if block.line > self.blocks[self.count - 1].line {
-                        return false;
-                    }
-
-                    if line > self.blocks[self.count - 1].line {
-                        return false;
-                    }
-
-                    true
-                }
-                _ => false,
-            }) {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    fn is_at_top_scope(&self, name: &str) -> bool {
-        for block in self.blocks.iter().rev() {
-            if block.instructions.iter().any(|instr| match instr.instr {
-                Instruction::Var { name: n, .. } => *n == *name,
-                _ => false,
-            }) {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    pub fn end_scope(&mut self) {
-        self.blocks.pop();
-        self.count -= 1;
     }
 }
 

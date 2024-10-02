@@ -608,10 +608,10 @@ impl std::fmt::Display for DataTypes {
 impl DataTypes {
     pub fn dereference(&self) -> DataTypes {
         match &self {
-            DataTypes::U8 => DataTypes::I8,
-            DataTypes::U16 => DataTypes::I16,
-            DataTypes::U32 => DataTypes::I32,
-            DataTypes::U64 => DataTypes::I64,
+            DataTypes::U8 => DataTypes::U8,
+            DataTypes::U16 => DataTypes::U16,
+            DataTypes::U32 => DataTypes::U32,
+            DataTypes::U64 => DataTypes::U64,
             DataTypes::I8 => DataTypes::I8,
             DataTypes::I16 => DataTypes::I16,
             DataTypes::I32 => DataTypes::I32,

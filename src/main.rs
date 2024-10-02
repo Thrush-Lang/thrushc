@@ -17,7 +17,6 @@ use {
         module::Module,
         targets::{InitializationConfig, Target, TargetMachine, TargetTriple},
     },
-    logging::Logging,
     std::{env, fs::read_to_string, path::Path, sync::Mutex},
 };
 
@@ -66,38 +65,38 @@ fn main() {
                 let path: &Path = Path::new(&parameters[index]);
 
                 if !path.exists() {
-                    Logging::new(format!(
+                    logging::error(&format!(
                         "The path or file '{}' cannot be accessed.",
                         &parameters[index]
-                    ))
-                    .error();
+                    ));
+
                     return;
                 }
 
                 if !path.is_file() {
-                    Logging::new(format!(
+                    logging::error(&format!(
                         "The path '{}' ended with not a file.",
                         &parameters[index]
-                    ))
-                    .error();
+                    ));
+
                     return;
                 }
 
                 if path.extension().is_none() {
-                    Logging::new(format!(
+                    logging::error(&format!(
                         "The file in path '{}' does not have an extension.",
                         &parameters[index]
-                    ))
-                    .error();
+                    ));
+
                     return;
                 }
 
                 if path.extension().unwrap() != "th" {
-                    Logging::new(format!(
+                    logging::error(&format!(
                         "The file in path '{}' does not have the extension '.th'.",
                         &parameters[index]
-                    ))
-                    .error();
+                    ));
+
                     return;
                 }
 
@@ -113,11 +112,11 @@ fn main() {
                                 continue;
                             }
 
-                            Logging::new(format!(
+                            logging::error(&format!(
                                 "The target '{}' is not supported, see the list with Thrushr --print-targets.",
                                 &parameters[index]
-                            ))
-                            .error();
+                            ));
+
                             return;
                         }
                         "--optimization" | "-opt" => match parameters[i + 1].as_str() {
@@ -201,7 +200,7 @@ fn main() {
     }
 
     let origin_content: String = read_to_string(&options.path).unwrap_or_else(|error| {
-        Logging::new(error.to_string()).error();
+        logging::error(error.to_string().as_str());
         panic!()
     });
 
@@ -240,13 +239,13 @@ fn main() {
                 }
 
                 Err(msg) => {
-                    Logging::new(msg).error();
+                    logging::error(&msg);
                 }
             }
         }
 
         Err(msg) => {
-            Logging::new(msg).error();
+            logging::error(&msg);
         }
     }
 }

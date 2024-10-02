@@ -43,7 +43,7 @@ impl<'a> Lexer<'a> {
             self.start = self.current;
 
             match self.scan() {
-                Ok(_) => {}
+                Ok(()) => {}
                 Err(e) => self.errors.push(e),
             }
         }

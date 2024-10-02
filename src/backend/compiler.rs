@@ -1,6 +1,6 @@
 use {
     super::{
-        super::{frontend::lexer::DataTypes, logging::Logging},
+        super::{frontend::lexer::DataTypes, logging},
         llvm::{
             build_alloca_with_float, build_alloca_with_integer, build_const_float,
             build_const_integer, build_int_array_type_from_size, datatype_float_to_type,
@@ -68,13 +68,9 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     fn codegen(&mut self, instr: &'ctx Instruction<'ctx>) {
         match instr {
             Instruction::Block { stmts, .. } => {
-                self.begin_scope();
-
                 stmts.iter().for_each(|instr| {
                     self.codegen(instr);
                 });
-
-                self.end_scope();
             }
 
             Instruction::Function {
@@ -92,7 +88,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             }
 
             Instruction::String(string) => {
-                self.emit_global_string_constant(string, "");
+                self.emit_global_string_constant(string);
             }
 
             Instruction::Println(data) | Instruction::Print(data) => {
@@ -434,7 +430,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
             Instruction::String(string) => {
                 self.builder
-                    .build_return(Some(&self.emit_global_string_constant(string, "")))
+                    .build_return(Some(&self.emit_global_string_constant(string)))
                     .unwrap();
             }
 
@@ -481,11 +477,11 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         }
     }
 
-    fn emit_global_string_constant(&mut self, string: &str, name: &str) -> PointerValue<'ctx> {
+    fn emit_global_string_constant(&mut self, string: &str) -> PointerValue<'ctx> {
         let kind: ArrayType<'_> = self.context.i8_type().array_type(string.len() as u32);
         let global: GlobalValue<'_> =
             self.module
-                .add_global(kind, Some(AddressSpace::default()), name);
+                .add_global(kind, Some(AddressSpace::default()), "");
         global.set_linkage(Linkage::Private);
         global.set_initializer(&self.context.const_string(string.as_ref(), false));
         global.set_constant(true);
@@ -494,7 +490,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             .build_pointer_cast(
                 global.as_pointer_value(),
                 self.context.ptr_type(AddressSpace::default()),
-                name,
+                "",
             )
             .unwrap()
     }
@@ -521,14 +517,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 name,
             )
             .unwrap()
-    }
-
-    fn begin_scope(&mut self) {
-        self.locals.clear();
-    }
-
-    fn end_scope(&mut self) {
-        self.locals.clear();
     }
 
     fn build_const_integer_return(&mut self, kind: IntType, value: u64, signed: bool) {
@@ -701,8 +689,8 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
                                 .output()
                                 .unwrap();
                         }
-                        Err(err) => {
-                            Logging::new(err).error();
+                        Err(error) => {
+                            logging::error(&error);
                             return;
                         }
                     }
@@ -720,8 +708,8 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
                                 .output()
                                 .unwrap();
                         }
-                        Err(err) => {
-                            Logging::new(err).error();
+                        Err(error) => {
+                            logging::error(&error);
                             return;
                         }
                     }
@@ -730,8 +718,7 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
                 remove_file(format!("{}.bc", self.options.name)).unwrap();
             }
             Err(_) => {
-                Logging::new("Compilation failed. Clang version 17 is not installed.".to_string())
-                    .error();
+                logging::error("Compilation failed. Clang version 17 is not installed.");
             }
         }
     }

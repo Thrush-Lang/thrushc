@@ -345,7 +345,10 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
                 self.locals.insert(
                     name.to_string(),
-                    Instruction::Value(ThrushBasicValueEnum::new(kind.dereference(), load)),
+                    Instruction::Value(ThrushBasicValueEnum {
+                        kind: kind.dereference(),
+                        value: load,
+                    }),
                 );
             }
 
@@ -395,7 +398,10 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
                 self.locals.insert(
                     name.to_string(),
-                    Instruction::Value(ThrushBasicValueEnum::new(kind.dereference(), load)),
+                    Instruction::Value(ThrushBasicValueEnum {
+                        kind: kind.dereference(),
+                        value: load,
+                    }),
                 );
             }
 
@@ -405,10 +411,10 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
                     self.locals.insert(
                         name.to_string(),
-                        Instruction::Value(ThrushBasicValueEnum::new(
-                            DataTypes::String,
-                            string.into(),
-                        )),
+                        Instruction::Value(ThrushBasicValueEnum {
+                            kind: DataTypes::String,
+                            value: string.into(),
+                        }),
                     );
                 }
 
@@ -556,7 +562,6 @@ pub enum Instruction<'ctx> {
     Integer(DataTypes, f64),
     Block {
         stmts: Vec<Instruction<'ctx>>,
-        line: usize,
     },
     EntryPoint {
         body: Box<Instruction<'ctx>>,

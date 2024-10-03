@@ -84,7 +84,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             TokenKind::Println => Ok(self.println()?),
             TokenKind::Print => Ok(self.print()?),
             TokenKind::Fn => Ok(self.function(false)?),
-            TokenKind::LBrace => Ok(self.block(false, false)?),
+            TokenKind::LBrace => Ok(self.block()?),
             TokenKind::Return => Ok(self.ret()?),
             TokenKind::Public => Ok(self.public()?),
             TokenKind::Let => Ok(self.var()?),
@@ -302,11 +302,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         Ok(Instruction::Return(Box::new(value)))
     }
 
-    fn block(
-        &mut self,
-        in_function: bool,
-        in_loop: bool,
-    ) -> Result<Instruction<'instr>, ThrushError> {
+    fn block(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         let line: usize = self.advance().line;
 
         self.begin_scope();
@@ -319,16 +315,11 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
         self.end_scope();
 
-        self.scoper.begin_scope(
-            Instruction::Block {
-                stmts: stmts.clone(),
-                line,
-            },
-            in_function,
-            in_loop,
-        );
+        self.scoper.scope(Instruction::Block {
+            stmts: stmts.clone(),
+        });
 
-        Ok(Instruction::Block { stmts, line })
+        Ok(Instruction::Block { stmts })
     }
 
     fn function(&mut self, is_public: bool) -> Result<Instruction<'instr>, ThrushError> {
@@ -374,7 +365,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
             if self.peek().kind == TokenKind::LBrace {
                 return Ok(Instruction::EntryPoint {
-                    body: Box::new(self.block(true, false)?),
+                    body: Box::new(self.block()?),
                 });
             } else {
                 return Err(ThrushError::Parse(
@@ -475,7 +466,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             _ => None,
         };
 
-        let body: Box<Instruction> = Box::new(self.block(true, false)?);
+        let body: Box<Instruction> = Box::new(self.block()?);
 
         match &return_kind {
             Some(kind) => {
@@ -1001,10 +992,6 @@ pub struct ThrushScoper<'ctx> {
 #[derive(Debug)]
 pub struct ThrushBlock<'ctx> {
     instructions: Vec<ThrushInstruction<'ctx>>,
-    position: usize,
-    in_function: bool,
-    in_loop: bool,
-    line: usize,
 }
 
 #[derive(Debug)]
@@ -1021,23 +1008,17 @@ impl<'ctx> ThrushScoper<'ctx> {
         }
     }
 
-    pub fn begin_scope(&mut self, instr: Instruction<'ctx>, in_function: bool, in_loop: bool) {
+    pub fn scope(&mut self, instr: Instruction<'ctx>) {
         self.count += 1;
 
-        if let Instruction::Block { stmts, line } = instr {
+        if let Instruction::Block { stmts, .. } = instr {
             let mut instructions: Vec<ThrushInstruction> = Vec::with_capacity(stmts.len());
 
             for instr in stmts {
                 instructions.push(ThrushInstruction { instr });
             }
 
-            self.blocks.push(ThrushBlock::new(
-                instructions,
-                self.count,
-                in_function,
-                in_loop,
-                line,
-            ));
+            self.blocks.push(ThrushBlock { instructions });
         }
     }
 
@@ -1096,8 +1077,6 @@ impl<'ctx> ThrushScoper<'ctx> {
         }
 
         match instr {
-            Instruction::String(_) => Ok(()),
-            Instruction::Var { .. } => Ok(()),
             Instruction::RefVar { name, line, .. } => {
                 if !self.is_at_current_scope(name, None) {
                     return Err(ThrushError::Compile(format!(
@@ -1154,7 +1133,7 @@ impl<'ctx> ThrushScoper<'ctx> {
             stmt => {
                 println!("{:?}", stmt);
 
-                todo!()
+                Ok(())
             }
         }
     }
@@ -1224,23 +1203,5 @@ impl<'ctx> ThrushScoper<'ctx> {
                 Instruction::Block { .. } => self.is_at_current_scope(name, Some(&instr.instr)),
                 _ => false,
             })
-    }
-}
-
-impl<'ctx> ThrushBlock<'ctx> {
-    pub fn new(
-        instructions: Vec<ThrushInstruction<'ctx>>,
-        position: usize,
-        in_function: bool,
-        in_loop: bool,
-        line: usize,
-    ) -> Self {
-        Self {
-            instructions,
-            position,
-            in_function,
-            in_loop,
-            line,
-        }
     }
 }

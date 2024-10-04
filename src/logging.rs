@@ -1,25 +1,34 @@
 use {chrono::Local, colored::Colorize};
 
-#[inline]
-pub fn error(msg: &str) {
-    eprintln!(
-        "- {} - {}{}{} {}",
-        Local::now().format("%H:%M:%S").to_string().bold(),
-        "[".bold(),
-        "ERROR".bold().bright_red(),
-        "]".bold(),
-        msg.bold()
-    );
+pub enum LogType {
+    INFO,
+    WARN,
+    ERROR,
 }
 
+impl LogType {
+    fn to_str(&self) -> &str {
+        match self {
+            LogType::INFO => "INFO",
+            LogType::WARN => "WARN",
+            LogType::ERROR=> "ERROR",
+
+        }
+    }
+}
+
+/// Logs a message to the compiler standard output (CSO)
 #[inline]
-pub fn info(msg: &str) {
+pub fn log(ltype: LogType, msg: &str) {
+
     println!(
         "- {} - {}{}{} {}",
         Local::now().format("%H:%M:%S").to_string().bold(),
         "[".bold(),
-        "INFO".bold().bright_green(),
+        ltype.to_str().bold().bright_red(),
         "]".bold(),
         msg.bold()
     );
+
 }
+

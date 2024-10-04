@@ -65,7 +65,7 @@ fn main() {
                 let path: &Path = Path::new(&parameters[index]);
 
                 if !path.exists() {
-                    logging::error(&format!(
+                    logging::log(logging::LogType::ERROR, &format!(
                         "The path or file '{}' cannot be accessed.",
                         &parameters[index]
                     ));
@@ -74,7 +74,7 @@ fn main() {
                 }
 
                 if !path.is_file() {
-                    logging::error(&format!(
+                    logging::log(logging::LogType::ERROR, &format!(
                         "The path '{}' ended with not a file.",
                         &parameters[index]
                     ));
@@ -83,7 +83,7 @@ fn main() {
                 }
 
                 if path.extension().is_none() {
-                    logging::error(&format!(
+                    logging::log(logging::LogType::ERROR, &format!(
                         "The file in path '{}' does not have an extension.",
                         &parameters[index]
                     ));
@@ -92,7 +92,7 @@ fn main() {
                 }
 
                 if path.extension().unwrap() != "th" {
-                    logging::error(&format!(
+                    logging::log(logging::LogType::ERROR, &format!(
                         "The file in path '{}' does not have the extension '.th'.",
                         &parameters[index]
                     ));
@@ -112,7 +112,7 @@ fn main() {
                                 continue;
                             }
 
-                            logging::error(&format!(
+                            logging::log(logging::LogType::ERROR, &format!(
                                 "The target '{}' is not supported, see the list with Thrushr --print-targets.",
                                 &parameters[index]
                             ));
@@ -200,7 +200,7 @@ fn main() {
     }
 
     let origin_content: String = read_to_string(&options.path).unwrap_or_else(|error| {
-        logging::error(error.to_string().as_str());
+        logging::log(logging::LogType::ERROR, error.to_string().as_str());
         panic!()
     });
 
@@ -239,13 +239,13 @@ fn main() {
                 }
 
                 Err(msg) => {
-                    logging::error(&msg);
+                    logging::log(logging::LogType::ERROR, &msg);
                 }
             }
         }
 
         Err(msg) => {
-            logging::error(&msg);
+            logging::log(logging::LogType::ERROR, &msg);
         }
     }
 }

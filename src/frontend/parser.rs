@@ -66,7 +66,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         if !self.errors.is_empty() {
             for error in mem::take(&mut self.errors) {
                 if let ThrushError::Compile(msg) = error {
-                    logging::error(&msg);
+                    logging::log(logging::LogType::ERROR, &msg);
                     continue;
                 }
 
@@ -1039,7 +1039,7 @@ impl<'ctx> ThrushScoper<'ctx> {
         if !self.errors.is_empty() {
             self.errors.iter().for_each(|e| {
                 if let ThrushError::Compile(msg) = e {
-                    logging::error(msg);
+                    logging::log(logging::LogType::ERROR, msg); // &msg?
                 }
             });
 

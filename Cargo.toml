@@ -1,0 +1,23 @@
+[package]
+name = "thrushc"
+description = "The Compiler for Thrush Programming language."
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+regex = "*"
+ahash = "*"
+colored = "*"
+llvmenv = "*"
+llvm-sys = { version = "180.0.0", features = ["force-static"] }
+inkwell = { version = "0.5.0", features = [
+    "llvm18-0",
+    "llvm18-0-force-static",
+] }
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = true
+debug = false
+strip = true

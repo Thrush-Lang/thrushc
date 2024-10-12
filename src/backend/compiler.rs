@@ -16,8 +16,8 @@ use {
         targets::{CodeModel, RelocMode, TargetMachine, TargetTriple},
         types::{ArrayType, FunctionType, IntType},
         values::{
-            BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, InstructionValue,
-            IntValue, PointerValue, VectorValue,
+            BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, InstructionOpcode,
+            InstructionValue, IntValue, PointerValue,
         },
         AddressSpace,
     },
@@ -132,7 +132,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     fn define_printf(&mut self) {
         let printf: FunctionType = self.context.i32_type().fn_type(
             &[self.context.ptr_type(AddressSpace::default()).into()],
-            false,
+            true,
         );
         self.module
             .add_function("printf", printf, Some(Linkage::External));
@@ -176,23 +176,79 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 );
             }
 
-            Instruction::Integer(kind, num) => {
-                args.push(build_const_integer(self.context, kind, *num as u64).into());
-            }
+            Instruction::Integer(kind, num) => match kind {
+                DataTypes::F32 | DataTypes::F64 => {
+                    args.push(build_const_float(self.context, kind, *num).into())
+                }
+                _ => args.push(build_const_integer(self.context, kind, *num as u64).into()),
+            },
 
-            Instruction::RefVar { name, .. } => match self.get_variable(name) {
-                Some(var) => {
+            Instruction::RefVar { name, kind, .. } => {
+                if let Some(var) = self.get_variable(name) {
                     let ptr: PointerValue<'ctx> = var.0.dissamble_to_pointer_value().unwrap();
 
-                    args.push(
-                        self.builder
-                            .build_load(ptr.get_type(), ptr, "")
-                            .unwrap()
-                            .into(),
-                    );
+                    match kind {
+                        DataTypes::U8
+                        | DataTypes::Char
+                        | DataTypes::U16
+                        | DataTypes::U32
+                        | DataTypes::U64
+                        | DataTypes::I8
+                        | DataTypes::I16
+                        | DataTypes::I32
+                        | DataTypes::I64 => args.push(
+                            self.builder
+                                .build_load(datatype_integer_to_type(self.context, kind), ptr, "")
+                                .unwrap()
+                                .into(),
+                        ),
+
+                        DataTypes::F32 => {
+                            let load: BasicValueEnum<'ctx> = self
+                                .builder
+                                .build_load(datatype_float_to_type(self.context, kind), ptr, "")
+                                .unwrap();
+
+                            let bitcast: BasicValueEnum<'ctx> = self
+                                .builder
+                                .build_cast(
+                                    InstructionOpcode::FPExt,
+                                    load.into_float_value(),
+                                    self.context.f64_type(),
+                                    "",
+                                )
+                                .unwrap();
+
+                            args.push(bitcast.into())
+                        }
+
+                        DataTypes::F64 => args.push(
+                            self.builder
+                                .build_load(datatype_float_to_type(self.context, kind), ptr, "")
+                                .unwrap()
+                                .into(),
+                        ),
+
+                        DataTypes::String => args.push(
+                            self.builder
+                                .build_load(ptr.get_type(), ptr, "")
+                                .unwrap()
+                                .into(),
+                        ),
+
+                        DataTypes::Bool => args.push(
+                            self.builder
+                                .build_load(self.context.bool_type(), ptr, "")
+                                .unwrap()
+                                .into(),
+                        ),
+
+                        _ => todo!(),
+                    }
+                } else {
+                    todo!()
                 }
-                None => todo!(),
-            },
+            }
 
             Instruction::Char(char) => {
                 args.push(self.context.i8_type().const_int(*char as u64, false).into());
@@ -865,21 +921,12 @@ pub enum Opt {
 
 trait Dissambler<'ctx> {
     fn dissamble_to_pointer_value(&self) -> Option<PointerValue<'ctx>>;
-    fn dissamble_to_vec_value(&self) -> Option<&VectorValue<'ctx>>;
 }
 
 impl<'ctx> Dissambler<'ctx> for BasicValueEnum<'ctx> {
     fn dissamble_to_pointer_value(&self) -> Option<PointerValue<'ctx>> {
         if let BasicValueEnum::PointerValue(value) = &self {
             return Some(*value);
-        }
-
-        None
-    }
-
-    fn dissamble_to_vec_value(&self) -> Option<&VectorValue<'ctx>> {
-        if let BasicValueEnum::VectorValue(value) = &self {
-            return Some(value);
         }
 
         None

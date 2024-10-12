@@ -1,6 +1,5 @@
 use {
-    super::super::frontend::lexer::DataTypes,
-    super::compiler::Instruction,
+    super::{super::frontend::lexer::DataTypes, compiler::Instruction},
     inkwell::{
         builder::Builder,
         context::Context,

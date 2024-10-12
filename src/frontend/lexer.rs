@@ -138,7 +138,7 @@ impl<'a> Lexer<'a> {
         }
 
         match str::from_utf8(&self.code[self.start..self.current]).unwrap() {
-            "let" => self.make(TokenKind::Let),
+            "var" => self.make(TokenKind::Var),
             "fn" => self.make(TokenKind::Fn),
             "if" => self.make(TokenKind::If),
             "elif" => self.make(TokenKind::Elif),
@@ -205,12 +205,10 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
 
-
         let kind: DataTypes =
             self.eval_integer_type(self.lexeme(), self.line)?;
 
         let num: Result<f64, ParseFloatError> = self.lexeme().parse::<f64>();
-
 
         if num.is_err() {
             return Err(ThrushError::Parse(
@@ -342,17 +340,19 @@ impl<'a> Lexer<'a> {
                 )),
             };
         } else if lexeme.contains(".") {
-            return match lexeme.parse::<f64>() {
-                Ok(_) => Ok(DataTypes::F64),
-                Err(_) => Err(ThrushError::Parse(
-                    ThrushErrorKind::ParsedNumber,
-      
-                    String::from("The number is too big for an float."),
-                    String::from("Did you provide a valid number with the correct format and not out of bounds?"),
-  
-                    line,
-                )),
-            };
+
+            if lexeme.parse::<f32>().is_ok() {
+                return Ok(DataTypes::F32);
+            } else if lexeme.parse::<f64>().is_ok() {
+                return Ok(DataTypes::F64);
+            } 
+
+            return Err(ThrushError::Parse(
+                ThrushErrorKind::ParsedNumber,
+                String::from("The number is too big for an float."),
+                String::from("Did you provide a valid number with the correct format and not out of bounds?"),
+                line,
+            ));
         }
 
 
@@ -505,7 +505,7 @@ pub enum TokenKind {
     Super,
     This,
     True,
-    Let,
+    Var,
     Const,
     While,
     Extends,
@@ -562,7 +562,7 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Super => write!(f, "super"),
             TokenKind::This => write!(f, "this"),
             TokenKind::True => write!(f, "true"),
-            TokenKind::Let => write!(f, "let"),
+            TokenKind::Var => write!(f, "var"),
             TokenKind::Const => write!(f, "const"),
             TokenKind::While => write!(f, "while"),
             TokenKind::Extends => write!(f, "extends"),

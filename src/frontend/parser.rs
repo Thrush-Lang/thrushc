@@ -24,7 +24,7 @@ const VALID_INTEGER_TYPES: [DataTypes; 8] = [
 ];
 const VALID_FLOAT_TYPES: [DataTypes; 2] = [DataTypes::F32, DataTypes::F64];
 
-const C_FMTS: [&str; 4] = ["%s", "%d", "%c", "%ld"];
+const STANDARD_FORMATS: [&str; 5] = ["%s", "%d", "%c", "%ld", "%f"];
 
 pub struct Parser<'instr, 'a> {
     stmts: Vec<Instruction<'instr>>,
@@ -105,7 +105,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             TokenKind::LBrace => Ok(self.block()?),
             TokenKind::Return => Ok(self.ret()?),
             TokenKind::Public => Ok(self.public()?),
-            TokenKind::Let => Ok(self.variable()?),
+            TokenKind::Var => Ok(self.variable()?),
             _ => Ok(self.expr()?),
         }
     }
@@ -117,7 +117,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             TokenKind::Identifier,
             ThrushErrorKind::SyntaxError,
             String::from("Expected variable name"),
-            String::from("Expected let <name>."),
+            String::from("Expected var (name)."),
         )?;
 
         let mut kind: Option<DataTypes> = match &self.peek().kind {
@@ -671,7 +671,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 self.peek().line,
             ));
         } else if let Instruction::String(str) = &args[0] {
-            if args.len() <= 1 && C_FMTS.iter().any(|fmt| str.contains(*fmt)) {
+            if args.len() <= 1 && STANDARD_FORMATS.iter().any(|fmt| str.contains(*fmt)) {
                 self.consume(
                     TokenKind::SemiColon,
                     ThrushErrorKind::SyntaxError,
@@ -774,7 +774,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 self.peek().line,
             ));
         } else if let Instruction::String(str) = &args[0] {
-            if args.len() == 1 && C_FMTS.iter().any(|fmt| str.trim().contains(*fmt)) {
+            if args.len() == 1 && STANDARD_FORMATS.iter().any(|fmt| str.trim().contains(*fmt)) {
                 self.consume(
                     TokenKind::SemiColon,
                     ThrushErrorKind::SyntaxError,
@@ -807,10 +807,19 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 ));
             }
 
-            let origin_fmts: Vec<String> = self.extract_fmts(str);
-            let fmts: Vec<&String> = origin_fmts.iter().collect::<Vec<_>>();
+            let formats: Vec<&str> = str
+                .trim()
+                .split("%")
+                .skip(1)
+                .filter_map(|fmt| {
+                    STANDARD_FORMATS
+                        .iter()
+                        .find(|std_fmt| format!("%{}", fmt.trim()).contains(**std_fmt))
+                        .copied()
+                })
+                .collect();
 
-            if fmts.len() != types.len() {
+            if formats.len() != types.len() {
                 self.consume(
                     TokenKind::SemiColon,
                     ThrushErrorKind::SyntaxError,
@@ -828,7 +837,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
             for (index, kind) in types.iter().enumerate() {
                 match kind {
-                    DataTypes::String if fmts[index] != "%s" && fmts[index] != "%s\0" => {
+                    DataTypes::String if formats[index] != "%s" => {
                         self.consume(
                             TokenKind::SemiColon,
                             ThrushErrorKind::SyntaxError,
@@ -844,7 +853,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                         ));
                     }
 
-                    DataTypes::Char if fmts[index] != "%c" && fmts[index] != "%c\0" => {
+                    DataTypes::Char if formats[index] != "%c" => {
                         self.consume(
                             TokenKind::SemiColon,
                             ThrushErrorKind::SyntaxError,
@@ -861,7 +870,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     }
 
                     DataTypes::U8 | DataTypes::U16 | DataTypes::I8 | DataTypes::I16
-                        if fmts[index] != "%d" && fmts[index] != "%d\0" =>
+                        if formats[index] != "%d" =>
                     {
                         self.consume(
                             TokenKind::SemiColon,
@@ -881,13 +890,24 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     }
 
                     DataTypes::U32 | DataTypes::U64 | DataTypes::I32 | DataTypes::I64
-                        if fmts[index] != "%ld" && fmts[index] != "%ld\0" =>
+                        if formats[index] != "%ld" =>
                     {
                         return Err(ThrushError::Parse(
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from(
                                 "The formating for integer type (32 bits - 64 bits) is '%ld'.",
+                            ),
+                            self.previous().line,
+                        ));
+                    }
+
+                    DataTypes::F32 | DataTypes::F64 if formats[index] != "%f" => {
+                        return Err(ThrushError::Parse(
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            String::from(
+                                "The formating for float type (32 bits - 64 bits) is '%f'.",
                             ),
                             self.previous().line,
                         ));
@@ -931,32 +951,15 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     self.only_advance()?;
 
                     match kind {
-                        DataTypes::I8 => Instruction::Integer(DataTypes::I8, (*num as i8).into()),
-                        DataTypes::I16 => {
-                            Instruction::Integer(DataTypes::I16, (*num as i16).into())
-                        }
-                        DataTypes::I32 => {
-                            Instruction::Integer(DataTypes::I32, (*num as i32).into())
-                        }
-                        DataTypes::I64 => {
-                            Instruction::Integer(DataTypes::I64, (*num as i64) as f64)
-                        }
-
-                        DataTypes::U8 => Instruction::Integer(DataTypes::U8, (*num as u8).into()),
-                        DataTypes::U16 => {
-                            Instruction::Integer(DataTypes::U16, (*num as u16).into())
-                        }
-                        DataTypes::U32 => {
-                            Instruction::Integer(DataTypes::U32, (*num as u32).into())
-                        }
-                        DataTypes::U64 => {
-                            Instruction::Integer(DataTypes::U64, (*num as u64) as f64)
-                        }
-
-                        DataTypes::F32 => {
-                            Instruction::Integer(DataTypes::F32, (*num as f32).into())
-                        }
-
+                        DataTypes::I8 => Instruction::Integer(DataTypes::I8, *num),
+                        DataTypes::I16 => Instruction::Integer(DataTypes::I16, *num),
+                        DataTypes::I32 => Instruction::Integer(DataTypes::I32, *num),
+                        DataTypes::I64 => Instruction::Integer(DataTypes::I64, *num),
+                        DataTypes::U8 => Instruction::Integer(DataTypes::U8, *num),
+                        DataTypes::U16 => Instruction::Integer(DataTypes::U16, *num),
+                        DataTypes::U32 => Instruction::Integer(DataTypes::U32, *num),
+                        DataTypes::U64 => Instruction::Integer(DataTypes::U64, *num),
+                        DataTypes::F32 => Instruction::Integer(DataTypes::F32, *num),
                         DataTypes::F64 => Instruction::Integer(DataTypes::F64, *num),
 
                         _ => unreachable!(),
@@ -1090,47 +1093,34 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         ))
     }
 
-    fn extract_fmts(&self, input: &str) -> Vec<String> {
-        let mut fmts: Vec<String> = Vec::new();
-
-        for fmt in input.trim().split("%") {
-            let fmt: &str = fmt.trim();
-
-            if fmt == "%" {
-                continue;
-            } else if C_FMTS
-                .iter()
-                .any(|c_fmt| fmt.contains(c_fmt.split("%").collect::<Vec<_>>()[1]))
-            {
-                fmts.push(format!("%{}", fmt).to_string());
-            }
-        }
-
-        fmts
-    }
-
+    #[inline]
     fn define_global(&mut self, name: &'instr str, kind: DataTypes) {
         self.globals.insert(name, kind);
     }
 
+    #[inline]
     fn define_local(&mut self, name: &'instr str, kind: DataTypes) {
         self.locals[self.scope].insert(name, kind);
     }
 
+    #[inline]
     fn begin_scope(&mut self) {
         self.scope += 1;
         self.locals.push(HashMap::new());
     }
 
+    #[inline]
     fn end_scope(&mut self) {
         self.scope -= 1;
         self.locals.pop();
     }
 
+    #[inline]
     fn begin_function(&mut self) {
         self.function += 1;
     }
 
+    #[inline]
     fn end_function(&mut self) {
         self.function -= 1;
     }
@@ -1188,7 +1178,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             }
 
             match self.peek().kind {
-                TokenKind::Let | TokenKind::Fn => return,
+                TokenKind::Var | TokenKind::Fn => return,
                 _ => (),
             }
 

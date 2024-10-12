@@ -642,6 +642,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             String::from("Expected '('."),
         )?;
 
+        let mut types: Vec<DataTypes> = Vec::with_capacity(24);
         let mut args: Vec<Instruction<'instr>> = Vec::with_capacity(24);
 
         while !self.match_token(TokenKind::RParen)? {
@@ -649,7 +650,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 continue;
             }
 
-            if args.len() >= 24 {
+            if args.len() >= 24 || types.len() >= 24 {
                 return Err(ThrushError::Parse(
                     ThrushErrorKind::TooManyArguments,
                     String::from("Syntax Error"),
@@ -658,20 +659,24 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 ));
             }
 
-            args.push(self.expr()?);
+            let expr: Instruction<'instr> = self.expr()?;
+
+            if !args.is_empty() {
+                types.push(expr.get_data_type());
+            }
+
+            args.push(expr);
         }
 
         if args.is_empty() && self.match_token(TokenKind::SemiColon)? {
             return Err(ThrushError::Parse(
                 ThrushErrorKind::SyntaxError,
                 String::from("Syntax Error"),
-                String::from(
-                    "Expected at least 1 argument for 'println' call. Like 'print(`Hi!`);'",
-                ),
+                String::from("Expected at least 1 argument for 'print' call. Like 'print(`Hi!`);'"),
                 self.peek().line,
             ));
         } else if let Instruction::String(str) = &args[0] {
-            if args.len() <= 1 && STANDARD_FORMATS.iter().any(|fmt| str.contains(*fmt)) {
+            if args.len() == 1 && STANDARD_FORMATS.iter().any(|fmt| str.trim().contains(*fmt)) {
                 self.consume(
                     TokenKind::SemiColon,
                     ThrushErrorKind::SyntaxError,
@@ -685,8 +690,132 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     String::from(
                         "Expected at least 2 arguments for 'println' call. Like 'print(`%d`, 2);'",
                     ),
-                    self.peek().line,
+                    self.previous().line,
                 ));
+            } else if types.len() != args.iter().skip(1).collect::<Vec<_>>().len() {
+                self.consume(
+                    TokenKind::SemiColon,
+                    ThrushErrorKind::SyntaxError,
+                    String::from("Syntax Error"),
+                    String::from("Expected ';'."),
+                )?;
+
+                return Err(ThrushError::Parse(
+                    ThrushErrorKind::SyntaxError,
+                    String::from("Syntax Error"),
+                    String::from("The formating and arguments should be the same count."),
+                    self.previous().line,
+                ));
+            }
+
+            let formats: Vec<&str> = str
+                .trim()
+                .split("%")
+                .skip(1)
+                .filter_map(|fmt| {
+                    STANDARD_FORMATS
+                        .iter()
+                        .find(|std_fmt| format!("%{}", fmt.trim()).contains(**std_fmt))
+                        .copied()
+                })
+                .collect();
+
+            if formats.len() != types.len() {
+                self.consume(
+                    TokenKind::SemiColon,
+                    ThrushErrorKind::SyntaxError,
+                    String::from("Syntax Error"),
+                    String::from("Expected ';'."),
+                )?;
+
+                return Err(ThrushError::Parse(
+                    ThrushErrorKind::SyntaxError,
+                    String::from("Syntax Error"),
+                    String::from("Argument without an specific formatter `%x`."),
+                    self.previous().line,
+                ));
+            }
+
+            for (index, kind) in types.iter().enumerate() {
+                match kind {
+                    DataTypes::String if formats[index] != "%s" => {
+                        self.consume(
+                            TokenKind::SemiColon,
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            String::from("Expected ';'."),
+                        )?;
+
+                        return Err(ThrushError::Parse(
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            String::from("The formating for string type is '%s'."),
+                            self.previous().line,
+                        ));
+                    }
+
+                    DataTypes::Char if formats[index] != "%c" => {
+                        self.consume(
+                            TokenKind::SemiColon,
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            String::from("Expected ';'."),
+                        )?;
+
+                        return Err(ThrushError::Parse(
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            String::from("The formating for char type is '%c'."),
+                            self.previous().line,
+                        ));
+                    }
+
+                    DataTypes::U8 | DataTypes::U16 | DataTypes::I8 | DataTypes::I16
+                        if formats[index] != "%d" =>
+                    {
+                        self.consume(
+                            TokenKind::SemiColon,
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            String::from("Expected ';'."),
+                        )?;
+
+                        return Err(ThrushError::Parse(
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            String::from(
+                                "The formating for integer type (8 bits - 16 bits) is '%d'.",
+                            ),
+                            self.previous().line,
+                        ));
+                    }
+
+                    DataTypes::U32 | DataTypes::U64 | DataTypes::I32 | DataTypes::I64
+                        if formats[index] != "%ld" =>
+                    {
+                        return Err(ThrushError::Parse(
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            String::from(
+                                "The formating for integer type (32 bits - 64 bits) is '%ld'.",
+                            ),
+                            self.previous().line,
+                        ));
+                    }
+
+                    DataTypes::F32 | DataTypes::F64 if formats[index] != "%f" => {
+                        return Err(ThrushError::Parse(
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            String::from(
+                                "The formating for float type (32 bits - 64 bits) is '%f'.",
+                            ),
+                            self.previous().line,
+                        ));
+                    }
+
+                    _ => {}
+                }
             }
         }
 

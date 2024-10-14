@@ -131,9 +131,6 @@ fn main() {
                             return;
                         }
                         "--optimization" | "-opt" => match parameters[i + 1].as_str() {
-                            "none" => {
-                                options.optimization = Opt::None;
-                            }
                             "low" => {
                                 options.optimization = Opt::Low;
                             }

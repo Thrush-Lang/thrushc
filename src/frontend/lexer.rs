@@ -420,14 +420,17 @@ impl<'a> Lexer<'a> {
         false
     }
 
+    #[inline]
     fn end(&self) -> bool {
         self.current >= self.code.len()
     }
 
+    #[inline]
     fn is_alpha(&self, ch: u8) -> bool {
         ch.is_ascii_lowercase() || ch.is_ascii_uppercase() || ch == b'_'
     }
 
+    #[inline]
     fn lexeme(&self) -> String {
         String::from_utf8_lossy(&self.code[self.start..self.current]).to_string()
     }

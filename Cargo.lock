@@ -1418,7 +1418,6 @@ dependencies = [
  "inkwell",
  "llvm-sys",
  "llvmenv",
- "regex",
 ]
 
 [[package]]

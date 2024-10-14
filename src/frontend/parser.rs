@@ -9,7 +9,6 @@ use {
         lexer::{DataTypes, Token, TokenKind},
     },
     ahash::AHashMap as HashMap,
-    regex::Regex,
 };
 
 const VALID_INTEGER_TYPES: [DataTypes; 8] = [

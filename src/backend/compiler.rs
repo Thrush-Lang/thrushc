@@ -18,7 +18,7 @@ use {
             BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, InstructionOpcode,
             InstructionValue, IntValue, PointerValue,
         },
-        AddressSpace,
+        AddressSpace, IntPredicate,
     },
     std::{
         collections::HashMap,
@@ -793,7 +793,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
         self.builder.position_at_end(block_append);
 
-        let vector: PointerValue<'_> = self
+        let string: PointerValue<'_> = self
             .builder
             .build_load(
                 function_append.get_first_param().unwrap().get_type(),
@@ -811,7 +811,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 .builder
                 .build_in_bounds_gep(
                     self.context.i8_type(),
-                    vector,
+                    string,
                     &[function_append.get_last_param().unwrap().into_int_value()],
                     "",
                 )
@@ -826,6 +826,100 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         }
 
         self.builder.build_return(None).unwrap();
+
+        /*
+        ---------------------------------
+
+            i8 @String.extract
+
+        ---------------------------------
+        */
+
+        let function_string_extract: FunctionValue<'_> = self.module.add_function(
+            "String.extract",
+            self.context.i8_type().fn_type(
+                &[
+                    self.context.ptr_type(AddressSpace::default()).into(),
+                    self.context.i64_type().into(),
+                ],
+                true,
+            ),
+            Some(Linkage::Private),
+        );
+
+        function_string_extract.set_param_alignment(0, 4);
+        function_string_extract.set_param_alignment(1, 4);
+
+        let block_string_extract: BasicBlock<'_> =
+            self.context.append_basic_block(function_string_extract, "");
+
+        self.builder.position_at_end(block_string_extract);
+
+        let string: PointerValue<'_> = self
+            .builder
+            .build_load(
+                function_string_extract
+                    .get_first_param()
+                    .unwrap()
+                    .get_type(),
+                function_string_extract
+                    .get_first_param()
+                    .unwrap()
+                    .into_pointer_value(),
+                "",
+            )
+            .unwrap()
+            .into_pointer_value();
+
+        unsafe {
+            let ptr: PointerValue<'ctx> = self
+                .builder
+                .build_in_bounds_gep(
+                    self.context.i8_type(),
+                    string,
+                    &[function_string_extract
+                        .get_last_param()
+                        .unwrap()
+                        .into_int_value()],
+                    "",
+                )
+                .unwrap();
+
+            let cmp: IntValue<'ctx> = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::EQ,
+                    ptr,
+                    self.context.ptr_type(AddressSpace::default()).const_null(),
+                    "",
+                )
+                .unwrap();
+
+            let as_true: BasicBlock<'_> =
+                self.context.append_basic_block(function_string_extract, "");
+            let as_false: BasicBlock<'_> =
+                self.context.append_basic_block(function_string_extract, "");
+
+            self.builder
+                .build_conditional_branch(cmp, as_true, as_false)
+                .unwrap();
+
+            self.builder.position_at_end(as_true);
+            self.builder
+                .build_return(Some(&self.context.i8_type().const_int(0, false)))
+                .unwrap();
+
+            self.builder.position_at_end(as_false);
+
+            let char: BasicValueEnum<'ctx> = self
+                .builder
+                .build_load(self.context.i8_type(), ptr, "")
+                .unwrap();
+
+            self.builder
+                .build_return(Some(&char.into_int_value()))
+                .unwrap();
+        }
     }
 
     fn define_malloc(&mut self) {

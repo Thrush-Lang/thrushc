@@ -21,6 +21,7 @@ const VALID_INTEGER_TYPES: [DataTypes; 8] = [
     DataTypes::I32,
     DataTypes::I64,
 ];
+
 const VALID_FLOAT_TYPES: [DataTypes; 2] = [DataTypes::F32, DataTypes::F64];
 
 const STANDARD_FORMATS: [&str; 5] = ["%s", "%d", "%c", "%ld", "%f"];
@@ -34,7 +35,7 @@ pub struct Parser<'instr, 'a> {
     ret: Option<DataTypes>,
     current: usize,
     globals: HashMap<&'instr str, DataTypes>,
-    locals: Vec<HashMap<&'instr str, DataTypes>>,
+    locals: Vec<HashMap<&'instr str, Variable>>,
     scope: usize,
     scoper: ThrushScoper<'instr>,
     diagnostics: Diagnostic,
@@ -181,6 +182,11 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 String::from("Expected ';'."),
             )?;
 
+            self.define_local(
+                name.lexeme.as_ref().unwrap(),
+                Variable::new(kind.as_ref().unwrap().defer(), true),
+            );
+
             return Ok(Instruction::Var {
                 name: name.lexeme.as_ref().unwrap(),
                 kind: kind.unwrap(),
@@ -324,6 +330,30 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     }
                 }
 
+                Instruction::RefVar {
+                    kind: refvar_kind, ..
+                } => {
+                    if kind.as_ref().unwrap() != refvar_kind {
+                        self.consume(
+                            TokenKind::SemiColon,
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            String::from("Expected ';'."),
+                        )?;
+
+                        return Err(ThrushError::Parse(
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            format!(
+                                "Variable type mismatch. Expected '{}' but found '{}'.",
+                                kind.as_ref().unwrap(),
+                                refvar_kind
+                            ),
+                            name.line,
+                        ));
+                    }
+                }
+
                 _ => todo!(),
             }
         }
@@ -344,7 +374,10 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             }
         };
 
-        self.define_local(name.lexeme.as_ref().unwrap(), variable.get_kind().unwrap());
+        self.define_local(
+            name.lexeme.as_ref().unwrap(),
+            Variable::new(variable.get_kind().unwrap(), false),
+        );
 
         self.consume(
             TokenKind::SemiColon,
@@ -1115,7 +1148,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 TokenKind::Identifier => {
                     self.only_advance()?;
 
-                    let kind: DataTypes =
+                    let var: (DataTypes, bool) =
                         self.find_variable(self.previous().lexeme.as_ref().unwrap())?;
 
                     if self.peek().kind == TokenKind::Eq {
@@ -1131,7 +1164,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             String::from("Expected ';'."),
                         )?;
 
-                        if expr.get_data_type() != kind {
+                        if expr.get_data_type() != var.0 {
                             return Err(ThrushError::Parse(
                                 ThrushErrorKind::SyntaxError,
                                 String::from("Syntax Error"),
@@ -1144,17 +1177,29 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ));
                         }
 
+                        self.locals[self.scope].insert(name, Variable::new(var.0.clone(), false));
+
                         return Ok(Instruction::MutVar {
                             name,
                             value: Box::new(expr),
-                            kind,
+                            kind: var.0,
                         });
+                    } else if var.1 {
+                        return Err(ThrushError::Parse(
+                            ThrushErrorKind::VariableNotDeclared,
+                            String::from("Syntax Error"),
+                            format!(
+                                "Variable `{}` is not declared for are use it. Declare the variable before of the use.",
+                                self.previous().lexeme.as_ref().unwrap(),
+                            ),
+                            self.previous().line,
+                        ));
                     }
 
                     Instruction::RefVar {
                         name: self.previous().lexeme.as_ref().unwrap(),
                         line: self.previous().line,
-                        kind,
+                        kind: var.0,
                     }
                 }
 
@@ -1174,11 +1219,11 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     self.only_advance()?;
 
                     return Err(ThrushError::Parse(
-                            ThrushErrorKind::SyntaxError,
-                            String::from("Syntax Error"),
-                            format!("Expected expression, found '{}'. Is this a function call or an function definition?", kind),
-                            self.peek().line,
-                        ));
+                        ThrushErrorKind::SyntaxError,
+                        String::from("Syntax Error"),
+                        format!("Expected expression, found '{}'. Is this a function call or an function definition?", kind),
+                        self.peek().line,
+                    ));
                 }
 
                 kind => {
@@ -1218,15 +1263,18 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         ))
     }
 
-    fn find_variable(&self, name: &str) -> Result<DataTypes, ThrushError> {
+    fn find_variable(&self, name: &str) -> Result<(DataTypes, bool), ThrushError> {
         for scope in self.locals.iter().rev() {
             if scope.contains_key(name) {
-                return Ok(scope.get(name).unwrap().defer());
+                return Ok((
+                    scope.get(name).unwrap().kind.defer(),
+                    scope.get(name).unwrap().is_null,
+                ));
             }
         }
 
         if self.globals.contains_key(name) {
-            return Ok(self.globals.get(name).unwrap().defer());
+            return Ok((self.globals.get(name).unwrap().defer(), false));
         }
 
         Err(ThrushError::Parse(
@@ -1243,8 +1291,8 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     }
 
     #[inline]
-    fn define_local(&mut self, name: &'instr str, kind: DataTypes) {
-        self.locals[self.scope].insert(name, kind);
+    fn define_local(&mut self, name: &'instr str, var: Variable) {
+        self.locals[self.scope].insert(name, var);
     }
 
     #[inline]
@@ -1673,5 +1721,16 @@ impl<'ctx> ThrushScoper<'ctx> {
                     }
                 })
         }
+    }
+}
+
+pub struct Variable {
+    kind: DataTypes,
+    is_null: bool,
+}
+
+impl Variable {
+    pub fn new(kind: DataTypes, is_null: bool) -> Self {
+        Self { kind, is_null }
     }
 }

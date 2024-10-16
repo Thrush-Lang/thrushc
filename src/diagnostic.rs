@@ -38,7 +38,8 @@ impl Diagnostic {
             | ThrushErrorKind::UnreachableNumber
             | ThrushErrorKind::SyntaxError
             | ThrushErrorKind::UnreachableVariable
-            | ThrushErrorKind::VariableNotDefined,
+            | ThrushErrorKind::VariableNotDefined
+            | ThrushErrorKind::VariableNotDeclared,
             title,
             help,
             line,

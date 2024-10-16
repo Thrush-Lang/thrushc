@@ -17,4 +17,5 @@ pub enum ThrushErrorKind {
     UnknownChar,
     UnreachableVariable,
     VariableNotDefined,
+    VariableNotDeclared,
 }

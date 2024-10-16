@@ -119,6 +119,24 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             String::from("Expected var (name)."),
         )?;
 
+        if self.peek().kind == TokenKind::SemiColon {
+            self.only_advance()?;
+
+            return Err(ThrushError::Parse(
+                ThrushErrorKind::SyntaxError,
+                String::from("Syntax Error"),
+                String::from("Expected an type for the variable. You forget the `:`."),
+                name.line,
+            ));
+        }
+
+        self.consume(
+            TokenKind::Colon,
+            ThrushErrorKind::SyntaxError,
+            String::from("Expected variable type indicator"),
+            String::from("Expected `var (name)(:) (type) = (value);`."),
+        )?;
+
         let mut kind: Option<DataTypes> = match &self.peek().kind {
             TokenKind::DataType(kind) => {
                 self.only_advance()?;
@@ -1191,8 +1209,6 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         if self.peek().kind == kind {
             return self.advance();
         }
-
-        println!("{:?}", self.peek());
 
         Err(ThrushError::Parse(
             error_kind,

@@ -206,7 +206,7 @@ impl<'a> Lexer<'a> {
         }
 
         let kind: DataTypes =
-            self.eval_integer_type(self.lexeme(), self.line)?;
+            self.eval_integer_type(self.lexeme())?;
 
         let num: Result<f64, ParseFloatError> = self.lexeme().parse::<f64>();
 
@@ -309,7 +309,6 @@ impl<'a> Lexer<'a> {
     pub fn eval_integer_type(
         &self,
         lexeme: String,
-        line: usize,
     ) -> Result<DataTypes, ThrushError> {
 
         if self.previous_token().kind == TokenKind::Minus && !lexeme.contains(".") {
@@ -323,25 +322,28 @@ impl<'a> Lexer<'a> {
                     -9223372036854775808isize..=9223372036854775807isize => Ok(DataTypes::I64),
                     _ => Err(ThrushError::Parse(
                         ThrushErrorKind::UnreachableNumber,
-
                         String::from("The number is out of bounds."),
                         String::from("The size is out of bounds of an isize (-n to n)."),
-
-                        line,
+                        self.line,
                     )),
                 },
                 Err(_) => Err(ThrushError::Parse(
                     ThrushErrorKind::ParsedNumber,
-
                     String::from("The number is too long for an signed integer."),
                     String::from("Did you provide a valid number with the correct format and not out of bounds?"),
-
-                    line,
+                    self.line,
                 )),
             };
         } else if lexeme.contains(".") {
 
-            if lexeme.parse::<f32>().is_ok() {
+            if lexeme.chars().filter(|ch| *ch == '.').count() > 1 {
+                return Err(ThrushError::Lex(
+                    ThrushErrorKind::SyntaxError, 
+                    String::from("Float Violated Syntax"), 
+                    String::from("Float's values should be only contain one dot."), 
+                    self.line
+                ));
+            } else if lexeme.parse::<f32>().is_ok() {
                 return Ok(DataTypes::F32);
             } else if lexeme.parse::<f64>().is_ok() {
                 return Ok(DataTypes::F64);
@@ -351,10 +353,10 @@ impl<'a> Lexer<'a> {
                 ThrushErrorKind::ParsedNumber,
                 String::from("The number is too big for an float."),
                 String::from("Did you provide a valid number with the correct format and not out of bounds?"),
-                line,
+                self.line,
             ));
+            
         }
-
 
         match lexeme.parse::<usize>() {
             Ok(num) => match num {
@@ -364,22 +366,18 @@ impl<'a> Lexer<'a> {
                 0usize..=18_446_744_073_709_551_615usize => Ok(DataTypes::U64),
                 _ => Err(ThrushError::Parse(
                     ThrushErrorKind::UnreachableNumber,
-        
                     String::from("The number is out of bounds."),
                     String::from("The size is out of bounds of an usize (0 to n)."),
- 
-                    line,
+                    self.line,
                 )),
             },
             Err(_) => Err(ThrushError::Parse(
                 ThrushErrorKind::ParsedNumber,
-  
                 String::from("The number is too long for an unsigned integer."),
                 String::from(
                     "Did you provide a valid number with the correct format and not out of bounds?",
                 ),
-
-                line,
+                self.line,
             )),
         }
     }

@@ -66,7 +66,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         }
     }
 
-    fn codegen(&mut self, instr: &'ctx Instruction<'ctx>) {
+    fn codegen(&mut self, instr: &'ctx Instruction<'ctx>) -> Instruction<'ctx> {
         match instr {
             Instruction::Block { stmts, .. } => {
                 self.scope += 1;
@@ -78,6 +78,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
                 self.scope -= 1;
                 self.locals.pop();
+
+                Instruction::Null
             }
 
             Instruction::Function {
@@ -88,14 +90,17 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 is_public,
             } => {
                 self.emit_function(name, params, body, return_kind, *is_public);
+                Instruction::Null
             }
 
             Instruction::Return(instr) => {
                 self.emit_return(instr);
+                Instruction::Null
             }
 
             Instruction::String(string) => {
                 self.emit_string_constant(string);
+                Instruction::Null
             }
 
             Instruction::Println(data) | Instruction::Print(data) => {
@@ -104,6 +109,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 }
 
                 self.emit_print(data);
+
+                Instruction::Null
             }
 
             Instruction::Var {
@@ -111,18 +118,51 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             } => match value {
                 Some(value) => {
                     self.emit_variable(name, kind, value);
+                    Instruction::Null
                 }
-                None => self.emit_variable(name, kind, &Instruction::Null),
+                None => {
+                    self.emit_variable(name, kind, &Instruction::Null);
+                    Instruction::Null
+                }
             },
+
+            Instruction::Indexe { origin, index, .. } => {
+                if let Some(var) = self.get_variable(origin) {
+                    let value: IntValue<'_> = self
+                        .builder
+                        .build_call(
+                            self.module.get_function("String.extract").unwrap(),
+                            &[
+                                var.0.into_pointer_value().into(),
+                                self.context.i64_type().const_int(*index, false).into(),
+                            ],
+                            "",
+                        )
+                        .unwrap()
+                        .try_as_basic_value()
+                        .left()
+                        .unwrap()
+                        .into_int_value();
+
+                    let char: PointerValue<'_> = self.emit_char_from_indexe(value);
+
+                    return Instruction::BasicValueEnum(char.into());
+                }
+
+                Instruction::Null
+            }
 
             Instruction::MutVar { name, kind, value } => {
                 self.emit_mut_variable(name, kind, value);
+                Instruction::Null
             }
 
             Instruction::EntryPoint { body } => {
                 self.emit_main();
                 self.codegen(body);
                 self.build_const_integer_return(self.context.i32_type(), 0, false);
+
+                Instruction::Null
             }
 
             _ => todo!(),
@@ -288,7 +328,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         todo!()
                     }
 
-                    self.set_local(name, pointer.into(), var.1);
+                    self.locals[self.scope - 1].insert(name.to_string(), var.0);
                 }
 
                 DataTypes::F32 | DataTypes::F64 => {
@@ -302,7 +342,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         todo!()
                     }
 
-                    self.set_local(name, pointer.into(), var.1);
+                    self.locals[self.scope - 1].insert(name.to_string(), var.0);
                 }
 
                 DataTypes::Bool => {
@@ -600,6 +640,38 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     }
                 }
 
+                Instruction::Indexe {
+                    origin,
+                    name: indexe_name,
+                    index,
+                    ..
+                } => {
+                    if let Some(var) = self.get_variable(origin) {
+                        let value: IntValue<'_> = self
+                            .builder
+                            .build_call(
+                                self.module.get_function("String.extract").unwrap(),
+                                &[
+                                    var.0.into_pointer_value().into(),
+                                    self.context.i64_type().const_int(*index, false).into(),
+                                ],
+                                "",
+                            )
+                            .unwrap()
+                            .try_as_basic_value()
+                            .left()
+                            .unwrap()
+                            .into_int_value();
+
+                        let char: PointerValue<'_> = self.emit_char_from_indexe(value);
+
+                        self.locals[self.scope - 1]
+                            .insert(indexe_name.unwrap().to_string(), char.into());
+                    } else {
+                        unreachable!()
+                    }
+                }
+
                 _ => todo!(),
             },
 
@@ -665,29 +737,32 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         }
     }
 
+    fn emit_char_from_indexe(&mut self, value: IntValue<'ctx>) -> PointerValue<'ctx> {
+        let char: PointerValue<'ctx> = self
+            .builder
+            .build_alloca(self.context.i8_type(), "")
+            .unwrap();
+
+        let store: InstructionValue<'ctx> = self.builder.build_store(char, value).unwrap();
+
+        store.set_alignment(4).unwrap();
+
+        char
+    }
+
     fn emit_char(&mut self, name: &str, value: Option<u8>) -> PointerValue<'ctx> {
         let char: PointerValue<'ctx> = self
             .builder
             .build_alloca(self.context.i8_type(), "")
             .unwrap();
 
-        if value.is_some() {
-            self.builder
-                .build_store(
-                    char,
-                    self.context
-                        .i8_type()
-                        .const_int(value.unwrap() as u64, false),
-                )
+        if let Some(value) = value {
+            let store: InstructionValue<'ctx> = self
+                .builder
+                .build_store(char, self.context.i8_type().const_int(value as u64, false))
                 .unwrap();
 
-            let var: Option<(BasicValueEnum<'_>, usize)> = self.get_variable(name);
-
-            if let Some(var) = var {
-                self.set_local(name, char.into(), var.1);
-            } else {
-                self.locals[self.scope - 1].insert(name.to_string(), char.into());
-            }
+            store.set_alignment(4).unwrap();
         }
 
         self.locals[self.scope - 1].insert(name.to_string(), char.into());
@@ -711,13 +786,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 .unwrap();
         }
 
-        let var: Option<(BasicValueEnum<'_>, usize)> = self.get_variable(name);
-
-        if let Some(var) = var {
-            self.set_local(name, boolean.into(), var.1);
-        } else {
-            self.locals[self.scope - 1].insert(name.to_string(), boolean.into());
-        }
+        self.locals[self.scope - 1].insert(name.to_string(), boolean.into());
 
         boolean
     }
@@ -790,12 +859,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
             index += 1;
         });
-
-        let var: Option<(BasicValueEnum<'_>, usize)> = self.get_variable(name);
-
-        if let Some(var) = var {
-            self.set_local(name, string.into(), var.1);
-        }
 
         self.locals[self.scope - 1].insert(name.to_string(), string.into());
 
@@ -1057,11 +1120,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         );
     }
 
-    fn set_local(&mut self, name: &str, value: BasicValueEnum<'ctx>, index: usize) {
-        self.locals[index].remove(name);
-        self.locals[index].insert(name.to_string(), value);
-    }
-
     fn get_variable(&self, name: &str) -> Option<(BasicValueEnum<'ctx>, usize)> {
         for i in (0..self.scope).rev() {
             if self.locals[i].contains_key(name) {
@@ -1086,6 +1144,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
 #[derive(Debug, Clone)]
 pub enum Instruction<'ctx> {
+    BasicValueEnum(BasicValueEnum<'ctx>),
     Println(Vec<Instruction<'ctx>>),
     Print(Vec<Instruction<'ctx>>),
     String(String),
@@ -1126,6 +1185,12 @@ pub enum Instruction<'ctx> {
         value: Box<Instruction<'ctx>>,
     },
     Boolean(bool),
+    Indexe {
+        origin: &'ctx str,
+        name: Option<&'ctx str>,
+        index: u64,
+        kind: DataTypes,
+    },
     Null,
 }
 

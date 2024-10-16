@@ -129,17 +129,26 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 String::from("Expected an type for the variable. You forget the `:`."),
                 name.line,
             ));
+        } else if self.peek().kind == TokenKind::Colon {
+            self.consume(
+                TokenKind::Colon,
+                ThrushErrorKind::SyntaxError,
+                String::from("Expected variable type indicator"),
+                String::from("Expected `var name --> : <-- type = value;`."),
+            )?;
         }
-
-        self.consume(
-            TokenKind::Colon,
-            ThrushErrorKind::SyntaxError,
-            String::from("Expected variable type indicator"),
-            String::from("Expected `var (name)(:) (type) = (value);`."),
-        )?;
 
         let mut kind: Option<DataTypes> = match &self.peek().kind {
             TokenKind::DataType(kind) => {
+                if self.previous().kind != TokenKind::Colon {
+                    return Err(ThrushError::Parse(
+                        ThrushErrorKind::SyntaxError,
+                        String::from("Expected variable type indicator"),
+                        String::from("Expected `var name --> : <-- type = value;`."),
+                        name.line,
+                    ));
+                }
+
                 self.only_advance()?;
 
                 Some(kind.defer())
@@ -202,7 +211,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             String::from("Expected '=' for the variable definition."),
         )?;
 
-        let value: Instruction<'instr> = self.parse()?;
+        let mut value: Instruction<'instr> = self.parse()?;
 
         if kind.is_some() {
             match &value {
@@ -351,6 +360,40 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ),
                             name.line,
                         ));
+                    }
+                }
+
+                Instruction::Indexe {
+                    origin,
+                    kind: indexe_kind,
+                    index,
+                    ..
+                } => {
+                    if kind.as_ref().unwrap() != indexe_kind {
+                        self.consume(
+                            TokenKind::SemiColon,
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            String::from("Expected ';'."),
+                        )?;
+
+                        return Err(ThrushError::Parse(
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            format!(
+                                "Variable type mismatch. Expected '{}' but found '{}'.",
+                                kind.as_ref().unwrap(),
+                                indexe_kind
+                            ),
+                            name.line,
+                        ));
+                    }
+
+                    value = Instruction::Indexe {
+                        origin,
+                        name: Some(name.lexeme.as_ref().unwrap()),
+                        index: *index,
+                        kind: indexe_kind.defer(),
                     }
                 }
 
@@ -1151,7 +1194,59 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     let var: (DataTypes, bool) =
                         self.find_variable(self.previous().lexeme.as_ref().unwrap())?;
 
-                    if self.peek().kind == TokenKind::Eq {
+                    if self.peek().kind == TokenKind::LeftBracket {
+                        let name: &str = self.previous().lexeme.as_ref().unwrap();
+
+                        self.consume(
+                            TokenKind::LeftBracket,
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            String::from("Expected '['."),
+                        )?;
+
+                        let expr: Instruction<'instr> = self.primary()?;
+
+                        self.consume(
+                            TokenKind::RightBracket,
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            String::from("Expected ']'."),
+                        )?;
+
+                        if var.1 {
+                            return Err(ThrushError::Parse(
+                                ThrushErrorKind::VariableNotDeclared,
+                                String::from("Variable Not Declared"),
+                                format!(
+                                    "Variable `{}` is not declared for are use it. Declare the variable before of the use.",
+                                    self.previous().lexeme.as_ref().unwrap(),
+                                ),
+                                self.previous().line,
+                            ));
+                        }
+
+                        let kind: DataTypes = if var.0 == DataTypes::String {
+                            DataTypes::Char
+                        } else {
+                            todo!()
+                        };
+
+                        if let Instruction::Integer(_, num) = expr {
+                            return Ok(Instruction::Indexe {
+                                origin: name,
+                                name: None,
+                                index: num as u64,
+                                kind,
+                            });
+                        }
+
+                        return Err(ThrushError::Parse(
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            String::from("Expected unsigned number for the build an indexe."),
+                            self.previous().line,
+                        ));
+                    } else if self.peek().kind == TokenKind::Eq {
                         let name: &str = self.previous().lexeme.as_ref().unwrap();
                         self.only_advance()?;
 
@@ -1184,10 +1279,12 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             value: Box::new(expr),
                             kind: var.0,
                         });
-                    } else if var.1 {
+                    }
+
+                    if var.1 {
                         return Err(ThrushError::Parse(
                             ThrushErrorKind::VariableNotDeclared,
-                            String::from("Syntax Error"),
+                            String::from("Variable Not Declared"),
                             format!(
                                 "Variable `{}` is not declared for are use it. Declare the variable before of the use.",
                                 self.previous().lexeme.as_ref().unwrap(),

@@ -20,11 +20,18 @@ use {
         },
         OptimizationLevel,
     },
-    std::{env, fs::read_to_string, path::Path, sync::Mutex},
+    std::{
+        env,
+        fs::read_to_string,
+        path::Path,
+        sync::Mutex,
+        time::{Duration, Instant, SystemTime},
+    },
 };
 
 pub static NAME: Mutex<String> = Mutex::new(String::new());
 pub static PATH: Mutex<String> = Mutex::new(String::new());
+pub static BACKEND: Mutex<String> = Mutex::new(String::new());
 
 fn main() {
     let mut parameters: Vec<String> = env::args().collect();
@@ -110,6 +117,60 @@ fn main() {
 
                 for i in 1..parameters.len() - 1 {
                     match parameters[i].as_str() {
+                        "--backend" | "-backend" => {
+                            if !Path::new(&parameters[i + 1]).exists() {
+                                logging::log(
+                                    logging::LogType::ERROR,
+                                    "The backend path does not exists.",
+                                );
+
+                                return;
+                            } else if !Path::new(&parameters[i + 1]).is_dir() {
+                                logging::log(
+                                    logging::LogType::ERROR,
+                                    "The backend path don't terminate with type folder.",
+                                );
+
+                                return;
+                            } else if !Path::new(&parameters[i + 1]).ends_with("bin") {
+                                logging::log(
+                                    logging::LogType::ERROR,
+                                    "The backend path don't terminate in bin folder.",
+                                );
+
+                                return;
+                            } else if !Path::new(&parameters[i + 1]).join("clang-18").is_file() {
+                                logging::log(
+                                    logging::LogType::ERROR,
+                                    "The backend path don't contain a valid executable of clang-18.",
+                                );
+
+                                return;
+                            } else if !Path::new(&parameters[i + 1]).join("llvm-config").is_file() {
+                                logging::log(
+                                    logging::LogType::ERROR,
+                                    "The backend path don't contain a valid executable for llvm-config.",
+                                );
+
+                                return;
+                            } else if !Path::new(&parameters[i + 1]).join("lld").is_file() {
+                                logging::log(
+                                    logging::LogType::ERROR,
+                                    "The backend path don't contain a valid executable for linker of llvm (lld).",
+                                );
+
+                                return;
+                            } else if !Path::new(&parameters[i + 1]).join("opt").is_file() {
+                                logging::log(
+                                    logging::LogType::ERROR,
+                                    "The backend path don't contain a valid executable for optimizer of llvm (opt).",
+                                );
+
+                                return;
+                            }
+
+                            BACKEND.lock().unwrap().push_str(&parameters[i + 1]);
+                        }
                         "--lib" | "-lib" => {
                             options.emit_object = true;
                         }
@@ -232,12 +293,21 @@ fn main() {
             logging::LogType::ERROR,
             "Cannot issue llvm ir when interpreting. Use `thrushc compile --emit-llvm file.th` instead.",
         );
+
         return;
     } else if options.interpret && options.emit_object {
         logging::log(
             logging::LogType::ERROR,
             "Cannot emit object file when interpreting. Use `thrushc compile --lib file.th` instead.",
         );
+
+        return;
+    } else if BACKEND.lock().unwrap().is_empty() && compile {
+        logging::log(
+            logging::LogType::ERROR,
+            "Cannot compile file if don't specified the backend path for the compiler.",
+        );
+
         return;
     }
 
@@ -268,6 +338,8 @@ fn main() {
             .bold(),
         PATH.lock().unwrap()
     );
+
+    let start_time: Instant = Instant::now();
 
     let tokens: Result<&[Token], String> = lexer.lex();
 
@@ -312,11 +384,18 @@ fn main() {
                     }
 
                     println!(
-                        "  {} {}",
+                        "  {} {} {}",
                         "Finished"
                             .custom_color(CustomColor::new(141, 141, 142))
                             .bold(),
-                        PATH.lock().unwrap()
+                        PATH.lock().unwrap(),
+                        &format!(
+                            "{}.{}s",
+                            start_time.elapsed().as_secs(),
+                            start_time.elapsed().as_millis()
+                        )
+                        .custom_color(CustomColor::new(141, 141, 142))
+                        .bold(),
                     );
                 }
 
@@ -335,7 +414,7 @@ fn main() {
 fn help() {
     println!(
         "\n{}\n",
-        "Thrush Compiler"
+        "Thrush Lang Compiler"
             .custom_color(CustomColor::new(141, 141, 142))
             .bold()
     );
@@ -429,6 +508,18 @@ fn compile_help() {
     );
 
     println!("{}", "Available Flags:\n".bold());
+
+    println!(
+        "{} ({} | {}) {}",
+        "•".bold(),
+        "--backend"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "-backend"
+            .custom_color(CustomColor::new(141, 141, 142))
+            .bold(),
+        "Specific the path to the backend compiler to use it (Clang && LLVM).".bold()
+    );
 
     println!(
         "{} ({} | {}) {}",

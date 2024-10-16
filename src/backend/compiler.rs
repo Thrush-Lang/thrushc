@@ -1,6 +1,6 @@
 use {
     super::{
-        super::{frontend::lexer::DataTypes, logging},
+        super::{frontend::lexer::DataTypes, logging, BACKEND},
         llvm::{
             build_alloca_with_float, build_alloca_with_integer, build_const_float,
             build_const_integer, build_int_array_type_from_size, datatype_float_to_type,
@@ -1008,22 +1008,24 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
         self.module
             .write_bitcode_to_path(Path::new(&format!("{}.bc", self.options.name)));
 
-        match Command::new("clang-18").spawn() {
+        match Command::new(Path::new(&BACKEND.lock().unwrap().as_str()).join("clang-18")).spawn() {
             Ok(mut child) => {
                 child.kill().unwrap();
 
                 if self.options.build {
                     match self.opt(opt_level) {
                         Ok(()) => {
-                            Command::new("clang-18")
-                                .arg("-opaque-pointers")
-                                .arg(linking)
-                                .arg("-ffast-math")
-                                .arg(format!("{}.bc", self.options.name))
-                                .arg("-o")
-                                .arg(self.options.name.as_str())
-                                .output()
-                                .unwrap();
+                            Command::new(
+                                Path::new(&BACKEND.lock().unwrap().as_str()).join("clang-18"),
+                            )
+                            .arg("-opaque-pointers")
+                            .arg(linking)
+                            .arg("-ffast-math")
+                            .arg(format!("{}.bc", self.options.name))
+                            .arg("-o")
+                            .arg(self.options.name.as_str())
+                            .output()
+                            .unwrap();
                         }
                         Err(error) => {
                             logging::log(logging::LogType::ERROR, &error);
@@ -1033,16 +1035,18 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
                 } else if self.options.emit_object {
                     match self.opt(opt_level) {
                         Ok(()) => {
-                            Command::new("clang-18")
-                                .arg("-opaque-pointers")
-                                .arg(linking)
-                                .arg("-ffast-math")
-                                .arg("-c")
-                                .arg(format!("{}.bc", self.options.name))
-                                .arg("-o")
-                                .arg(format!("{}.o", self.options.name))
-                                .output()
-                                .unwrap();
+                            Command::new(
+                                Path::new(&BACKEND.lock().unwrap().as_str()).join("clang-18"),
+                            )
+                            .arg("-opaque-pointers")
+                            .arg(linking)
+                            .arg("-ffast-math")
+                            .arg("-c")
+                            .arg(format!("{}.bc", self.options.name))
+                            .arg("-o")
+                            .arg(format!("{}.o", self.options.name))
+                            .output()
+                            .unwrap();
                         }
                         Err(error) => {
                             logging::log(logging::LogType::ERROR, &error);
@@ -1056,14 +1060,14 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
             Err(_) => {
                 logging::log(
                     logging::LogType::ERROR,
-                    "Compilation failed. Clang version 17 is not installed.",
+                    "Compilation failed. Does can't accesed to Clang 18.",
                 );
             }
         }
     }
 
     fn opt(&self, opt_level: &str) -> Result<(), String> {
-        match Command::new("opt").spawn() {
+        match Command::new(Path::new(&BACKEND.lock().unwrap().as_str()).join("opt")).spawn() {
             Ok(mut child) => {
                 child.kill().unwrap();
 
@@ -1085,7 +1089,7 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
             }
 
             Err(_) => Err(String::from(
-                "Compilation failed. LLVM Optimizer is not installed.",
+                "Compilation failed. Does can't accesed to LLVM Optimizer.",
             )),
         }
     }

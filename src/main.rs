@@ -20,13 +20,7 @@ use {
         },
         OptimizationLevel,
     },
-    std::{
-        env,
-        fs::read_to_string,
-        path::Path,
-        sync::Mutex,
-        time::{Duration, Instant, SystemTime},
-    },
+    std::{env, fs::read_to_string, path::Path, sync::Mutex, time::Instant},
 };
 
 pub static NAME: Mutex<String> = Mutex::new(String::new());

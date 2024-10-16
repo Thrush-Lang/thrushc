@@ -8,7 +8,7 @@ use {
         },
         lexer::{DataTypes, Token, TokenKind},
     },
-    ahash::AHashMap as HashMap,
+    std::collections::HashMap,
 };
 
 const VALID_INTEGER_TYPES: [DataTypes; 8] = [

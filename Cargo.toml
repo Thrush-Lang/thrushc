@@ -5,7 +5,6 @@ version = "1.0.0"
 edition = "2021"
 
 [dependencies]
-ahash = "*"
 colored = "*"
 llvmenv = "*"
 llvm-sys = { version = "180.0.0", features = ["force-static"] }
@@ -18,5 +17,7 @@ inkwell = { version = "0.5.0", features = [
 opt-level = 3
 codegen-units = 1
 lto = true
+panic = "abort"
 debug = false
 strip = true
+incremental = true

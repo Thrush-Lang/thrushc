@@ -4,4 +4,4 @@
 
 # The Thrush Compiler 
 
-This compiler compile target to **LLVM IR** and coming soon to another Backend Tools Infraestructures; This compile for native **Optimized Machine Code** with object files or executable.
+This compiler compile target to **LLVM IR** and coming soon to another Backend Tools Infraestructures; This compile for native **Optimized Machine Code** with object files or executables.

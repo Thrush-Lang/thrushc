@@ -719,6 +719,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         let mut index: usize = 0;
 
         function.get_params().iter().for_each(|param| {
+            function.set_param_alignment(index as u32, 4);
+
             if let Some(Instruction::Param { name, .. }) = params.get(index) {
                 param.set_name(name);
             }

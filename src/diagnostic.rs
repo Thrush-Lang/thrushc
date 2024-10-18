@@ -3,11 +3,11 @@ use {
         error::{ThrushError, ThrushErrorKind},
         NAME,
     },
-    colored::Colorize,
     std::{
         fs::File,
         io::{BufRead, BufReader},
     },
+    stylic::{style, Stylize},
 };
 
 #[derive(Debug)]
@@ -85,7 +85,7 @@ impl Diagnostic {
 
         for _ in 0..content.len() + 6 {
             self.drawer
-                .push_str("─".bold().bright_red().to_string().as_str());
+                .push_str(style("─").bright_red().to_string().as_str());
         }
 
         self.buffer.push_str(&self.drawer);
@@ -97,9 +97,9 @@ impl Diagnostic {
 
         println!(
             "\n{}{} {}\n",
-            "Help".bold().bright_green(),
-            ":".bold(),
-            help.bold()
+            style("Help").bold().bright_green(),
+            style(":").bold(),
+            style(help).bold()
         );
     }
 
@@ -108,12 +108,16 @@ impl Diagnostic {
             "\n{} {}\n",
             format_args!(
                 "{}{}",
-                NAME.lock().unwrap().bold().bright_red(),
-                ".th".bold().bright_red()
+                style(NAME.lock().unwrap()).bold().bright_red(),
+                style(".th").bold()
             ),
             line
         );
 
-        println!("{} {}\n", "ERROR".bold().bright_red().underline(), title);
+        println!(
+            "{} {}\n",
+            style("ERROR").bold().underline().bright_red(),
+            title
+        );
     }
 }

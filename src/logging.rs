@@ -1,4 +1,4 @@
-use colored::Colorize;
+use stylic::{style, Stylize};
 
 pub enum LogType {
     INFO,
@@ -19,5 +19,9 @@ impl LogType {
 /// Logs a message to the compiler standard output (CSO)
 #[inline]
 pub fn log(ltype: LogType, msg: &str) {
-    println!("{} {}", ltype.to_str().bold().bright_red(), msg.bold());
+    println!(
+        "{} {}",
+        style(ltype.to_str()).bold().bright_red(),
+        style(msg).bold()
+    );
 }

@@ -10,33 +10,29 @@ use {
 
 pub struct Lexer<'a> {
     tokens: Vec<Token>,
+    errors: Vec<ThrushError>,
     code: &'a [u8],
     start: usize,
     current: usize,
     line: usize,
-    errors: Vec<ThrushError>,
-    diagnostics: Diagnostic
+    diagnostic: Diagnostic
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(code: &'a [u8]) -> Self {
         Self {
             tokens: Vec::new(),
+            errors: Vec::new(),
             code,
             start: 0,
             current: 0,
             line: 1,
-            errors: Vec::with_capacity(50),
-            diagnostics: Diagnostic::new(&PATH.lock().unwrap())
+            diagnostic: Diagnostic::new(&PATH.lock().unwrap())
         }
     }
 
     pub fn lex(&mut self) -> Result<&[Token], String> {
         while !self.end() {
-            if self.errors.len() >= 50 {
-                break;
-            }
-
             self.start = self.current;
 
             match self.scan() {
@@ -47,7 +43,7 @@ impl<'a> Lexer<'a> {
 
         if !self.errors.is_empty() {
             self.errors.iter().for_each(|error| {
-                self.diagnostics.report(error);
+                self.diagnostic.report(error);
             });
        
             return Err(String::from("Compilation terminated."));

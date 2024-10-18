@@ -6,6 +6,7 @@ use {
             build_const_integer, build_int_array_type_from_size, datatype_float_to_type,
             datatype_integer_to_type, datatype_to_fn_type, set_globals_options,
         },
+        opcode::OpCode,
     },
     inkwell::{
         basic_block::BasicBlock,
@@ -877,86 +878,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         /*
         ---------------------------------
 
-            ptr @String.reallocate
-
-        ---------------------------------
-        */
-
-        let realloc: FunctionType = self.context.ptr_type(AddressSpace::default()).fn_type(
-            &[
-                self.context.ptr_type(AddressSpace::default()).into(),
-                self.context.i64_type().into(),
-            ],
-            false,
-        );
-        self.module
-            .add_function("realloc", realloc, Some(Linkage::External));
-
-        let function_reallocate: FunctionValue<'_> = self.module.add_function(
-            "String.reallocate",
-            self.context.ptr_type(AddressSpace::default()).fn_type(
-                &[
-                    self.context.ptr_type(AddressSpace::default()).into(),
-                    self.context.i64_type().into(),
-                ],
-                true,
-            ),
-            Some(Linkage::Private),
-        );
-
-        function_reallocate.set_param_alignment(0, 4);
-        function_reallocate.set_param_alignment(1, 4);
-        function_reallocate.set_param_alignment(2, 4);
-
-        let block_reallocate: BasicBlock<'_> =
-            self.context.append_basic_block(function_reallocate, "");
-
-        self.builder.position_at_end(block_reallocate);
-
-        let load_string = self
-            .builder
-            .build_load(
-                function_reallocate.get_first_param().unwrap().get_type(),
-                function_reallocate
-                    .get_first_param()
-                    .unwrap()
-                    .into_pointer_value(),
-                "",
-            )
-            .unwrap();
-
-        let new_size: IntValue<'ctx> = self
-            .builder
-            .build_int_add(
-                function_reallocate
-                    .get_nth_param(1)
-                    .unwrap()
-                    .into_int_value(),
-                self.context
-                    .i64_type()
-                    .const_int(self.context.i8_type().get_bit_width() as u64, false),
-                "",
-            )
-            .unwrap();
-
-        let allocated_string: PointerValue<'ctx> = self
-            .builder
-            .build_call(
-                self.module.get_function("realloc").unwrap(),
-                &[load_string.into(), new_size.into()],
-                "",
-            )
-            .unwrap()
-            .try_as_basic_value()
-            .left()
-            .unwrap()
-            .into_pointer_value();
-
-        self.builder.build_return(Some(&allocated_string)).unwrap();
-
-        /*
-        ---------------------------------
-
             void @String.append
 
         ---------------------------------
@@ -972,7 +893,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 ],
                 true,
             ),
-            Some(Linkage::Private),
+            Some(Linkage::LinkerPrivate),
         );
 
         function_append.set_param_alignment(0, 4);
@@ -1034,7 +955,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 ],
                 true,
             ),
-            Some(Linkage::Private),
+            Some(Linkage::LinkerPrivate),
         );
 
         function_string_extract.set_param_alignment(0, 4);
@@ -1109,6 +1030,114 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             self.builder
                 .build_return(Some(&char.into_int_value()))
                 .unwrap();
+        }
+
+        /*
+        ---------------------------------
+
+            i128 @String.size
+
+        ---------------------------------
+        */
+
+        let function_string_size: FunctionValue<'_> = self.module.add_function(
+            "String.size",
+            self.context.i64_type().fn_type(
+                &[self.context.ptr_type(AddressSpace::default()).into()],
+                true,
+            ),
+            Some(Linkage::LinkerPrivate),
+        );
+
+        function_string_size.set_param_alignment(0, 4);
+
+        let string_size_block: BasicBlock<'_> =
+            self.context.append_basic_block(function_string_size, "");
+
+        self.builder.position_at_end(string_size_block);
+
+        let counter: PointerValue<'ctx> = self
+            .builder
+            .build_alloca(self.context.i64_type(), "")
+            .unwrap();
+
+        self.builder
+            .build_store(counter, self.context.i64_type().const_int(0, false))
+            .unwrap();
+
+        let loop_block: BasicBlock<'_> = self.context.append_basic_block(function_string_size, "");
+
+        self.builder.build_unconditional_branch(loop_block).unwrap();
+
+        unsafe {
+            self.builder.position_at_end(loop_block);
+
+            let get_count: IntValue<'ctx> = self
+                .builder
+                .build_load(self.context.i64_type(), counter, "")
+                .unwrap()
+                .into_int_value();
+
+            let get_element: PointerValue<'ctx> = self
+                .builder
+                .build_in_bounds_gep(
+                    function_string_size.get_first_param().unwrap().get_type(),
+                    function_string_size
+                        .get_last_param()
+                        .unwrap()
+                        .into_pointer_value(),
+                    &[get_count],
+                    "",
+                )
+                .unwrap();
+
+            let cmp: IntValue<'ctx> = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::EQ,
+                    get_element,
+                    self.context.ptr_type(AddressSpace::default()).const_null(),
+                    "",
+                )
+                .unwrap();
+
+            let done: BasicBlock<'_> = self.context.append_basic_block(function_string_size, "");
+            let not: BasicBlock<'_> = self.context.append_basic_block(function_string_size, "");
+
+            self.builder
+                .build_conditional_branch(cmp, done, not)
+                .unwrap();
+
+            self.builder.position_at_end(done);
+
+            let size: IntValue<'_> = self
+                .builder
+                .build_load(self.context.i64_type(), counter, "")
+                .unwrap()
+                .into_int_value();
+
+            self.builder.build_return(Some(&size)).unwrap();
+
+            self.builder.position_at_end(not);
+
+            let load_old_size: IntValue<'_> = self
+                .builder
+                .build_load(self.context.i64_type(), counter, "")
+                .unwrap()
+                .into_int_value();
+
+            let counter_new_size: IntValue<'_> = self
+                .builder
+                .build_int_add(
+                    load_old_size,
+                    self.context.i64_type().const_int(1, false),
+                    "",
+                )
+                .unwrap();
+
+            self.builder.build_store(counter, counter_new_size).unwrap();
+
+            self.builder.build_unconditional_branch(loop_block).unwrap();
         }
     }
 
@@ -1193,6 +1222,20 @@ pub enum Instruction<'ctx> {
         index: u64,
         kind: DataTypes,
     },
+    Binary {
+        left: Box<Instruction<'ctx>>,
+        op: OpCode,
+        right: Box<Instruction<'ctx>>,
+    },
+    Unary {
+        op: OpCode,
+        right: Box<Instruction<'ctx>>,
+    },
+
+    Group {
+        stmt: Box<Instruction<'ctx>>,
+    },
+
     Null,
 }
 

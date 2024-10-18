@@ -13,6 +13,9 @@ inkwell = { version = "0.5.0", features = [
     "llvm18-0-force-static",
 ] }
 
+[profile.dev]
+incremental = true
+
 [profile.release]
 opt-level = 3
 codegen-units = 1

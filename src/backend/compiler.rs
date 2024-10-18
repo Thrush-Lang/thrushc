@@ -1,12 +1,14 @@
 use {
     super::{
-        super::{frontend::lexer::DataTypes, logging, BACKEND},
+        super::{
+            frontend::lexer::{DataTypes, TokenKind},
+            logging, BACKEND,
+        },
         llvm::{
             build_alloca_with_float, build_alloca_with_integer, build_const_float,
             build_const_integer, build_int_array_type_from_size, datatype_float_to_type,
             datatype_integer_to_type, datatype_to_fn_type, set_globals_options,
         },
-        opcode::OpCode,
     },
     inkwell::{
         basic_block::BasicBlock,
@@ -1224,11 +1226,11 @@ pub enum Instruction<'ctx> {
     },
     Binary {
         left: Box<Instruction<'ctx>>,
-        op: OpCode,
+        op: &'ctx TokenKind,
         right: Box<Instruction<'ctx>>,
     },
     Unary {
-        op: OpCode,
+        op: &'ctx TokenKind,
         right: Box<Instruction<'ctx>>,
     },
 

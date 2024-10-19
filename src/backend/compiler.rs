@@ -1126,7 +1126,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             .unwrap();
 
         self.builder
-            .build_store(counter, self.context.i64_type().const_int(0, false))
+            .build_store(counter, self.context.i64_type().const_int(1, false))
             .unwrap();
 
         let loop_block: BasicBlock<'_> = self.context.append_basic_block(function_string_size, "");
@@ -1142,6 +1142,11 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 .unwrap()
                 .into_int_value();
 
+            let index: IntValue<'ctx> = self
+                .builder
+                .build_int_sub(get_count, self.context.i64_type().const_int(1, false), "")
+                .unwrap();
+
             let get_element: PointerValue<'ctx> = self
                 .builder
                 .build_in_bounds_gep(
@@ -1150,7 +1155,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         .get_last_param()
                         .unwrap()
                         .into_pointer_value(),
-                    &[get_count],
+                    &[index],
                     "",
                 )
                 .unwrap();

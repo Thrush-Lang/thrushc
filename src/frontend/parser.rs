@@ -250,7 +250,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                         _ => {}
                     }
 
-                    if data_type != kind.as_ref().unwrap() {
+                    if !self.check_type(kind.as_ref().unwrap(), data_type) {
                         self.consume(
                             TokenKind::SemiColon,
                             ThrushErrorKind::SyntaxError,
@@ -340,7 +340,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 Instruction::RefVar {
                     kind: refvar_kind, ..
                 } => {
-                    if kind.as_ref().unwrap() != refvar_kind {
+                    if !self.check_type(kind.as_ref().unwrap(), refvar_kind) {
                         self.consume(
                             TokenKind::SemiColon,
                             ThrushErrorKind::SyntaxError,
@@ -355,6 +355,18 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                                 "Variable type mismatch. Expected '{}' but found '{}'.",
                                 kind.as_ref().unwrap(),
                                 refvar_kind
+                            ),
+                            name.line,
+                        ));
+                    } else if self.is_need_cast(kind.as_ref().unwrap(), refvar_kind)
+                        && self.is_unreacheale_cast(kind.as_ref().unwrap(), refvar_kind)
+                    {
+                        return Err(ThrushError::Parse(
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            format!(
+                                "Variable type cannot be cast into correct type. Use original type `{}` instead.",
+                                refvar_kind,
                             ),
                             name.line,
                         ));
@@ -1143,9 +1155,107 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     }
 
     fn expression(&mut self) -> Result<Instruction<'instr>, ThrushError> {
-        let expr: Instruction = self.primary()?;
+        let instr: Instruction = self.or()?;
 
-        Ok(expr)
+        Ok(instr)
+    }
+
+    fn or(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+        let mut instr: Instruction<'_> = self.and()?;
+
+        while self.match_token(TokenKind::Or)? {
+            let op: &TokenKind = &self.previous().kind;
+            let right: Instruction<'instr> = self.and()?;
+
+            instr = Instruction::Binary {
+                left: Box::new(instr),
+                op,
+                right: Box::new(right),
+                kind: DataTypes::Bool,
+            }
+        }
+
+        Ok(instr)
+    }
+
+    fn and(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+        let mut instr: Instruction<'_> = self.equality()?;
+
+        while self.match_token(TokenKind::And)? {
+            let op: &TokenKind = &self.previous().kind;
+            let right: Instruction<'_> = self.equality()?;
+
+            instr = Instruction::Binary {
+                left: Box::new(instr),
+                op,
+                right: Box::new(right),
+                kind: DataTypes::Bool,
+            }
+        }
+
+        Ok(instr)
+    }
+
+    fn equality(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+        let mut instr: Instruction<'_> = self.comparison()?;
+
+        while self.match_token(TokenKind::BangEqual)? || self.match_token(TokenKind::EqEq)? {
+            let op: &TokenKind = &self.previous().kind;
+            let right: Instruction<'_> = self.comparison()?;
+
+            instr = Instruction::Binary {
+                left: Box::from(instr),
+                op,
+                right: Box::from(right),
+                kind: DataTypes::Bool,
+            }
+        }
+
+        Ok(instr)
+    }
+
+    fn comparison(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+        let mut instr: Instruction<'_> = self.term()?;
+
+        while self.match_token(TokenKind::Greater)?
+            || self.match_token(TokenKind::GreaterEqual)?
+            || self.match_token(TokenKind::Less)?
+            || self.match_token(TokenKind::LessEqual)?
+        {
+            let op: &TokenKind = &self.previous().kind;
+            let right: Instruction<'_> = self.term()?;
+
+            instr = Instruction::Binary {
+                left: Box::from(instr),
+                op,
+                right: Box::from(right),
+                kind: DataTypes::Bool,
+            };
+        }
+
+        Ok(instr)
+    }
+
+    fn term(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+        let mut instr: Instruction<'_> = self.primary()?;
+
+        while self.match_token(TokenKind::Plus)?
+            || self.match_token(TokenKind::Minus)?
+            || self.match_token(TokenKind::Slash)?
+            || self.match_token(TokenKind::Star)?
+        {
+            let op: &TokenKind = &self.previous().kind;
+            let right: Instruction<'_> = self.primary()?;
+
+            instr = Instruction::Binary {
+                left: Box::from(instr),
+                op,
+                right: Box::from(right),
+                kind: DataTypes::Integer,
+            };
+        }
+
+        Ok(instr)
     }
 
     fn primary(&mut self) -> Result<Instruction<'instr>, ThrushError> {
@@ -1346,6 +1456,138 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             help,
             self.peek().line,
         ))
+    }
+
+    fn is_unreacheale_cast(&self, origin: &DataTypes, value: &DataTypes) -> bool {
+        match origin {
+            DataTypes::U8
+                if value == &DataTypes::I8
+                    || value == &DataTypes::I16
+                    || value == &DataTypes::I32
+                    || value == &DataTypes::I64
+                    || value == &DataTypes::U64
+                    || value == &DataTypes::U32
+                    || value == &DataTypes::U16 =>
+            {
+                true
+            }
+            DataTypes::U16
+                if value == &DataTypes::I8
+                    || value == &DataTypes::I16
+                    || value == &DataTypes::I32
+                    || value == &DataTypes::I64
+                    || value == &DataTypes::U64
+                    || value == &DataTypes::U32 =>
+            {
+                true
+            }
+            DataTypes::U32
+                if value == &DataTypes::I8
+                    || value == &DataTypes::I16
+                    || value == &DataTypes::I32
+                    || value == &DataTypes::I64
+                    || value == &DataTypes::U64 =>
+            {
+                true
+            }
+
+            DataTypes::U64
+                if value == &DataTypes::I8
+                    || value == &DataTypes::I16
+                    || value == &DataTypes::I32
+                    || value == &DataTypes::I64 =>
+            {
+                true
+            }
+
+            DataTypes::I8
+                if value == &DataTypes::U8
+                    || value == &DataTypes::U16
+                    || value == &DataTypes::U32
+                    || value == &DataTypes::U64
+                    || value == &DataTypes::I64
+                    || value == &DataTypes::I32
+                    || value == &DataTypes::I16 =>
+            {
+                true
+            }
+
+            DataTypes::I16
+                if value == &DataTypes::U8
+                    || value == &DataTypes::U16
+                    || value == &DataTypes::U32
+                    || value == &DataTypes::U64
+                    || value == &DataTypes::I64
+                    || value == &DataTypes::I32 =>
+            {
+                true
+            }
+
+            DataTypes::I32
+                if value == &DataTypes::U8
+                    || value == &DataTypes::U16
+                    || value == &DataTypes::U32
+                    || value == &DataTypes::U64
+                    || value == &DataTypes::I64 =>
+            {
+                true
+            }
+
+            DataTypes::I64
+                if value == &DataTypes::U8
+                    || value == &DataTypes::U16
+                    || value == &DataTypes::U32
+                    || value == &DataTypes::U64 =>
+            {
+                true
+            }
+
+            _ => false,
+        }
+    }
+
+    fn is_need_cast(&self, origin: &DataTypes, value: &DataTypes) -> bool {
+        match origin {
+            DataTypes::U8
+                if value == &DataTypes::U16
+                    || value == &DataTypes::U32
+                    || value == &DataTypes::U64 =>
+            {
+                true
+            }
+            DataTypes::U16 if value == &DataTypes::U32 || value == &DataTypes::U64 => true,
+            DataTypes::U32 if value == &DataTypes::U64 => true,
+
+            DataTypes::I8
+                if value == &DataTypes::I16
+                    || value == &DataTypes::I32
+                    || value == &DataTypes::I64 =>
+            {
+                true
+            }
+            DataTypes::I16 if value == &DataTypes::I32 || value == &DataTypes::I64 => true,
+            DataTypes::I32 if value == &DataTypes::I64 => true,
+
+            DataTypes::F32 if value == &DataTypes::F64 => true,
+            DataTypes::F64 if value == &DataTypes::F32 => true,
+
+            _ => false,
+        }
+    }
+
+    fn check_type(&self, origin: &DataTypes, value: &DataTypes) -> bool {
+        origin == value
+            || matches!(
+                (origin, value),
+                (
+                    DataTypes::U64 | DataTypes::U32 | DataTypes::U16 | DataTypes::U8,
+                    DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64
+                ) | (
+                    DataTypes::I64 | DataTypes::I32 | DataTypes::I16 | DataTypes::I8,
+                    DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64
+                ) | (DataTypes::F64, DataTypes::F32)
+                    | (DataTypes::F32, DataTypes::F64)
+            )
     }
 
     fn find_variable(&self, name: &str) -> Result<(DataTypes, bool), ThrushError> {

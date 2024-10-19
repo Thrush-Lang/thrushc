@@ -19,8 +19,8 @@ use {
         targets::{CodeModel, RelocMode, TargetMachine, TargetTriple},
         types::{ArrayType, FunctionType, IntType},
         values::{
-            BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, InstructionOpcode,
-            InstructionValue, IntValue, PointerValue,
+            BasicMetadataValueEnum, BasicValueEnum, FloatValue, FunctionValue, GlobalValue,
+            InstructionOpcode, InstructionValue, IntValue, PointerValue,
         },
         AddressSpace, IntPredicate,
     },
@@ -425,40 +425,80 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     _ => todo!(),
                 };
 
-                match value {
-                    Instruction::Null => {
+                if let Instruction::Null = value {
+                    let store: InstructionValue<'_> = self
+                        .builder
+                        .build_store(ptr, build_const_integer(self.context, kind, 0))
+                        .unwrap();
+
+                    store.set_alignment(4).unwrap();
+                } else if let Instruction::Integer(kind_value, num) = value {
+                    if ![
+                        DataTypes::I8,
+                        DataTypes::I16,
+                        DataTypes::I32,
+                        DataTypes::I64,
+                        DataTypes::U8,
+                        DataTypes::U16,
+                        DataTypes::U32,
+                        DataTypes::U64,
+                    ]
+                    .contains(kind_value)
+                    {
+                        todo!()
+                    } else if let DataTypes::I8
+                    | DataTypes::I16
+                    | DataTypes::I32
+                    | DataTypes::I64
+                    | DataTypes::U8
+                    | DataTypes::U16
+                    | DataTypes::U32
+                    | DataTypes::U64 = kind_value
+                    {
                         let store: InstructionValue<'_> = self
                             .builder
-                            .build_store(ptr, build_const_integer(self.context, kind, 0))
+                            .build_store(ptr, build_const_integer(self.context, kind, *num as u64))
                             .unwrap();
 
                         store.set_alignment(4).unwrap();
                     }
+                } else if let Instruction::RefVar {
+                    name,
+                    kind: kind_refvar,
+                    ..
+                } = value
+                {
+                    if let Some(var) = self.get_variable(name) {
+                        let load: BasicValueEnum<'ctx> = self
+                            .builder
+                            .build_load(
+                                datatype_integer_to_type(self.context, kind_refvar),
+                                var.0.into_pointer_value(),
+                                "",
+                            )
+                            .unwrap();
 
-                    Instruction::Integer(kind, num) => match kind {
-                        DataTypes::I8
-                        | DataTypes::I16
-                        | DataTypes::I32
-                        | DataTypes::I64
-                        | DataTypes::U8
-                        | DataTypes::U16
-                        | DataTypes::U32
-                        | DataTypes::U64 => {
-                            let store: InstructionValue<'_> = self
+                        let store: InstructionValue<'_> = if kind != kind_refvar {
+                            let cast: IntValue<'_> = self
                                 .builder
-                                .build_store(
-                                    ptr,
-                                    build_const_integer(self.context, kind, *num as u64),
+                                .build_int_cast(
+                                    load.into_int_value(),
+                                    datatype_integer_to_type(self.context, kind),
+                                    "",
                                 )
                                 .unwrap();
 
-                            store.set_alignment(4).unwrap();
-                        }
+                            self.builder.build_store(ptr, cast).unwrap()
+                        } else {
+                            self.builder.build_store(ptr, load).unwrap()
+                        };
 
-                        _ => todo!(),
-                    },
-
-                    _ => unreachable!(),
+                        store.set_alignment(4).unwrap();
+                    } else {
+                        unreachable!()
+                    }
+                } else {
+                    todo!()
                 }
 
                 self.locals[self.scope - 1].insert(name.to_string(), ptr.into());
@@ -479,50 +519,72 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     _ => unreachable!(),
                 };
 
-                match value {
-                    Instruction::Null => {
-                        let store: InstructionValue<'_> = self
+                if let Instruction::Null = value {
+                    let store: InstructionValue<'_> = self
+                        .builder
+                        .build_store(ptr, build_const_float(self.context, kind, 0.0))
+                        .unwrap();
+
+                    store.set_alignment(4).unwrap()
+                } else if let Instruction::Integer(kind_value, num) = value {
+                    if ![DataTypes::F32, DataTypes::F64].contains(kind_value) {
+                        todo!()
+                    }
+
+                    let store: InstructionValue<'_> = self
+                        .builder
+                        .build_store(ptr, build_const_float(self.context, kind, *num))
+                        .unwrap();
+
+                    store.set_alignment(4).unwrap();
+                } else if let Instruction::RefVar {
+                    name,
+                    kind: kind_refvar,
+                    ..
+                } = value
+                {
+                    if let Some(var) = self.get_variable(name) {
+                        let load: BasicValueEnum<'ctx> = self
                             .builder
-                            .build_store(ptr, build_const_float(self.context, kind, 0.0))
+                            .build_load(
+                                datatype_float_to_type(self.context, kind_refvar),
+                                var.0.into_pointer_value(),
+                                "",
+                            )
                             .unwrap();
 
-                        store.set_alignment(4).unwrap();
-                    }
+                        let store: InstructionValue<'_> = if kind != kind_refvar {
+                            let cast: BasicValueEnum<'ctx> = if kind_refvar == &DataTypes::F32 {
+                                self.builder
+                                    .build_cast(
+                                        InstructionOpcode::FPExt,
+                                        load.into_float_value(),
+                                        datatype_float_to_type(self.context, kind),
+                                        "",
+                                    )
+                                    .unwrap()
+                            } else {
+                                self.builder
+                                    .build_cast(
+                                        InstructionOpcode::FPTrunc,
+                                        load.into_float_value(),
+                                        datatype_float_to_type(self.context, kind),
+                                        "",
+                                    )
+                                    .unwrap()
+                            };
 
-                    Instruction::Integer(kind, num) => match kind {
-                        DataTypes::F32 | DataTypes::F64 => {
-                            let store: InstructionValue<'_> = self
-                                .builder
-                                .build_store(ptr, build_const_float(self.context, kind, *num))
-                                .unwrap();
-
-                            store.set_alignment(4).unwrap();
-                        }
-
-                        _ => todo!(),
-                    },
-
-                    Instruction::RefVar { name, .. } => {
-                        if let Some(var) = self.get_variable(name) {
-                            let load: BasicValueEnum<'ctx> = self
-                                .builder
-                                .build_load(
-                                    var.0.into_pointer_value().get_type(),
-                                    var.0.into_pointer_value(),
-                                    "",
-                                )
-                                .unwrap();
-
-                            let store: InstructionValue<'_> =
-                                self.builder.build_store(ptr, load).unwrap();
-
-                            store.set_alignment(4).unwrap();
+                            self.builder.build_store(ptr, cast).unwrap()
                         } else {
-                            unreachable!()
-                        }
-                    }
+                            self.builder.build_store(ptr, load).unwrap()
+                        };
 
-                    _ => unreachable!(),
+                        store.set_alignment(4).unwrap();
+                    } else {
+                        unreachable!()
+                    }
+                } else {
+                    unreachable!()
                 }
 
                 self.locals[self.scope - 1].insert(name.to_string(), ptr.into());
@@ -1228,6 +1290,7 @@ pub enum Instruction<'ctx> {
         left: Box<Instruction<'ctx>>,
         op: &'ctx TokenKind,
         right: Box<Instruction<'ctx>>,
+        kind: DataTypes,
     },
     Unary {
         op: &'ctx TokenKind,

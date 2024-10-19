@@ -10,7 +10,7 @@ use {
         objects::Variable,
         scoper::ThrushScoper,
     },
-    std::collections::HashMap,
+    ahash::AHashMap as HashMap,
 };
 
 const VALID_INTEGER_TYPES: [DataTypes; 8] = [

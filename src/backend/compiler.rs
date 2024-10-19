@@ -10,6 +10,7 @@ use {
             datatype_integer_to_type, datatype_to_fn_type, set_globals_options,
         },
     },
+    ahash::AHashMap as HashMap,
     inkwell::{
         basic_block::BasicBlock,
         builder::Builder,
@@ -24,7 +25,6 @@ use {
         AddressSpace, IntPredicate,
     },
     std::{
-        collections::HashMap,
         fs::remove_file,
         path::{Path, PathBuf},
         process::Command,

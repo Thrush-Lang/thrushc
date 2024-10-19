@@ -6,6 +6,7 @@ edition = "2021"
 
 [dependencies]
 stylic = "*"
+ahash = "*"
 llvmenv = "*"
 llvm-sys = { version = "180.0.0", features = ["force-static"] }
 inkwell = { version = "0.5.0", features = [

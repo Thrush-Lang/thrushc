@@ -19,8 +19,8 @@ use {
         targets::{CodeModel, RelocMode, TargetMachine, TargetTriple},
         types::{ArrayType, FunctionType, IntType},
         values::{
-            BasicMetadataValueEnum, BasicValueEnum, FloatValue, FunctionValue, GlobalValue,
-            InstructionOpcode, InstructionValue, IntValue, PointerValue,
+            BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, InstructionOpcode,
+            InstructionValue, IntValue, PointerValue,
         },
         AddressSpace, IntPredicate,
     },
@@ -1304,6 +1304,65 @@ pub enum Instruction<'ctx> {
     Null,
 }
 
+impl PartialEq for Instruction<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            Instruction::Integer(_, _) => {
+                matches!(other, Instruction::Integer(_, _))
+            }
+
+            Instruction::String(_) => {
+                matches!(other, Instruction::String(_))
+            }
+
+            _ => self == other,
+        }
+    }
+}
+
+impl<'instr> Instruction<'instr> {
+    pub fn get_data_type(&self) -> DataTypes {
+        match self {
+            Instruction::Integer(data_type, _) => match data_type {
+                DataTypes::U8 => DataTypes::U8,
+                DataTypes::U16 => DataTypes::U16,
+                DataTypes::U32 => DataTypes::U32,
+                DataTypes::U64 => DataTypes::U64,
+
+                DataTypes::I8 => DataTypes::I8,
+                DataTypes::I16 => DataTypes::I16,
+                DataTypes::I32 => DataTypes::I32,
+                DataTypes::I64 => DataTypes::I64,
+
+                DataTypes::F32 => DataTypes::F32,
+                DataTypes::F64 => DataTypes::F64,
+
+                _ => unreachable!(),
+            },
+
+            Instruction::String(_) => DataTypes::String,
+            Instruction::Boolean(_) => DataTypes::Bool,
+            Instruction::Char(_) => DataTypes::Char,
+            Instruction::RefVar { kind, .. } => kind.defer(),
+
+            e => {
+                println!("{:?}", e);
+
+                unimplemented!()
+            }
+        }
+    }
+
+    pub fn get_kind(&self) -> Option<DataTypes> {
+        match self {
+            Instruction::Var { kind, .. } => Some(kind.defer()),
+            Instruction::Char(_) => Some(DataTypes::Char),
+            Instruction::Integer(kind, _) => Some(kind.defer()),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Default, Debug)]
 pub enum Opt {
     #[default]
@@ -1335,7 +1394,7 @@ pub enum Linking {
 }
 
 #[derive(Debug)]
-pub struct Options {
+pub struct CompilerOptions {
     pub name: String,
     pub target_triple: TargetTriple,
     pub optimization: Opt,
@@ -1350,7 +1409,7 @@ pub struct Options {
     pub code_model: CodeModel,
 }
 
-impl Default for Options {
+impl Default for CompilerOptions {
     fn default() -> Self {
         Self {
             name: String::from("main"),
@@ -1365,126 +1424,6 @@ impl Default for Options {
             is_main: false,
             reloc_mode: RelocMode::Default,
             code_model: CodeModel::Default,
-        }
-    }
-}
-
-pub struct FileBuilder<'a, 'ctx> {
-    module: &'a Module<'ctx>,
-    options: &'a Options,
-}
-
-impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
-    pub fn new(options: &'a Options, module: &'a Module<'ctx>) -> Self {
-        Self { options, module }
-    }
-
-    pub fn build(self) {
-        let opt_level: &str = match self.options.optimization {
-            Opt::None => "O0",
-            Opt::Low => "O1",
-            Opt::Mid => "O2",
-            Opt::Mcqueen => "O3",
-        };
-
-        let linking: &str = match self.options.linking {
-            Linking::Static => "--static",
-            Linking::Dynamic => "-dynamic",
-        };
-
-        if self.options.emit_llvm {
-            self.module
-                .print_to_file(format!("{}.ll", self.options.name))
-                .unwrap();
-            return;
-        }
-
-        self.module
-            .write_bitcode_to_path(Path::new(&format!("{}.bc", self.options.name)));
-
-        match Command::new(Path::new(&BACKEND.lock().unwrap().as_str()).join("clang-18")).spawn() {
-            Ok(mut child) => {
-                child.kill().unwrap();
-
-                if self.options.build {
-                    match self.opt(opt_level) {
-                        Ok(()) => {
-                            Command::new(
-                                Path::new(&BACKEND.lock().unwrap().as_str()).join("clang-18"),
-                            )
-                            .arg("-opaque-pointers")
-                            .arg(linking)
-                            .arg("-ffast-math")
-                            .arg(format!("{}.bc", self.options.name))
-                            .arg("-o")
-                            .arg(self.options.name.as_str())
-                            .output()
-                            .unwrap();
-                        }
-                        Err(error) => {
-                            logging::log(logging::LogType::ERROR, &error);
-                            return;
-                        }
-                    }
-                } else if self.options.emit_object {
-                    match self.opt(opt_level) {
-                        Ok(()) => {
-                            Command::new(
-                                Path::new(&BACKEND.lock().unwrap().as_str()).join("clang-18"),
-                            )
-                            .arg("-opaque-pointers")
-                            .arg(linking)
-                            .arg("-ffast-math")
-                            .arg("-c")
-                            .arg(format!("{}.bc", self.options.name))
-                            .arg("-o")
-                            .arg(format!("{}.o", self.options.name))
-                            .output()
-                            .unwrap();
-                        }
-                        Err(error) => {
-                            logging::log(logging::LogType::ERROR, &error);
-                            return;
-                        }
-                    }
-                }
-
-                remove_file(format!("{}.bc", self.options.name)).unwrap();
-            }
-            Err(_) => {
-                logging::log(
-                    logging::LogType::ERROR,
-                    "Compilation failed. Does can't accesed to Clang 18.",
-                );
-            }
-        }
-    }
-
-    fn opt(&self, opt_level: &str) -> Result<(), String> {
-        match Command::new(Path::new(&BACKEND.lock().unwrap().as_str()).join("opt")).spawn() {
-            Ok(mut child) => {
-                child.kill().unwrap();
-
-                Command::new("opt")
-                    .arg(format!("-p={}", opt_level))
-                    .arg("-p=globalopt")
-                    .arg("-p=globaldce")
-                    .arg("-p=dce")
-                    .arg("-p=instcombine")
-                    .arg("-p=strip-dead-prototypes")
-                    .arg("-p=strip")
-                    .arg("-p=mem2reg")
-                    .arg("-p=memcpyopt")
-                    .arg(format!("{}.bc", self.options.name))
-                    .output()
-                    .unwrap();
-
-                Ok(())
-            }
-
-            Err(_) => Err(String::from(
-                "Compilation failed. Does can't accesed to LLVM Optimizer.",
-            )),
         }
     }
 }

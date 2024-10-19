@@ -1,7 +1,7 @@
 use {
     super::{
         super::{
-            backend::compiler::{Instruction, Options},
+            backend::compiler::{CompilerOptions, Instruction},
             diagnostic::Diagnostic,
             error::{ThrushError, ThrushErrorKind},
             logging, PATH,
@@ -32,7 +32,7 @@ pub struct Parser<'instr, 'a> {
     stmts: Vec<Instruction<'instr>>,
     errors: Vec<ThrushError>,
     pub tokens: Option<&'instr [Token]>,
-    pub options: Option<&'a Options>,
+    pub options: Option<&'a CompilerOptions>,
     function: u16,
     ret: Option<DataTypes>,
     current: usize,
@@ -250,7 +250,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                         _ => {}
                     }
 
-                    if !self.check_type(kind.as_ref().unwrap(), data_type) {
+                    if !kind.as_ref().unwrap().check(data_type) {
                         self.consume(
                             TokenKind::SemiColon,
                             ThrushErrorKind::SyntaxError,
@@ -340,7 +340,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 Instruction::RefVar {
                     kind: refvar_kind, ..
                 } => {
-                    if !self.check_type(kind.as_ref().unwrap(), refvar_kind) {
+                    if !kind.as_ref().unwrap().check(refvar_kind) {
                         self.consume(
                             TokenKind::SemiColon,
                             ThrushErrorKind::SyntaxError,
@@ -358,8 +358,8 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ),
                             name.line,
                         ));
-                    } else if self.is_need_cast(kind.as_ref().unwrap(), refvar_kind)
-                        && self.is_unreacheale_cast(kind.as_ref().unwrap(), refvar_kind)
+                    } else if kind.as_ref().unwrap().need_cast(refvar_kind)
+                        && kind.as_ref().unwrap().is_unreachable_cast(refvar_kind)
                     {
                         return Err(ThrushError::Parse(
                             ThrushErrorKind::SyntaxError,
@@ -1458,138 +1458,6 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         ))
     }
 
-    fn is_unreacheale_cast(&self, origin: &DataTypes, value: &DataTypes) -> bool {
-        match origin {
-            DataTypes::U8
-                if value == &DataTypes::I8
-                    || value == &DataTypes::I16
-                    || value == &DataTypes::I32
-                    || value == &DataTypes::I64
-                    || value == &DataTypes::U64
-                    || value == &DataTypes::U32
-                    || value == &DataTypes::U16 =>
-            {
-                true
-            }
-            DataTypes::U16
-                if value == &DataTypes::I8
-                    || value == &DataTypes::I16
-                    || value == &DataTypes::I32
-                    || value == &DataTypes::I64
-                    || value == &DataTypes::U64
-                    || value == &DataTypes::U32 =>
-            {
-                true
-            }
-            DataTypes::U32
-                if value == &DataTypes::I8
-                    || value == &DataTypes::I16
-                    || value == &DataTypes::I32
-                    || value == &DataTypes::I64
-                    || value == &DataTypes::U64 =>
-            {
-                true
-            }
-
-            DataTypes::U64
-                if value == &DataTypes::I8
-                    || value == &DataTypes::I16
-                    || value == &DataTypes::I32
-                    || value == &DataTypes::I64 =>
-            {
-                true
-            }
-
-            DataTypes::I8
-                if value == &DataTypes::U8
-                    || value == &DataTypes::U16
-                    || value == &DataTypes::U32
-                    || value == &DataTypes::U64
-                    || value == &DataTypes::I64
-                    || value == &DataTypes::I32
-                    || value == &DataTypes::I16 =>
-            {
-                true
-            }
-
-            DataTypes::I16
-                if value == &DataTypes::U8
-                    || value == &DataTypes::U16
-                    || value == &DataTypes::U32
-                    || value == &DataTypes::U64
-                    || value == &DataTypes::I64
-                    || value == &DataTypes::I32 =>
-            {
-                true
-            }
-
-            DataTypes::I32
-                if value == &DataTypes::U8
-                    || value == &DataTypes::U16
-                    || value == &DataTypes::U32
-                    || value == &DataTypes::U64
-                    || value == &DataTypes::I64 =>
-            {
-                true
-            }
-
-            DataTypes::I64
-                if value == &DataTypes::U8
-                    || value == &DataTypes::U16
-                    || value == &DataTypes::U32
-                    || value == &DataTypes::U64 =>
-            {
-                true
-            }
-
-            _ => false,
-        }
-    }
-
-    fn is_need_cast(&self, origin: &DataTypes, value: &DataTypes) -> bool {
-        match origin {
-            DataTypes::U8
-                if value == &DataTypes::U16
-                    || value == &DataTypes::U32
-                    || value == &DataTypes::U64 =>
-            {
-                true
-            }
-            DataTypes::U16 if value == &DataTypes::U32 || value == &DataTypes::U64 => true,
-            DataTypes::U32 if value == &DataTypes::U64 => true,
-
-            DataTypes::I8
-                if value == &DataTypes::I16
-                    || value == &DataTypes::I32
-                    || value == &DataTypes::I64 =>
-            {
-                true
-            }
-            DataTypes::I16 if value == &DataTypes::I32 || value == &DataTypes::I64 => true,
-            DataTypes::I32 if value == &DataTypes::I64 => true,
-
-            DataTypes::F32 if value == &DataTypes::F64 => true,
-            DataTypes::F64 if value == &DataTypes::F32 => true,
-
-            _ => false,
-        }
-    }
-
-    fn check_type(&self, origin: &DataTypes, value: &DataTypes) -> bool {
-        origin == value
-            || matches!(
-                (origin, value),
-                (
-                    DataTypes::U64 | DataTypes::U32 | DataTypes::U16 | DataTypes::U8,
-                    DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64
-                ) | (
-                    DataTypes::I64 | DataTypes::I32 | DataTypes::I16 | DataTypes::I8,
-                    DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64
-                ) | (DataTypes::F64, DataTypes::F32)
-                    | (DataTypes::F32, DataTypes::F64)
-            )
-    }
-
     fn find_variable(&self, name: &str) -> Result<(DataTypes, bool), ThrushError> {
         for scope in self.locals.iter().rev() {
             if scope.contains_key(name) {
@@ -1715,64 +1583,5 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
     fn end(&self) -> bool {
         self.peek().kind == TokenKind::Eof
-    }
-}
-
-impl PartialEq for Instruction<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        match self {
-            Instruction::Integer(_, _) => {
-                matches!(other, Instruction::Integer(_, _))
-            }
-
-            Instruction::String(_) => {
-                matches!(other, Instruction::String(_))
-            }
-
-            _ => self == other,
-        }
-    }
-}
-
-impl<'instr> Instruction<'instr> {
-    pub fn get_data_type(&self) -> DataTypes {
-        match self {
-            Instruction::Integer(data_type, _) => match data_type {
-                DataTypes::U8 => DataTypes::U8,
-                DataTypes::U16 => DataTypes::U16,
-                DataTypes::U32 => DataTypes::U32,
-                DataTypes::U64 => DataTypes::U64,
-
-                DataTypes::I8 => DataTypes::I8,
-                DataTypes::I16 => DataTypes::I16,
-                DataTypes::I32 => DataTypes::I32,
-                DataTypes::I64 => DataTypes::I64,
-
-                DataTypes::F32 => DataTypes::F32,
-                DataTypes::F64 => DataTypes::F64,
-
-                _ => unreachable!(),
-            },
-
-            Instruction::String(_) => DataTypes::String,
-            Instruction::Boolean(_) => DataTypes::Bool,
-            Instruction::Char(_) => DataTypes::Char,
-            Instruction::RefVar { kind, .. } => kind.defer(),
-
-            e => {
-                println!("{:?}", e);
-
-                unimplemented!()
-            }
-        }
-    }
-
-    pub fn get_kind(&self) -> Option<DataTypes> {
-        match self {
-            Instruction::Var { kind, .. } => Some(kind.defer()),
-            Instruction::Char(_) => Some(DataTypes::Char),
-            Instruction::Integer(kind, _) => Some(kind.defer()),
-            _ => None,
-        }
     }
 }

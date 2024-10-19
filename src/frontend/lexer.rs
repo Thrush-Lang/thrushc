@@ -645,4 +645,60 @@ impl DataTypes {
             DataTypes::Float => DataTypes::Float
         }
     }
+
+    pub fn need_cast(&self, value: &DataTypes) -> bool {
+        match self {
+            DataTypes::U8
+                if value == &DataTypes::U16
+                    || value == &DataTypes::U32
+                    || value == &DataTypes::U64 =>
+            {
+                true
+            }
+            DataTypes::U16 if value == &DataTypes::U32 || value == &DataTypes::U64 => true,
+            DataTypes::U32 if value == &DataTypes::U64 => true,
+
+            DataTypes::I8
+                if value == &DataTypes::I16
+                    || value == &DataTypes::I32
+                    || value == &DataTypes::I64 =>
+            {
+                true
+            }
+            DataTypes::I16 if value == &DataTypes::I32 || value == &DataTypes::I64 => true,
+            DataTypes::I32 if value == &DataTypes::I64 => true,
+
+            DataTypes::F32 if value == &DataTypes::F64 => true,
+            DataTypes::F64 if value == &DataTypes::F32 => true,
+
+            _ => false, 
+        }
+    }
+
+    pub fn is_unreachable_cast(&self, value: &DataTypes) -> bool {
+        matches!((self, value), (DataTypes::U8, DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64)
+        | (DataTypes::U16, DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 | DataTypes::U32 | DataTypes::U64)
+        | (DataTypes::U32, DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 | DataTypes::U64)
+        | (DataTypes::U64, DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64)
+        | (DataTypes::I8, DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64)
+        | (DataTypes::I16, DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64 | DataTypes::I32 | DataTypes::I64)
+        | (DataTypes::I32, DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64 | DataTypes::I64)
+        | (DataTypes::I64, DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64
+        ))
+    }
+
+    pub fn check(&self, value: &DataTypes) -> bool {
+        self == value
+            || matches!(
+                (&self, value),
+                (
+                    DataTypes::U64 | DataTypes::U32 | DataTypes::U16 | DataTypes::U8,
+                    DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64
+                ) | (
+                    DataTypes::I64 | DataTypes::I32 | DataTypes::I16 | DataTypes::I8,
+                    DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64
+                ) | (DataTypes::F64, DataTypes::F32)
+                    | (DataTypes::F32, DataTypes::F64)
+            )
+    }
 }

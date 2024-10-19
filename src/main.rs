@@ -6,7 +6,10 @@ mod frontend;
 mod logging;
 
 use {
-    backend::compiler::{Compiler, FileBuilder, Instruction, Linking, Opt, Options},
+    backend::{
+        builder::FileBuilder,
+        compiler::{Compiler, CompilerOptions, Instruction, Linking, Opt},
+    },
     constants::TARGETS,
     frontend::{
         lexer::{Lexer, Token},
@@ -31,15 +34,16 @@ pub static BACKEND: Mutex<String> = Mutex::new(String::new());
 
 fn main() {
     let mut parameters: Vec<String> = env::args().collect();
-    let mut options: Options = Options::default();
+    let mut options: CompilerOptions = CompilerOptions::default();
     let mut compile: bool = false;
 
     parameters.remove(0);
 
     for parameter in parameters.iter() {
         match parameter.as_str() {
-            "-h" | "--help" => {
+            "-h" | "help" | "--help" | "-help" => {
                 help();
+
                 return;
             }
 
@@ -47,6 +51,7 @@ fn main() {
                 TARGETS.iter().for_each(|target| {
                     println!("{}", style(target).bold());
                 });
+
                 return;
             }
 
@@ -55,11 +60,13 @@ fn main() {
                     "{}",
                     style(TargetMachine::get_default_triple().to_string()).bold()
                 );
+
                 return;
             }
 
             "-v" | "--version" => {
                 println!("{}", style(env!("CARGO_PKG_VERSION")).bold());
+
                 return;
             }
 

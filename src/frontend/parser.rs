@@ -1536,17 +1536,12 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     Instruction::Boolean(false)
                 }
 
-                kind => {
+                err => {
                     self.only_advance()?;
 
-                    println!("{:?}", self.previous());
+                    println!("{:?}", err);
 
-                    return Err(ThrushError::Parse(
-                        ThrushErrorKind::SyntaxError,
-                        String::from("Syntax Error"),
-                        format!("Unexpected code '{}', check the code and review the syntax rules in the documentation.", kind),
-                        self.peek().line,
-                    ));
+                    Instruction::Null
                 }
             },
         };

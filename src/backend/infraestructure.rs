@@ -45,7 +45,7 @@ impl<'a, 'ctx> StringInfraestructure<'a, 'ctx> {
     }
 
     fn define_string_append(&mut self) {
-        let function_append: FunctionValue<'_> = self.module.add_function(
+        let append: FunctionValue<'_> = self.module.add_function(
             "String.append",
             self.context.void_type().fn_type(
                 &[
@@ -58,22 +58,19 @@ impl<'a, 'ctx> StringInfraestructure<'a, 'ctx> {
             Some(Linkage::LinkerPrivate),
         );
 
-        function_append.set_param_alignment(0, 4);
-        function_append.set_param_alignment(1, 4);
-        function_append.set_param_alignment(2, 4);
+        append.set_param_alignment(0, 4);
+        append.set_param_alignment(1, 4);
+        append.set_param_alignment(2, 4);
 
-        let block_append: BasicBlock<'_> = self.context.append_basic_block(function_append, "");
+        let block_append: BasicBlock<'_> = self.context.append_basic_block(append, "");
 
         self.builder.position_at_end(block_append);
 
         let string: PointerValue<'_> = self
             .builder
             .build_load(
-                function_append.get_first_param().unwrap().get_type(),
-                function_append
-                    .get_first_param()
-                    .unwrap()
-                    .into_pointer_value(),
+                append.get_first_param().unwrap().get_type(),
+                append.get_first_param().unwrap().into_pointer_value(),
                 "",
             )
             .unwrap()
@@ -85,16 +82,13 @@ impl<'a, 'ctx> StringInfraestructure<'a, 'ctx> {
                 .build_in_bounds_gep(
                     self.context.i8_type(),
                     string,
-                    &[function_append.get_last_param().unwrap().into_int_value()],
+                    &[append.get_last_param().unwrap().into_int_value()],
                     "",
                 )
                 .unwrap();
 
             self.builder
-                .build_store(
-                    ptr,
-                    function_append.get_nth_param(1).unwrap().into_int_value(),
-                )
+                .build_store(ptr, append.get_nth_param(1).unwrap().into_int_value())
                 .unwrap();
         }
 
@@ -102,7 +96,7 @@ impl<'a, 'ctx> StringInfraestructure<'a, 'ctx> {
     }
 
     fn define_string_extract(&mut self) {
-        let function_string_extract: FunctionValue<'_> = self.module.add_function(
+        let string_extract: FunctionValue<'_> = self.module.add_function(
             "String.extract",
             self.context.i8_type().fn_type(
                 &[
@@ -114,22 +108,19 @@ impl<'a, 'ctx> StringInfraestructure<'a, 'ctx> {
             Some(Linkage::LinkerPrivate),
         );
 
-        function_string_extract.set_param_alignment(0, 4);
-        function_string_extract.set_param_alignment(1, 4);
+        string_extract.set_param_alignment(0, 4);
+        string_extract.set_param_alignment(1, 4);
 
         let block_string_extract: BasicBlock<'_> =
-            self.context.append_basic_block(function_string_extract, "");
+            self.context.append_basic_block(string_extract, "");
 
         self.builder.position_at_end(block_string_extract);
 
         let string: PointerValue<'_> = self
             .builder
             .build_load(
-                function_string_extract
-                    .get_first_param()
-                    .unwrap()
-                    .get_type(),
-                function_string_extract
+                string_extract.get_first_param().unwrap().get_type(),
+                string_extract
                     .get_first_param()
                     .unwrap()
                     .into_pointer_value(),
@@ -144,10 +135,7 @@ impl<'a, 'ctx> StringInfraestructure<'a, 'ctx> {
                 .build_in_bounds_gep(
                     self.context.i8_type(),
                     string,
-                    &[function_string_extract
-                        .get_last_param()
-                        .unwrap()
-                        .into_int_value()],
+                    &[string_extract.get_last_param().unwrap().into_int_value()],
                     "",
                 )
                 .unwrap();
@@ -162,21 +150,19 @@ impl<'a, 'ctx> StringInfraestructure<'a, 'ctx> {
                 )
                 .unwrap();
 
-            let as_true: BasicBlock<'_> =
-                self.context.append_basic_block(function_string_extract, "");
-            let as_false: BasicBlock<'_> =
-                self.context.append_basic_block(function_string_extract, "");
+            let is_true: BasicBlock<'_> = self.context.append_basic_block(string_extract, "");
+            let is_false: BasicBlock<'_> = self.context.append_basic_block(string_extract, "");
 
             self.builder
-                .build_conditional_branch(cmp, as_true, as_false)
+                .build_conditional_branch(cmp, is_true, is_false)
                 .unwrap();
 
-            self.builder.position_at_end(as_true);
+            self.builder.position_at_end(is_true);
             self.builder
                 .build_return(Some(&self.context.i8_type().const_int(0, false)))
                 .unwrap();
 
-            self.builder.position_at_end(as_false);
+            self.builder.position_at_end(is_false);
 
             let char: BasicValueEnum<'ctx> = self
                 .builder
@@ -190,7 +176,7 @@ impl<'a, 'ctx> StringInfraestructure<'a, 'ctx> {
     }
 
     fn define_string_size(&mut self) {
-        let function_string_size: FunctionValue<'_> = self.module.add_function(
+        let string_size: FunctionValue<'_> = self.module.add_function(
             "String.size",
             self.context.i64_type().fn_type(
                 &[self.context.ptr_type(AddressSpace::default()).into()],
@@ -199,10 +185,9 @@ impl<'a, 'ctx> StringInfraestructure<'a, 'ctx> {
             Some(Linkage::LinkerPrivate),
         );
 
-        function_string_size.set_param_alignment(0, 4);
+        string_size.set_param_alignment(0, 4);
 
-        let string_size_block: BasicBlock<'_> =
-            self.context.append_basic_block(function_string_size, "");
+        let string_size_block: BasicBlock<'_> = self.context.append_basic_block(string_size, "");
 
         self.builder.position_at_end(string_size_block);
 
@@ -215,7 +200,7 @@ impl<'a, 'ctx> StringInfraestructure<'a, 'ctx> {
             .build_store(counter, self.context.i64_type().const_int(1, false))
             .unwrap();
 
-        let loop_block: BasicBlock<'_> = self.context.append_basic_block(function_string_size, "");
+        let loop_block: BasicBlock<'_> = self.context.append_basic_block(string_size, "");
 
         self.builder.build_unconditional_branch(loop_block).unwrap();
 
@@ -236,11 +221,8 @@ impl<'a, 'ctx> StringInfraestructure<'a, 'ctx> {
             let get_element: PointerValue<'ctx> = self
                 .builder
                 .build_in_bounds_gep(
-                    function_string_size.get_first_param().unwrap().get_type(),
-                    function_string_size
-                        .get_last_param()
-                        .unwrap()
-                        .into_pointer_value(),
+                    string_size.get_first_param().unwrap().get_type(),
+                    string_size.get_last_param().unwrap().into_pointer_value(),
                     &[index],
                     "",
                 )
@@ -256,8 +238,8 @@ impl<'a, 'ctx> StringInfraestructure<'a, 'ctx> {
                 )
                 .unwrap();
 
-            let done: BasicBlock<'_> = self.context.append_basic_block(function_string_size, "");
-            let not: BasicBlock<'_> = self.context.append_basic_block(function_string_size, "");
+            let done: BasicBlock<'_> = self.context.append_basic_block(string_size, "");
+            let not: BasicBlock<'_> = self.context.append_basic_block(string_size, "");
 
             self.builder
                 .build_conditional_branch(cmp, done, not)

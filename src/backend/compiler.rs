@@ -1297,13 +1297,9 @@ pub enum Instruction<'ctx> {
         right: Box<Instruction<'ctx>>,
         kind: DataTypes,
     },
-    Unary {
-        op: &'ctx TokenKind,
-        right: Box<Instruction<'ctx>>,
-    },
 
     Group {
-        stmt: Box<Instruction<'ctx>>,
+        instr: Box<Instruction<'ctx>>,
     },
 
     Null,
@@ -1349,6 +1345,8 @@ impl<'instr> Instruction<'instr> {
             Instruction::Boolean(_) => DataTypes::Bool,
             Instruction::Char(_) => DataTypes::Char,
             Instruction::RefVar { kind, .. } => kind.defer(),
+            Instruction::Group { instr } => instr.get_data_type(),
+            Instruction::Binary { kind, .. } => kind.defer(),
 
             e => {
                 println!("{:?}", e);

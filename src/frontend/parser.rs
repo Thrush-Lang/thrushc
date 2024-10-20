@@ -6,6 +6,7 @@ use {
             error::{ThrushError, ThrushErrorKind},
             logging, PATH,
         },
+        checking::check_binary_instr,
         lexer::{DataTypes, Token, TokenKind},
         objects::Variable,
         scoper::ThrushScoper,
@@ -407,7 +408,11 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     }
                 }
 
-                _ => todo!(),
+                e => {
+                    println!("{:?}", e);
+
+                    todo!()
+                }
             }
         }
 
@@ -1167,6 +1172,13 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'instr> = self.and()?;
 
+            check_binary_instr(
+                op,
+                &instr.get_data_type(),
+                &right.get_data_type(),
+                self.previous().line,
+            )?;
+
             instr = Instruction::Binary {
                 left: Box::new(instr),
                 op,
@@ -1185,6 +1197,13 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'_> = self.equality()?;
 
+            check_binary_instr(
+                op,
+                &instr.get_data_type(),
+                &right.get_data_type(),
+                self.previous().line,
+            )?;
+
             instr = Instruction::Binary {
                 left: Box::new(instr),
                 op,
@@ -1202,6 +1221,13 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         while self.match_token(TokenKind::BangEqual)? || self.match_token(TokenKind::EqEq)? {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'_> = self.comparison()?;
+
+            check_binary_instr(
+                op,
+                &instr.get_data_type(),
+                &right.get_data_type(),
+                self.previous().line,
+            )?;
 
             instr = Instruction::Binary {
                 left: Box::from(instr),
@@ -1225,6 +1251,13 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'_> = self.term()?;
 
+            check_binary_instr(
+                op,
+                &instr.get_data_type(),
+                &right.get_data_type(),
+                self.previous().line,
+            )?;
+
             instr = Instruction::Binary {
                 left: Box::from(instr),
                 op,
@@ -1247,6 +1280,13 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'_> = self.primary()?;
 
+            check_binary_instr(
+                op,
+                &instr.get_data_type(),
+                &right.get_data_type(),
+                self.previous().line,
+            )?;
+
             instr = Instruction::Binary {
                 left: Box::from(instr),
                 op,
@@ -1260,6 +1300,23 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
     fn primary(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         let primary: Instruction = match &self.peek().kind {
+            TokenKind::LParen => {
+                self.only_advance()?;
+
+                let instr: Instruction<'instr> = self.expression()?;
+
+                self.consume(
+                    TokenKind::RParen,
+                    ThrushErrorKind::SyntaxError,
+                    String::from("Syntax Error"),
+                    String::from("Expected ')'."),
+                )?;
+
+                return Ok(Instruction::Group {
+                    instr: Box::new(instr),
+                });
+            }
+
             TokenKind::String => {
                 Instruction::String(self.advance()?.lexeme.as_ref().unwrap().to_string())
             }
@@ -1410,17 +1467,6 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     Instruction::Boolean(false)
                 }
 
-                TokenKind::RParen | TokenKind::RBrace => {
-                    self.only_advance()?;
-
-                    return Err(ThrushError::Parse(
-                        ThrushErrorKind::SyntaxError,
-                        String::from("Syntax Error"),
-                        format!("Expected expression, found '{}'. Is this a function call or an function definition?", kind),
-                        self.peek().line,
-                    ));
-                }
-
                 kind => {
                     self.only_advance()?;
 
@@ -1458,6 +1504,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         ))
     }
 
+    #[inline]
     fn find_variable(&self, name: &str) -> Result<(DataTypes, bool), ThrushError> {
         for scope in self.locals.iter().rev() {
             if scope.contains_key(name) {

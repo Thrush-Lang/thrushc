@@ -1,3 +1,4 @@
+pub mod checking;
 pub mod lexer;
 pub mod objects;
 pub mod parser;

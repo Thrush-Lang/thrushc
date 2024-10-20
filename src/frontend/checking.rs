@@ -5,7 +5,7 @@ use super::super::{
 
 /*
 
-BINARY INSTRUCTIONS
+BINARY INSTRUCTION
 
 --------------------
 A OPERATOR B
@@ -13,11 +13,7 @@ A OPERATOR B
 */
 
 #[inline]
-pub fn check_binary_instr_add(
-    a: &DataTypes,
-    b: &DataTypes,
-    line: usize,
-) -> Result<(), ThrushError> {
+fn check_binary_instr_add(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     match (a, b) {
         (DataTypes::String, DataTypes::String) => Ok(()),
         (
@@ -55,11 +51,7 @@ pub fn check_binary_instr_add(
 }
 
 #[inline]
-pub fn check_binary_instr_sub(
-    a: &DataTypes,
-    b: &DataTypes,
-    line: usize,
-) -> Result<(), ThrushError> {
+fn check_binary_instr_sub(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
         DataTypes::U8
         | DataTypes::U16
@@ -98,11 +90,7 @@ pub fn check_binary_instr_sub(
 }
 
 #[inline]
-pub fn check_binary_instr_div(
-    a: &DataTypes,
-    b: &DataTypes,
-    line: usize,
-) -> Result<(), ThrushError> {
+fn check_binary_instr_div(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
         DataTypes::U8
         | DataTypes::U16
@@ -141,11 +129,7 @@ pub fn check_binary_instr_div(
 }
 
 #[inline]
-pub fn check_binary_instr_mul(
-    a: &DataTypes,
-    b: &DataTypes,
-    line: usize,
-) -> Result<(), ThrushError> {
+fn check_binary_instr_mul(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
         DataTypes::U8
         | DataTypes::U16
@@ -184,11 +168,7 @@ pub fn check_binary_instr_mul(
 }
 
 #[inline]
-pub fn check_binary_instr_eqeq(
-    a: &DataTypes,
-    b: &DataTypes,
-    line: usize,
-) -> Result<(), ThrushError> {
+fn check_binary_instr_eqeq(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
         DataTypes::U8
         | DataTypes::U16
@@ -233,11 +213,7 @@ pub fn check_binary_instr_eqeq(
 }
 
 #[inline]
-pub fn check_binary_instr_bangeq(
-    a: &DataTypes,
-    b: &DataTypes,
-    line: usize,
-) -> Result<(), ThrushError> {
+fn check_binary_instr_bangeq(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
         DataTypes::U8
         | DataTypes::U16
@@ -282,7 +258,7 @@ pub fn check_binary_instr_bangeq(
 }
 
 #[inline]
-pub fn check_binary_instr_greater(
+fn check_binary_instr_greater(
     a: &DataTypes,
     b: &DataTypes,
     line: usize,
@@ -325,7 +301,7 @@ pub fn check_binary_instr_greater(
 }
 
 #[inline]
-pub fn check_binary_instr_greatereq(
+fn check_binary_instr_greatereq(
     a: &DataTypes,
     b: &DataTypes,
     line: usize,
@@ -368,11 +344,7 @@ pub fn check_binary_instr_greatereq(
 }
 
 #[inline]
-pub fn check_binary_instr_less(
-    a: &DataTypes,
-    b: &DataTypes,
-    line: usize,
-) -> Result<(), ThrushError> {
+fn check_binary_instr_less(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
         DataTypes::U8
         | DataTypes::U16
@@ -411,11 +383,7 @@ pub fn check_binary_instr_less(
 }
 
 #[inline]
-pub fn check_binary_instr_lesseq(
-    a: &DataTypes,
-    b: &DataTypes,
-    line: usize,
-) -> Result<(), ThrushError> {
+fn check_binary_instr_lesseq(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
         DataTypes::U8
         | DataTypes::U16
@@ -454,11 +422,7 @@ pub fn check_binary_instr_lesseq(
 }
 
 #[inline]
-pub fn check_binary_instr_and(
-    a: &DataTypes,
-    b: &DataTypes,
-    line: usize,
-) -> Result<(), ThrushError> {
+fn check_binary_instr_and(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
         DataTypes::U8
         | DataTypes::U16
@@ -499,7 +463,7 @@ pub fn check_binary_instr_and(
 }
 
 #[inline]
-pub fn check_binary_instr_or(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
+fn check_binary_instr_or(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
         DataTypes::U8
         | DataTypes::U16
@@ -559,6 +523,123 @@ pub fn check_binary_instr(
         TokenKind::LessEqual => check_binary_instr_lesseq(a, b, line),
         TokenKind::And => check_binary_instr_and(a, b, line),
         TokenKind::Or => check_binary_instr_or(a, b, line),
+        _ => Ok(()),
+    }
+}
+
+/*
+
+UNARY INSTRUCTION
+
+--------------------
+OPERATOR B OPERATOR
+--------------------
+*/
+
+#[inline]
+fn check_unary_instr_negate(a: &DataTypes, line: usize) -> Result<(), ThrushError> {
+    if let DataTypes::U8
+    | DataTypes::U16
+    | DataTypes::U32
+    | DataTypes::U64
+    | DataTypes::F32
+    | DataTypes::F64
+    | DataTypes::Integer = a
+    {
+        return Ok(());
+    }
+
+    Err(ThrushError::Parse(
+        ThrushErrorKind::SyntaxError,
+        String::from("Syntax Error"),
+        format!(
+            "Negative operation (-{}) is impossible. Check your operand and type.",
+            a
+        ),
+        line,
+    ))
+}
+
+#[inline]
+fn check_unary_instr_minusminus(a: &DataTypes, line: usize) -> Result<(), ThrushError> {
+    if let DataTypes::U8
+    | DataTypes::U16
+    | DataTypes::U32
+    | DataTypes::U64
+    | DataTypes::I8
+    | DataTypes::I16
+    | DataTypes::I32
+    | DataTypes::I64
+    | DataTypes::F32
+    | DataTypes::F64
+    | DataTypes::Integer = a
+    {
+        return Ok(());
+    }
+
+    Err(ThrushError::Parse(
+        ThrushErrorKind::SyntaxError,
+        String::from("Syntax Error"),
+        format!(
+            "Substractive operation (--{} or {}--) is impossible. Check your operand and type.",
+            a, a
+        ),
+        line,
+    ))
+}
+
+#[inline]
+fn check_unary_instr_plusplus(a: &DataTypes, line: usize) -> Result<(), ThrushError> {
+    if let DataTypes::U8
+    | DataTypes::U16
+    | DataTypes::U32
+    | DataTypes::U64
+    | DataTypes::I8
+    | DataTypes::I16
+    | DataTypes::I32
+    | DataTypes::I64
+    | DataTypes::F32
+    | DataTypes::F64
+    | DataTypes::Integer = a
+    {
+        return Ok(());
+    }
+
+    Err(ThrushError::Parse(
+        ThrushErrorKind::SyntaxError,
+        String::from("Syntax Error"),
+        format!(
+            "Additive operation (++{} or {}++) is impossible. Check your operand and type.",
+            a, a
+        ),
+        line,
+    ))
+}
+
+#[inline]
+fn check_unary_instr_bang(a: &DataTypes, line: usize) -> Result<(), ThrushError> {
+    if let DataTypes::Bool = a {
+        return Ok(());
+    }
+
+    Err(ThrushError::Parse(
+        ThrushErrorKind::SyntaxError,
+        String::from("Syntax Error"),
+        format!(
+            "Logical operation (!{}) is impossible. Check your operand and type.",
+            a
+        ),
+        line,
+    ))
+}
+
+#[inline]
+pub fn check_unary_instr(op: &TokenKind, a: &DataTypes, line: usize) -> Result<(), ThrushError> {
+    match op {
+        TokenKind::PlusPlus => check_unary_instr_plusplus(a, line),
+        TokenKind::MinusMinus => check_unary_instr_minusminus(a, line),
+        TokenKind::Minus => check_unary_instr_negate(a, line),
+        TokenKind::Bang => check_unary_instr_bang(a, line),
         _ => Ok(()),
     }
 }

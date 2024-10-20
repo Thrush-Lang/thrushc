@@ -1,12 +1,12 @@
 use {
     super::{
         super::{
-            backend::compiler::{CompilerOptions, Instruction},
+            backend::{compiler::CompilerOptions, instruction::Instruction},
             diagnostic::Diagnostic,
             error::{ThrushError, ThrushErrorKind},
             logging, PATH,
         },
-        checking::check_binary_instr,
+        checking::{check_binary_instr, check_unary_instr},
         lexer::{DataTypes, Token, TokenKind},
         objects::Variable,
         scoper::ThrushScoper,
@@ -407,6 +407,10 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                         kind: indexe_kind.defer(),
                     }
                 }
+
+                Instruction::Binary { .. }
+                | Instruction::Unary { .. }
+                | Instruction::Group { .. } => {}
 
                 e => {
                     println!("{:?}", e);
@@ -1270,7 +1274,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     }
 
     fn term(&mut self) -> Result<Instruction<'instr>, ThrushError> {
-        let mut instr: Instruction<'_> = self.primary()?;
+        let mut instr: Instruction<'_> = self.unary()?;
 
         while self.match_token(TokenKind::Plus)?
             || self.match_token(TokenKind::Minus)?
@@ -1278,7 +1282,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             || self.match_token(TokenKind::Star)?
         {
             let op: &TokenKind = &self.previous().kind;
-            let right: Instruction<'_> = self.primary()?;
+            let right: Instruction<'_> = self.unary()?;
 
             check_binary_instr(
                 op,
@@ -1294,6 +1298,39 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 kind: DataTypes::Integer,
             };
         }
+
+        Ok(instr)
+    }
+
+    fn unary(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+        if self.match_token(TokenKind::Bang)? {
+            let op: &TokenKind = &self.previous().kind;
+            let value: Instruction<'instr> = self.primary()?;
+
+            check_unary_instr(op, &value.get_data_type(), self.previous().line)?;
+
+            return Ok(Instruction::Unary {
+                op,
+                value: Box::from(value),
+                kind: DataTypes::Bool,
+            });
+        } else if self.match_token(TokenKind::PlusPlus)?
+            | self.match_token(TokenKind::MinusMinus)?
+            | self.match_token(TokenKind::Minus)?
+        {
+            let op: &TokenKind = &self.previous().kind;
+            let value: Instruction<'instr> = self.primary()?;
+
+            check_unary_instr(op, &value.get_data_type(), self.previous().line)?;
+
+            return Ok(Instruction::Unary {
+                op,
+                value: Box::from(value),
+                kind: DataTypes::Integer,
+            });
+        }
+
+        let instr: Instruction<'_> = self.primary()?;
 
         Ok(instr)
     }
@@ -1327,7 +1364,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 TokenKind::Integer(kind, num) => {
                     self.only_advance()?;
 
-                    match kind {
+                    let instr: Instruction<'instr> = match kind {
                         DataTypes::I8 => Instruction::Integer(DataTypes::I8, *num),
                         DataTypes::I16 => Instruction::Integer(DataTypes::I16, *num),
                         DataTypes::I32 => Instruction::Integer(DataTypes::I32, *num),
@@ -1340,7 +1377,21 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                         DataTypes::F64 => Instruction::Integer(DataTypes::F64, *num),
 
                         _ => unreachable!(),
+                    };
+
+                    if self.match_token(TokenKind::PlusPlus)?
+                        | self.match_token(TokenKind::MinusMinus)?
+                    {
+                        check_unary_instr(&self.previous().kind, kind, self.previous().line)?;
+
+                        return Ok(Instruction::Unary {
+                            op: &self.previous().kind,
+                            value: Box::from(instr),
+                            kind: DataTypes::Integer,
+                        });
                     }
+
+                    instr
                 }
 
                 TokenKind::Identifier => {
@@ -1448,11 +1499,29 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                         ));
                     }
 
-                    Instruction::RefVar {
+                    let refvar: Instruction<'_> = Instruction::RefVar {
                         name: self.previous().lexeme.as_ref().unwrap(),
                         line: self.previous().line,
                         kind: var.0,
+                    };
+
+                    if self.match_token(TokenKind::PlusPlus)?
+                        | self.match_token(TokenKind::MinusMinus)?
+                    {
+                        check_unary_instr(
+                            &self.previous().kind,
+                            &refvar.get_data_type(),
+                            self.previous().line,
+                        )?;
+
+                        return Ok(Instruction::Unary {
+                            op: &self.previous().kind,
+                            value: Box::from(refvar),
+                            kind: DataTypes::Integer,
+                        });
                     }
+
+                    refvar
                 }
 
                 TokenKind::True => {

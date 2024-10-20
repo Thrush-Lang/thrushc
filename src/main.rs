@@ -8,7 +8,8 @@ mod logging;
 use {
     backend::{
         builder::FileBuilder,
-        compiler::{Compiler, CompilerOptions, Instruction, Linking, Opt},
+        compiler::{Compiler, CompilerOptions, Linking, Opt},
+        instruction::Instruction,
     },
     constants::TARGETS,
     frontend::{

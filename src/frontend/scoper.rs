@@ -1,5 +1,5 @@
 use super::super::{
-    backend::compiler::Instruction,
+    backend::instruction::Instruction,
     diagnostic::Diagnostic,
     error::{ThrushError, ThrushErrorKind},
     PATH,

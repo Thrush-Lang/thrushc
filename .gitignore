@@ -1,3 +1,5 @@
 /target
 /guide
 /tests
+.vscode/
+.github/

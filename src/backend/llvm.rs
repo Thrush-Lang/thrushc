@@ -103,21 +103,6 @@ pub fn build_int_array_type_from_size(
     }
 }
 
-pub fn set_globals_options<'ctx>(
-    context: &'ctx Context,
-    global: GlobalValue<'ctx>,
-    initializer: Option<&Instruction>,
-) {
-    if let Some(Instruction::String(string)) = initializer {
-        global.set_initializer(&context.const_string(string.as_ref(), false))
-    }
-
-    global.set_linkage(Linkage::Private);
-    global.set_constant(true);
-    global.set_unnamed_addr(true);
-    global.set_alignment(1);
-}
-
 pub fn datatype_to_fn_type<'ctx>(
     context: &'ctx Context,
     kind: &Option<DataTypes>,

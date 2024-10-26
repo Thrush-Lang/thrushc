@@ -899,7 +899,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             }
         }
 
-        panic!("\nUnexpected error\n Report this issue at https://github.com/Thrush-Lang/thrushc")
+        panic!("\nUnexpected error at compiler internal at `fn get_variable()`\n Report this issue at https://github.com/Thrush-Lang/thrushc")
     }
 
     fn advance(&mut self) -> &'ctx Instruction<'ctx> {
@@ -927,7 +927,7 @@ fn get_variable<'ctx>(
         }
     }
 
-    panic!("\nUnexpected error\n Report this issue at https://github.com/Thrush-Lang/thrushc")
+    panic!("\nUnexpected error at `fn get_variable()`\n Report this issue at https://github.com/Thrush-Lang/thrushc")
 }
 
 fn string_into_basimetadatavaluenum<'ctx, 'a>(
@@ -1144,6 +1144,26 @@ impl Default for CompilerOptions {
             is_main: false,
             reloc_mode: RelocMode::Default,
             code_model: CodeModel::Default,
+        }
+    }
+}
+
+impl Opt {
+    pub fn to_str(&self) -> &str {
+        match self {
+            Opt::None => "O0",
+            Opt::Low => "O1",
+            Opt::Mid => "O2",
+            Opt::Mcqueen => "O3",
+        }
+    }
+}
+
+impl Linking {
+    pub fn to_str(&self) -> &str {
+        match self {
+            Linking::Static => "--static",
+            Linking::Dynamic => "-dynamic",
         }
     }
 }

@@ -572,7 +572,7 @@ impl std::fmt::Display for TokenKind {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum DataTypes {
     // Integer DataTypes
     U8,
@@ -625,26 +625,6 @@ impl std::fmt::Display for DataTypes {
 }
 
 impl DataTypes {
-    pub fn defer(&self) -> DataTypes {
-        match &self {
-            DataTypes::U8 => DataTypes::U8,
-            DataTypes::U16 => DataTypes::U16,
-            DataTypes::U32 => DataTypes::U32,
-            DataTypes::U64 => DataTypes::U64,
-            DataTypes::I8 => DataTypes::I8,
-            DataTypes::I16 => DataTypes::I16,
-            DataTypes::I32 => DataTypes::I32,
-            DataTypes::I64 => DataTypes::I64,
-            DataTypes::F32 => DataTypes::F32,
-            DataTypes::F64 => DataTypes::F64,
-            DataTypes::Bool => DataTypes::Bool,
-            DataTypes::String => DataTypes::String,
-            DataTypes::Char => DataTypes::Char,
-            DataTypes::Void => DataTypes::Void,
-            DataTypes::Integer => DataTypes::Integer,
-            DataTypes::Float => DataTypes::Float
-        }
-    }
 
     pub fn need_cast(&self, value: &DataTypes) -> bool {
         match self {

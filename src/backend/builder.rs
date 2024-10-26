@@ -1,6 +1,6 @@
 use {
-    super::super::{logging, BACKEND},
-    super::compiler::{CompilerOptions, Linking, Opt},
+    super::super::logging,
+    super::compiler::CompilerOptions,
     inkwell::module::Module,
     std::{fs, path::Path, process::Command},
 };
@@ -8,25 +8,21 @@ use {
 pub struct FileBuilder<'a, 'ctx> {
     module: &'a Module<'ctx>,
     options: &'a CompilerOptions,
+    backend: &'a str,
 }
 
 impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
-    pub fn new(options: &'a CompilerOptions, module: &'a Module<'ctx>) -> Self {
-        Self { options, module }
+    pub fn new(options: &'a CompilerOptions, module: &'a Module<'ctx>, backend: &'a str) -> Self {
+        Self {
+            options,
+            module,
+            backend,
+        }
     }
 
     pub fn build(self) {
-        let opt_level: &str = match self.options.optimization {
-            Opt::None => "O0",
-            Opt::Low => "O1",
-            Opt::Mid => "O2",
-            Opt::Mcqueen => "O3",
-        };
-
-        let linking: &str = match self.options.linking {
-            Linking::Static => "--static",
-            Linking::Dynamic => "-dynamic",
-        };
+        let opt_level: &str = self.options.optimization.to_str();
+        let linking: &str = self.options.linking.to_str();
 
         if self.options.emit_llvm {
             self.module
@@ -38,24 +34,24 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
         self.module
             .write_bitcode_to_path(Path::new(&format!("{}.bc", self.options.name)));
 
-        match Command::new(Path::new(&BACKEND.lock().unwrap().as_str()).join("clang-18")).spawn() {
+        match Command::new(Path::new(self.backend).join("clang-18")).spawn() {
             Ok(mut child) => {
                 child.kill().unwrap();
 
                 if self.options.build {
                     match self.opt(opt_level) {
                         Ok(()) => {
-                            Command::new(
-                                Path::new(&BACKEND.lock().unwrap().as_str()).join("clang-18"),
-                            )
-                            .arg("-opaque-pointers")
-                            .arg(linking)
-                            .arg("-ffast-math")
-                            .arg(format!("{}.bc", self.options.name))
-                            .arg("-o")
-                            .arg(self.options.name.as_str())
-                            .output()
-                            .unwrap();
+                            // FIX INCOMPATIBLE COMPILATION LLVM 18
+
+                            Command::new(Path::new(self.backend).join("clang-18"))
+                                .arg("-opaque-pointers")
+                                .arg(linking)
+                                .arg("-ffast-math")
+                                .arg(format!("{}.bc", self.options.name))
+                                .arg("-o")
+                                .arg(self.options.name.as_str())
+                                .output()
+                                .unwrap();
                         }
                         Err(error) => {
                             logging::log(logging::LogType::ERROR, &error);
@@ -65,18 +61,16 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
                 } else if self.options.emit_object {
                     match self.opt(opt_level) {
                         Ok(()) => {
-                            Command::new(
-                                Path::new(&BACKEND.lock().unwrap().as_str()).join("clang-18"),
-                            )
-                            .arg("-opaque-pointers")
-                            .arg(linking)
-                            .arg("-ffast-math")
-                            .arg("-c")
-                            .arg(format!("{}.bc", self.options.name))
-                            .arg("-o")
-                            .arg(format!("{}.o", self.options.name))
-                            .output()
-                            .unwrap();
+                            Command::new(Path::new(self.backend).join("clang-18"))
+                                .arg("-opaque-pointers")
+                                .arg(linking)
+                                .arg("-ffast-math")
+                                .arg("-c")
+                                .arg(format!("{}.bc", self.options.name))
+                                .arg("-o")
+                                .arg(format!("{}.o", self.options.name))
+                                .output()
+                                .unwrap();
                         }
                         Err(error) => {
                             logging::log(logging::LogType::ERROR, &error);
@@ -97,9 +91,11 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
     }
 
     fn opt(&self, opt_level: &str) -> Result<(), String> {
-        match Command::new(Path::new(&BACKEND.lock().unwrap().as_str()).join("opt")).spawn() {
+        match Command::new(Path::new(self.backend).join("opt")).spawn() {
             Ok(mut child) => {
                 child.kill().unwrap();
+
+                // FIX INCOMPATIBLE OPTIMIZATION LLVM 18
 
                 Command::new("opt")
                     .arg(format!("-p={}", opt_level))

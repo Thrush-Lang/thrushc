@@ -88,7 +88,7 @@ impl PartialEq for Instruction<'_> {
     }
 }
 
-impl<'instr> Instruction<'instr> {
+impl Instruction<'_> {
     pub fn get_data_type(&self) -> DataTypes {
         match self {
             Instruction::Integer(data_type, _) => match data_type {
@@ -111,10 +111,10 @@ impl<'instr> Instruction<'instr> {
             Instruction::String(_) => DataTypes::String,
             Instruction::Boolean(_) => DataTypes::Bool,
             Instruction::Char(_) => DataTypes::Char,
-            Instruction::RefVar { kind, .. } => kind.defer(),
+            Instruction::RefVar { kind, .. } => *kind,
             Instruction::Group { instr } => instr.get_data_type(),
-            Instruction::Binary { kind, .. } => kind.defer(),
-            Instruction::Unary { kind, .. } => kind.defer(),
+            Instruction::Binary { kind, .. } => *kind,
+            Instruction::Unary { kind, .. } => *kind,
 
             e => {
                 println!("{:?}", e);
@@ -126,9 +126,9 @@ impl<'instr> Instruction<'instr> {
 
     pub fn get_kind(&self) -> Option<DataTypes> {
         match self {
-            Instruction::Var { kind, .. } => Some(kind.defer()),
+            Instruction::Var { kind, .. } => Some(*kind),
             Instruction::Char(_) => Some(DataTypes::Char),
-            Instruction::Integer(kind, _) => Some(kind.defer()),
+            Instruction::Integer(kind, _) => Some(*kind),
             _ => None,
         }
     }

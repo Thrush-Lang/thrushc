@@ -1296,7 +1296,7 @@ impl<'a, 'ctx> StringInfraestructure<'a, 'ctx> {
 
 /* -----------------------------------------------------------------------
 
- Basic Infraestructure
+    Basic Infraestructure
 
  Functions:
 

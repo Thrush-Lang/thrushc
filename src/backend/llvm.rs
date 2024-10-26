@@ -3,9 +3,8 @@ use {
     inkwell::{
         builder::Builder,
         context::Context,
-        module::Linkage,
         types::{ArrayType, BasicMetadataTypeEnum, FloatType, FunctionType, IntType},
-        values::{FloatValue, GlobalValue, IntValue, PointerValue},
+        values::{FloatValue, IntValue, PointerValue},
     },
 };
 

@@ -31,12 +31,12 @@ use {
 
 pub static NAME: Mutex<String> = Mutex::new(String::new());
 pub static PATH: Mutex<String> = Mutex::new(String::new());
-pub static BACKEND: Mutex<String> = Mutex::new(String::new());
 
 fn main() {
     let mut parameters: Vec<String> = env::args().collect();
     let mut options: CompilerOptions = CompilerOptions::default();
     let mut compile: bool = false;
+    let mut backend: String = String::new();
 
     parameters.remove(0);
 
@@ -176,7 +176,7 @@ fn main() {
                                 return;
                             }
 
-                            BACKEND.lock().unwrap().push_str(&parameters[i + 1]);
+                            backend.push_str(&parameters[i + 1]);
                         }
                         "--lib" | "-lib" => {
                             options.emit_object = true;
@@ -309,7 +309,7 @@ fn main() {
         );
 
         return;
-    } else if BACKEND.lock().unwrap().is_empty() && compile {
+    } else if backend.is_empty() && compile {
         logging::log(
             logging::LogType::ERROR,
             "Cannot compile file if don't specified the backend path for the compiler.",
@@ -383,7 +383,7 @@ fn main() {
                     Compiler::compile(&module, &builder, &context, instructions);
 
                     if compile {
-                        FileBuilder::new(&options, &module).build();
+                        FileBuilder::new(&options, &module, &backend).build();
                     } else {
                         todo!()
                     }

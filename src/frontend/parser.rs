@@ -150,7 +150,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
                 self.only_advance()?;
 
-                Some(kind.defer())
+                Some(*kind)
             }
 
             TokenKind::Eq => None,
@@ -192,7 +192,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
             self.define_local(
                 name.lexeme.as_ref().unwrap(),
-                Variable::new(kind.as_ref().unwrap().defer(), true),
+                Variable::new(*kind.as_ref().unwrap(), true),
             );
 
             return Ok(Instruction::Var {
@@ -230,7 +230,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                                 ));
                             }
 
-                            kind = Some(data_type.defer());
+                            kind = Some(*data_type);
                         }
                         DataTypes::Float => {
                             if !VALID_FLOAT_TYPES.contains(data_type) {
@@ -246,7 +246,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                                 ));
                             }
 
-                            kind = Some(data_type.defer());
+                            kind = Some(*data_type);
                         }
                         _ => {}
                     }
@@ -404,7 +404,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                         origin,
                         name: Some(name.lexeme.as_ref().unwrap()),
                         index: *index,
-                        kind: indexe_kind.defer(),
+                        kind: *indexe_kind,
                     }
                 }
 
@@ -656,7 +656,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 TokenKind::DataType(kind) => {
                     self.only_advance()?;
 
-                    kind.defer()
+                    *kind
                 }
                 _ => {
                     return Err(ThrushError::Parse(
@@ -683,7 +683,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         let return_kind: Option<DataTypes> = match &self.peek().kind {
             TokenKind::DataType(kind) => {
                 self.only_advance()?;
-                Some(kind.defer())
+                Some(*kind)
             }
             _ => None,
         };
@@ -717,7 +717,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
         match &return_kind {
             Some(kind) => {
-                self.define_global(name.lexeme.as_ref().unwrap(), kind.defer());
+                self.define_global(name.lexeme.as_ref().unwrap(), *kind);
             }
 
             None => {
@@ -1573,14 +1573,14 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         for scope in self.locals.iter().rev() {
             if scope.contains_key(name) {
                 return Ok((
-                    scope.get(name).unwrap().kind.defer(),
+                    scope.get(name).unwrap().kind,
                     scope.get(name).unwrap().is_null,
                 ));
             }
         }
 
         if self.globals.contains_key(name) {
-            return Ok((self.globals.get(name).unwrap().defer(), false));
+            return Ok((*self.globals.get(name).unwrap(), false));
         }
 
         Err(ThrushError::Parse(
@@ -1591,12 +1591,10 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         ))
     }
 
-    #[inline]
     fn define_global(&mut self, name: &'instr str, kind: DataTypes) {
         self.globals.insert(name, kind);
     }
 
-    #[inline]
     fn define_local(&mut self, name: &'instr str, var: Variable) {
         self.locals[self.scope].insert(name, var);
     }
@@ -1684,14 +1682,17 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         }
     }
 
+    #[inline]
     fn peek(&self) -> Token {
         self.tokens.unwrap()[self.current].clone()
     }
 
+    #[inline]
     fn previous(&self) -> &'instr Token {
         &self.tokens.unwrap()[self.current - 1]
     }
 
+    #[inline]
     fn end(&self) -> bool {
         self.peek().kind == TokenKind::Eof
     }

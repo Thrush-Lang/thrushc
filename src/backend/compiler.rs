@@ -21,7 +21,7 @@ use {
             BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, InstructionOpcode,
             InstructionValue, IntValue, PointerValue, VectorValue,
         },
-        AddressSpace,
+        AddressSpace, OptimizationLevel,
     },
     std::path::PathBuf,
 };
@@ -941,7 +941,7 @@ fn string_into_basimetadatavaluenum<'ctx, 'a>(
 
     let global: GlobalValue<'ctx> = module.add_global(kind, Some(AddressSpace::default()), "");
 
-    global.set_initializer(&context.const_string(string.as_ref(), true));
+    global.set_initializer(&context.const_string(string.as_ref(), false));
 
     global.set_linkage(Linkage::LinkerPrivate);
     global.set_constant(true);
@@ -1118,12 +1118,10 @@ pub struct CompilerOptions {
     pub name: String,
     pub target_triple: TargetTriple,
     pub optimization: Opt,
-    pub interpret: bool,
     pub emit_llvm: bool,
     pub emit_object: bool,
     pub build: bool,
     pub linking: Linking,
-    pub path: PathBuf,
     pub is_main: bool,
     pub reloc_mode: RelocMode,
     pub code_model: CodeModel,
@@ -1135,12 +1133,10 @@ impl Default for CompilerOptions {
             name: String::from("main"),
             target_triple: TargetMachine::get_default_triple(),
             optimization: Opt::default(),
-            interpret: false,
             emit_llvm: false,
             emit_object: false,
             build: false,
             linking: Linking::default(),
-            path: PathBuf::new(),
             is_main: false,
             reloc_mode: RelocMode::Default,
             code_model: CodeModel::Default,
@@ -1155,6 +1151,15 @@ impl Opt {
             Opt::Low => "O1",
             Opt::Mid => "O2",
             Opt::Mcqueen => "O3",
+        }
+    }
+
+    pub fn to_llvm_opt(&self) -> OptimizationLevel {
+        match self {
+            Opt::None => OptimizationLevel::None,
+            Opt::Low => OptimizationLevel::Default,
+            Opt::Mid => OptimizationLevel::Less,
+            Opt::Mcqueen => OptimizationLevel::Aggressive,
         }
     }
 }

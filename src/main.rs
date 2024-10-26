@@ -250,7 +250,7 @@ fn main() {
                             }
                         },
 
-                        "--emit-llvm" | "-emit-llvm" => {
+                        "--emit-only-llvm" | "-emit-only-llvm" => {
                             options.emit_llvm = true;
                         }
                         "--static" | "-s" => {
@@ -279,35 +279,18 @@ fn main() {
 
                 PATH.lock().unwrap().push_str(&parameters[index]);
 
-                options.path = Path::new(&parameters[index]).to_path_buf();
-
                 compile = true;
 
                 break;
             }
 
-            "-i" | "interpret" => {}
-
             _ => {
                 help();
-                return;
             }
         }
     }
 
-    if options.interpret && options.emit_llvm {
-        logging::log(
-            logging::LogType::ERROR,
-            "Cannot issue llvm ir when interpreting. Use `thrushc compile --emit-llvm file.th` instead.",
-        );
-
-        return;
-    } else if options.interpret && options.emit_object {
-        logging::log(
-            logging::LogType::ERROR,
-            "Cannot emit object file when interpreting. Use `thrushc compile --lib file.th` instead.",
-        );
-
+    if !compile {
         return;
     } else if backend.is_empty() && compile {
         logging::log(
@@ -316,16 +299,15 @@ fn main() {
         );
 
         return;
-    }
-
-    if &format!("{}.th", NAME.lock().unwrap().as_str()) == "main.th" {
+    } else if &format!("{}.th", NAME.lock().unwrap().as_str()) == "main.th" {
         options.is_main = true;
     }
 
-    let origin_content: String = read_to_string(&options.path).unwrap_or_else(|error| {
-        logging::log(logging::LogType::ERROR, error.to_string().as_str());
-        panic!()
-    });
+    let origin_content: String =
+        read_to_string(PATH.lock().unwrap().as_str()).unwrap_or_else(|error| {
+            logging::log(logging::LogType::ERROR, error.to_string().as_str());
+            panic!()
+        });
 
     let content: &[u8] = origin_content.as_bytes();
 
@@ -359,12 +341,7 @@ fn main() {
                 Ok(instructions) => {
                     module.set_triple(&options.target_triple);
 
-                    let opt: OptimizationLevel = match &options.optimization {
-                        Opt::None => OptimizationLevel::None,
-                        Opt::Low => OptimizationLevel::Default,
-                        Opt::Mid => OptimizationLevel::Less,
-                        Opt::Mcqueen => OptimizationLevel::Aggressive,
-                    };
+                    let opt: OptimizationLevel = options.optimization.to_llvm_opt();
 
                     let machine: TargetMachine = Target::from_triple(&options.target_triple)
                         .unwrap()
@@ -382,24 +359,7 @@ fn main() {
 
                     Compiler::compile(&module, &builder, &context, instructions);
 
-                    if compile {
-                        FileBuilder::new(&options, &module, &backend).build();
-                    } else {
-                        todo!()
-                    }
-
-                    println!(
-                        "  {} {} {}",
-                        style("Finished").bold().fg(Color::Rgb(141, 141, 142)),
-                        PATH.lock().unwrap(),
-                        style(&format!(
-                            "{}.{}s",
-                            start_time.elapsed().as_secs(),
-                            start_time.elapsed().as_millis()
-                        ))
-                        .bold()
-                        .fg(Color::Rgb(141, 141, 142))
-                    );
+                    FileBuilder::new(&options, &module, &backend).build();
                 }
 
                 Err(msg) => {
@@ -412,6 +372,19 @@ fn main() {
             logging::log(logging::LogType::ERROR, &msg);
         }
     }
+
+    println!(
+        "  {} {} {}",
+        style("Finished").bold().fg(Color::Rgb(141, 141, 142)),
+        PATH.lock().unwrap(),
+        style(&format!(
+            "{}.{}s",
+            start_time.elapsed().as_secs(),
+            start_time.elapsed().as_millis()
+        ))
+        .bold()
+        .fg(Color::Rgb(141, 141, 142))
+    );
 }
 
 fn help() {
@@ -450,25 +423,13 @@ fn help() {
     println!(
         "{} ({} | {}) {}",
         style("•").bold(),
-        style("interpret [--flags] [file]")
-            .bold()
-            .fg(Color::Rgb(141, 141, 142)),
-        style("-i [--flags] [file]")
-            .bold()
-            .fg(Color::Rgb(141, 141, 142)),
-        style("Interpret the code provided using the Interpreter.").bold()
-    );
-
-    println!(
-        "{} ({} | {}) {}",
-        style("•").bold(),
         style("compile [--flags] [file]")
             .bold()
             .fg(Color::Rgb(141, 141, 142)),
         style("-c [--flags] [file]")
             .bold()
             .fg(Color::Rgb(141, 141, 142)),
-        style("Compile the code provided into executable.").bold()
+        style("Compile the code provided into executable, object file, LLVM IR, LLVM Bitcode or Native Assembly.").bold()
     );
 
     println!(
@@ -542,8 +503,12 @@ fn compile_help() {
     println!(
         "{} ({} | {}) {}",
         style("•").bold(),
-        style("--emit-llvm").bold().fg(Color::Rgb(141, 141, 142)),
-        style("-emit-llvm").bold().fg(Color::Rgb(141, 141, 142)),
+        style("--emit-only-llvm")
+            .bold()
+            .fg(Color::Rgb(141, 141, 142)),
+        style("-emit-only-llvm")
+            .bold()
+            .fg(Color::Rgb(141, 141, 142)),
         style("Compile the code to LLVM IR.").bold()
     );
 

@@ -1,6 +1,5 @@
 use {
-    super::super::logging,
-    super::compiler::CompilerOptions,
+    super::{super::logging, compiler::CompilerOptions},
     inkwell::module::Module,
     std::{fs, path::Path, process::Command},
 };
@@ -21,102 +20,69 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
     }
 
     pub fn build(self) {
-        let opt_level: &str = self.options.optimization.to_str();
         let linking: &str = self.options.linking.to_str();
+        let file: String = format!("{}.ll", self.options.name);
 
         if self.options.emit_llvm {
-            self.module
-                .print_to_file(format!("{}.ll", self.options.name))
-                .unwrap();
+            self.module.print_to_file(file).unwrap();
             return;
         }
 
-        self.module
-            .write_bitcode_to_path(Path::new(&format!("{}.bc", self.options.name)));
+        self.module.print_to_file(&file).unwrap();
 
-        match Command::new(Path::new(self.backend).join("clang-18")).spawn() {
-            Ok(mut child) => {
-                child.kill().unwrap();
+        self.optimization(self.options.optimization.to_str());
 
-                if self.options.build {
-                    match self.opt(opt_level) {
-                        Ok(()) => {
-                            // FIX INCOMPATIBLE COMPILATION LLVM 18
+        if self.options.build {
+            self.handle_error(
+                Command::new(Path::new(self.backend).join("clang-18"))
+                    .arg("-opaque-pointers")
+                    .arg(linking)
+                    .arg("-ffast-math")
+                    .arg(&file)
+                    .arg("-o")
+                    .arg(&self.options.name),
+            );
+        } else if self.options.emit_object {
+            self.handle_error(
+                Command::new(Path::new(self.backend).join("clang-18"))
+                    .arg("-opaque-pointers")
+                    .arg(linking)
+                    .arg("-ffast-math")
+                    .arg("-c")
+                    .arg(&file)
+                    .arg("-o")
+                    .arg(format!("{}.o", self.options.name)),
+            );
+        }
 
-                            Command::new(Path::new(self.backend).join("clang-18"))
-                                .arg("-opaque-pointers")
-                                .arg(linking)
-                                .arg("-ffast-math")
-                                .arg(format!("{}.bc", self.options.name))
-                                .arg("-o")
-                                .arg(self.options.name.as_str())
-                                .output()
-                                .unwrap();
-                        }
-                        Err(error) => {
-                            logging::log(logging::LogType::ERROR, &error);
-                            return;
-                        }
-                    }
-                } else if self.options.emit_object {
-                    match self.opt(opt_level) {
-                        Ok(()) => {
-                            Command::new(Path::new(self.backend).join("clang-18"))
-                                .arg("-opaque-pointers")
-                                .arg(linking)
-                                .arg("-ffast-math")
-                                .arg("-c")
-                                .arg(format!("{}.bc", self.options.name))
-                                .arg("-o")
-                                .arg(format!("{}.o", self.options.name))
-                                .output()
-                                .unwrap();
-                        }
-                        Err(error) => {
-                            logging::log(logging::LogType::ERROR, &error);
-                            return;
-                        }
-                    }
-                }
-
-                fs::remove_file(format!("{}.bc", self.options.name)).unwrap();
-            }
-            Err(_) => {
-                logging::log(
-                    logging::LogType::ERROR,
-                    "Compilation failed. Does can't accesed to Clang 18.",
-                );
-            }
+        if Path::new(&file).exists() {
+            fs::remove_file(&file).unwrap();
         }
     }
 
-    fn opt(&self, opt_level: &str) -> Result<(), String> {
-        match Command::new(Path::new(self.backend).join("opt")).spawn() {
-            Ok(mut child) => {
-                child.kill().unwrap();
+    fn optimization(&self, opt_level: &str) {
+        self.handle_error(
+            Command::new(Path::new(self.backend).join("opt"))
+                .arg(format!("-p={}", opt_level))
+                .arg("-p=globalopt")
+                .arg("-p=globaldce")
+                .arg("-p=dce")
+                .arg("-p=instcombine")
+                .arg("-p=strip-dead-prototypes")
+                .arg("-p=strip")
+                .arg("-p=mem2reg")
+                .arg("-p=memcpyopt")
+                .arg(format!("{}.ll", self.options.name))
+                .arg("-o")
+                .arg(format!("{}.ll", self.options.name)),
+        );
+    }
 
-                // FIX INCOMPATIBLE OPTIMIZATION LLVM 18
-
-                Command::new("opt")
-                    .arg(format!("-p={}", opt_level))
-                    .arg("-p=globalopt")
-                    .arg("-p=globaldce")
-                    .arg("-p=dce")
-                    .arg("-p=instcombine")
-                    .arg("-p=strip-dead-prototypes")
-                    .arg("-p=strip")
-                    .arg("-p=mem2reg")
-                    .arg("-p=memcpyopt")
-                    .arg(format!("{}.bc", self.options.name))
-                    .output()
-                    .unwrap();
-
-                Ok(())
-            }
-
-            Err(_) => Err(String::from(
-                "Compilation failed. Does can't accesed to LLVM Optimizer.",
-            )),
+    fn handle_error(&self, command: &mut Command) {
+        if let Ok(mut child) = command.spawn() {
+            child.wait().unwrap();
+        } else if let Err(error) = command.spawn() {
+            logging::log(logging::LogType::ERROR, &error.to_string());
         }
     }
 }

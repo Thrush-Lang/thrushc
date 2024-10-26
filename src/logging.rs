@@ -1,4 +1,4 @@
-use stylic::{style, Stylize};
+use stylic::{style, Styled, Stylize};
 
 pub enum LogType {
     INFO,
@@ -7,11 +7,11 @@ pub enum LogType {
 }
 
 impl LogType {
-    fn to_str(&self) -> &str {
+    fn to_styled(&self) -> Styled<&str> {
         match self {
-            LogType::INFO => "INFO",
-            LogType::WARN => "WARN",
-            LogType::ERROR => "ERROR",
+            LogType::INFO => style("INFO").bold().bright_green(),
+            LogType::WARN => style("WARN").bold().bright_yellow(),
+            LogType::ERROR => style("ERROR").bold().bright_red(),
         }
     }
 }
@@ -19,9 +19,5 @@ impl LogType {
 /// Logs a message to the compiler standard output (CSO)
 #[inline]
 pub fn log(ltype: LogType, msg: &str) {
-    println!(
-        "{} {}",
-        style(ltype.to_str()).bold().bright_red(),
-        style(msg).bold()
-    );
+    println!("  {} {}", ltype.to_styled(), style(msg).bold());
 }

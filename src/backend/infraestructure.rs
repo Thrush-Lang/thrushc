@@ -60,6 +60,7 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
         self.vector_offset();
         self.vector_assign();
         self.push_back();
+        self.convert_into_array();
         self.destroy();
     }
 
@@ -1174,6 +1175,49 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .unwrap();
 
         self.builder.build_return(None).unwrap();
+    }
+
+    fn convert_into_array(&mut self) {
+        let into_array: FunctionValue<'_> = self.module.add_function(
+            "Vec.to_array",
+            self.context.ptr_type(AddressSpace::default()).fn_type(
+                &[self.context.ptr_type(AddressSpace::default()).into()],
+                true,
+            ),
+            Some(Linkage::LinkerPrivate),
+        );
+
+        let block_into_array: BasicBlock<'_> = self.context.append_basic_block(into_array, "");
+
+        self.builder.position_at_end(block_into_array);
+
+        let alloca_vector: PointerValue<'_> = self
+            .builder
+            .build_alloca(self.context.ptr_type(AddressSpace::default()), "")
+            .unwrap();
+
+        self.builder
+            .build_store(alloca_vector, into_array.get_first_param().unwrap())
+            .unwrap();
+
+        let vector: PointerValue<'_> = self
+            .builder
+            .build_load(alloca_vector.get_type(), alloca_vector, "")
+            .unwrap()
+            .into_pointer_value();
+
+        let get_data: PointerValue<'_> = self
+            .builder
+            .build_struct_gep(self.vector_type, vector, 3, "")
+            .unwrap();
+
+        let data: PointerValue<'_> = self
+            .builder
+            .build_load(get_data.get_type(), get_data, "")
+            .unwrap()
+            .into_pointer_value();
+
+        self.builder.build_return(Some(&data)).unwrap();
     }
 
     fn needed_functions(&self) {

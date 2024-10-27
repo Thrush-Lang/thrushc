@@ -174,7 +174,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                             &[
                                 self.context.i64_type().into(),                        // size
                                 self.context.i64_type().into(),                        // capacity
-                                self.context.i64_type().into(),                        // element_size
+                                self.context.i64_type().into(), // element_size
                                 self.context.ptr_type(AddressSpace::default()).into(), // data
                             ],
                             false,
@@ -199,6 +199,61 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .build_call(
                         self.module.get_function("Vec.push_back").unwrap(),
                         &[alloc_vec.into(), alloc_char.into()],
+                        "",
+                    )
+                    .unwrap();
+
+                self.builder
+                    .build_call(
+                        self.module.get_function("Vec.push_back").unwrap(),
+                        &[alloc_vec.into(), alloc_char.into()],
+                        "",
+                    )
+                    .unwrap();
+
+                self.builder
+                    .build_call(
+                        self.module.get_function("Vec.push_back").unwrap(),
+                        &[alloc_vec.into(), alloc_char.into()],
+                        "",
+                    )
+                    .unwrap();
+
+                self.builder
+                    .build_call(
+                        self.module.get_function("Vec.push_back").unwrap(),
+                        &[alloc_vec.into(), alloc_char.into()],
+                        "",
+                    )
+                    .unwrap();
+
+                let array: PointerValue<'_> = self
+                    .builder
+                    .build_call(
+                        self.module.get_function("Vec.to_array").unwrap(),
+                        &[alloc_vec.into()],
+                        "",
+                    )
+                    .unwrap()
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap()
+                    .into_pointer_value();
+
+                let load_array = self
+                    .builder
+                    .build_load(array.get_type(), array, "")
+                    .unwrap()
+                    .into_pointer_value();
+
+                let formatter: PointerValue<'_> = self.emit_string_constant("%s\0");
+
+                self.define_printf();
+
+                self.builder
+                    .build_call(
+                        self.module.get_function("printf").unwrap(),
+                        &[formatter.into(), load_array.into()],
                         "",
                     )
                     .unwrap();

@@ -196,10 +196,16 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     )
                     .unwrap();
 
+                let load_char: IntValue<'_> = self
+                    .builder
+                    .build_load(self.context.i8_type(), alloc_char, "")
+                    .unwrap()
+                    .into_int_value();
+
                 self.builder
                     .build_call(
-                        self.module.get_function("Vec.push_back").unwrap(),
-                        &[malloc_vec.into(), alloc_char.into()],
+                        self.module.get_function("Vec.push_i8").unwrap(),
+                        &[malloc_vec.into(), load_char.into()],
                         "",
                     )
                     .unwrap();

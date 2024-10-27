@@ -1,5 +1,3 @@
-use std::vec;
-
 use inkwell::{
     basic_block::BasicBlock,
     builder::Builder,
@@ -58,10 +56,7 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
         self.size_at_bytes();
         self.realloc();
         self.adjust_capacity();
-        self.vector_offset();
-        self.vector_assign();
-        self.push_back();
-        self.convert_into_array();
+        self.push();
         self.destroy();
     }
 
@@ -273,7 +268,7 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .build_struct_gep(
                 self.vector_type,
                 should_grow.get_first_param().unwrap().into_pointer_value(),
-                2,
+                1,
                 "",
             )
             .unwrap();
@@ -686,8 +681,13 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
 
         self.builder
             .build_call(
-                self.module.get_function("memcpy").unwrap(),
-                &[get_data_6.into(), old_data.into(), size_at_bytes.into()],
+                self.module.get_function("llvm.memcpy.p0.p0.i64").unwrap(),
+                &[
+                    get_data_6.into(),
+                    old_data.into(),
+                    size_at_bytes.into(),
+                    self.context.bool_type().const_zero().into(),
+                ],
                 "",
             )
             .unwrap();
@@ -695,13 +695,13 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
         self.builder.build_return(None).unwrap();
     }
 
-    fn push_back(&mut self) {
+    fn push(&mut self) {
         let push_back: FunctionValue<'_> = self.module.add_function(
-            "Vec.push_back",
+            "Vec.push_i8",
             self.context.void_type().fn_type(
                 &[
                     self.context.ptr_type(AddressSpace::default()).into(),
-                    self.context.ptr_type(AddressSpace::default()).into(),
+                    self.context.i8_type().into(),
                 ],
                 true,
             ),
@@ -711,25 +711,6 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
         let block_push_back: BasicBlock<'_> = self.context.append_basic_block(push_back, "");
 
         self.builder.position_at_end(block_push_back);
-
-        let alloca_element = self
-            .builder
-            .build_alloca(
-                push_back
-                    .get_last_param()
-                    .unwrap()
-                    .into_pointer_value()
-                    .get_type(),
-                "",
-            )
-            .unwrap();
-
-        self.builder
-            .build_store(
-                alloca_element,
-                push_back.get_last_param().unwrap().into_pointer_value(),
-            )
-            .unwrap();
 
         let should_grow: IntValue<'_> = self
             .builder
@@ -799,27 +780,32 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .unwrap()
             .into_int_value();
 
-        let element: PointerValue<'_> = self
+        let get_data: PointerValue<'ctx> = self
             .builder
-            .build_load(alloca_element.get_type(), alloca_element, "")
-            .unwrap()
-            .into_pointer_value();
-
-        self.builder
-            .build_call(
-                self.module.get_function("_Vec.assign").unwrap(),
-                &[
-                    push_back
-                        .get_first_param()
-                        .unwrap()
-                        .into_pointer_value()
-                        .into(),
-                    size.into(),
-                    element.into(),
-                ],
+            .build_struct_gep(
+                self.vector_type,
+                push_back.get_first_param().unwrap().into_pointer_value(),
+                3,
                 "",
             )
             .unwrap();
+
+        let data: PointerValue<'_> = self
+            .builder
+            .build_load(get_data.get_type(), get_data, "")
+            .unwrap()
+            .into_pointer_value();
+
+        unsafe {
+            let get_index = self
+                .builder
+                .build_in_bounds_gep(self.context.i8_type(), data, &[size], "")
+                .unwrap();
+
+            self.builder
+                .build_store(get_index, push_back.get_last_param().unwrap())
+                .unwrap();
+        }
 
         let get_size: PointerValue<'_> = self
             .builder
@@ -853,208 +839,6 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .unwrap();
 
         self.builder.build_store(get_size, new_size).unwrap();
-
-        self.builder.build_return(None).unwrap();
-    }
-
-    fn vector_offset(&mut self) {
-        let vector_offset: FunctionValue<'_> = self.module.add_function(
-            "_Vec.offset",
-            self.context.ptr_type(AddressSpace::default()).fn_type(
-                &[
-                    self.context.ptr_type(AddressSpace::default()).into(),
-                    self.context.i64_type().into(),
-                ],
-                true,
-            ),
-            Some(Linkage::LinkerPrivate),
-        );
-
-        let block_vector_offset: BasicBlock<'_> =
-            self.context.append_basic_block(vector_offset, "");
-
-        self.builder.position_at_end(block_vector_offset);
-
-        let alloca_offset = self
-            .builder
-            .build_alloca(self.context.i64_type(), "")
-            .unwrap();
-
-        self.builder
-            .build_store(alloca_offset, vector_offset.get_last_param().unwrap())
-            .unwrap();
-
-        let get_data: PointerValue<'ctx> = self
-            .builder
-            .build_struct_gep(
-                self.vector_type,
-                vector_offset
-                    .get_first_param()
-                    .unwrap()
-                    .into_pointer_value(),
-                3,
-                "",
-            )
-            .unwrap();
-
-        let data = self
-            .builder
-            .build_load(get_data.get_type(), get_data, "")
-            .unwrap()
-            .into_pointer_value();
-
-        let get_element_size: PointerValue<'ctx> = self
-            .builder
-            .build_struct_gep(
-                self.vector_type,
-                vector_offset
-                    .get_first_param()
-                    .unwrap()
-                    .into_pointer_value(),
-                2,
-                "",
-            )
-            .unwrap();
-
-        let element_size: IntValue<'_> = self
-            .builder
-            .build_load(self.context.i64_type(), get_element_size, "")
-            .unwrap()
-            .into_int_value();
-
-        let offset: IntValue<'_> = self
-            .builder
-            .build_load(self.context.i64_type(), alloca_offset, "")
-            .unwrap()
-            .into_int_value();
-
-        let offset_calc: IntValue<'_> = self
-            .builder
-            .build_int_mul(offset, element_size, "")
-            .unwrap();
-
-        unsafe {
-            let offset: PointerValue<'ctx> = self
-                .builder
-                .build_in_bounds_gep(self.context.i8_type(), data, &[offset_calc], "")
-                .unwrap();
-
-            self.builder.build_return(Some(&offset)).unwrap();
-        }
-    }
-
-    fn vector_assign(&mut self) {
-        let vector_assign: FunctionValue<'_> = self.module.add_function(
-            "_Vec.assign",
-            self.context.void_type().fn_type(
-                &[
-                    self.context.ptr_type(AddressSpace::default()).into(),
-                    self.context.i64_type().into(),
-                    self.context.ptr_type(AddressSpace::default()).into(),
-                ],
-                true,
-            ),
-            Some(Linkage::LinkerPrivate),
-        );
-
-        let block_vector_assign: BasicBlock<'_> =
-            self.context.append_basic_block(vector_assign, "");
-
-        self.builder.position_at_end(block_vector_assign);
-
-        let alloca_element: PointerValue<'ctx> = self
-            .builder
-            .build_alloca(vector_assign.get_last_param().unwrap().get_type(), "")
-            .unwrap();
-
-        let alloca_index = self
-            .builder
-            .build_alloca(self.context.i64_type(), "")
-            .unwrap();
-
-        let alloc_offset = self
-            .builder
-            .build_alloca(self.context.ptr_type(AddressSpace::default()), "")
-            .unwrap();
-
-        self.builder
-            .build_store(alloca_element, vector_assign.get_last_param().unwrap())
-            .unwrap();
-
-        self.builder
-            .build_store(alloca_index, vector_assign.get_nth_param(1).unwrap())
-            .unwrap();
-
-        let index = self
-            .builder
-            .build_load(self.context.i64_type(), alloca_index, "")
-            .unwrap()
-            .into_int_value();
-
-        let offset: PointerValue<'_> = self
-            .builder
-            .build_call(
-                self.module.get_function("_Vec.offset").unwrap(),
-                &[
-                    vector_assign
-                        .get_first_param()
-                        .unwrap()
-                        .into_pointer_value()
-                        .into(),
-                    index.into(),
-                ],
-                "",
-            )
-            .unwrap()
-            .try_as_basic_value()
-            .left()
-            .unwrap()
-            .into_pointer_value();
-
-        self.builder.build_store(alloc_offset, offset).unwrap();
-
-        let get_element_size: PointerValue<'ctx> = self
-            .builder
-            .build_struct_gep(
-                self.vector_type,
-                vector_assign
-                    .get_first_param()
-                    .unwrap()
-                    .into_pointer_value(),
-                2,
-                "",
-            )
-            .unwrap();
-
-        let element_size: IntValue<'_> = self
-            .builder
-            .build_load(self.context.i64_type(), get_element_size, "")
-            .unwrap()
-            .into_int_value();
-
-        let element = self
-            .builder
-            .build_load(alloca_element.get_type(), alloca_element, "")
-            .unwrap()
-            .into_pointer_value();
-
-        let offset: PointerValue<'_> = self
-            .builder
-            .build_load(
-                self.context.ptr_type(AddressSpace::default()),
-                alloc_offset,
-                "",
-            )
-            .unwrap()
-            .into_pointer_value();
-
-        self.builder
-            .build_call(
-                self.module.get_function("memcpy").unwrap(),
-                &[offset.into(), element.into(), element_size.into()],
-                "",
-            )
-            .unwrap();
 
         self.builder.build_return(None).unwrap();
     }
@@ -1111,49 +895,6 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
         self.builder.build_return(None).unwrap();
     }
 
-    fn convert_into_array(&mut self) {
-        let into_array: FunctionValue<'_> = self.module.add_function(
-            "Vec.to_array",
-            self.context.ptr_type(AddressSpace::default()).fn_type(
-                &[self.context.ptr_type(AddressSpace::default()).into()],
-                true,
-            ),
-            Some(Linkage::LinkerPrivate),
-        );
-
-        let block_into_array: BasicBlock<'_> = self.context.append_basic_block(into_array, "");
-
-        self.builder.position_at_end(block_into_array);
-
-        let alloca_vector: PointerValue<'_> = self
-            .builder
-            .build_alloca(self.context.ptr_type(AddressSpace::default()), "")
-            .unwrap();
-
-        self.builder
-            .build_store(alloca_vector, into_array.get_first_param().unwrap())
-            .unwrap();
-
-        let vector: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
-        let get_data: PointerValue<'_> = self
-            .builder
-            .build_struct_gep(self.vector_type, vector, 3, "")
-            .unwrap();
-
-        let data: PointerValue<'_> = self
-            .builder
-            .build_load(get_data.get_type(), get_data, "")
-            .unwrap()
-            .into_pointer_value();
-
-        self.builder.build_return(Some(&data)).unwrap();
-    }
-
     fn needed_functions(&self) {
         self.module.add_function(
             "llvm.umax.i64",
@@ -1168,22 +909,14 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
         );
 
         self.module.add_function(
-            "memcpy",
-            self.context.ptr_type(AddressSpace::default()).fn_type(
+            "llvm.memcpy.p0.p0.i64",
+            self.context.void_type().fn_type(
                 &[
                     self.context.ptr_type(AddressSpace::default()).into(),
                     self.context.ptr_type(AddressSpace::default()).into(),
-                    self.context.i32_type().into(),
+                    self.context.i64_type().into(),
+                    self.context.bool_type().into(),
                 ],
-                false,
-            ),
-            Some(Linkage::External),
-        );
-
-        self.module.add_function(
-            "free",
-            self.context.ptr_type(AddressSpace::default()).fn_type(
-                &[self.context.ptr_type(AddressSpace::default()).into()],
                 false,
             ),
             Some(Linkage::External),

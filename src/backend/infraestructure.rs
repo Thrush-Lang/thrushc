@@ -44,6 +44,7 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
                     context.i64_type().into(),                        // capacity
                     context.i64_type().into(),                        // element_size
                     context.ptr_type(AddressSpace::default()).into(), // data
+                    context.i8_type().into(),                         // type
                 ],
                 false,
             ),
@@ -70,6 +71,7 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
                 self.context.ptr_type(AddressSpace::default()).into(),
                 self.context.i64_type().into(),
                 self.context.i64_type().into(),
+                self.context.i8_type().into(),
             ],
             true,
         );
@@ -92,11 +94,6 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .build_alloca(self.context.i64_type(), "")
             .unwrap();
 
-        let alloca_vector: PointerValue<'ctx> = self
-            .builder
-            .build_alloca(self.context.ptr_type(AddressSpace::default()), "")
-            .unwrap();
-
         self.builder
             .build_store(
                 alloca_capacity,
@@ -107,26 +104,18 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
         self.builder
             .build_store(
                 alloca_element_size,
-                vector_init.get_last_param().unwrap().into_int_value(),
+                vector_init.get_nth_param(2).unwrap().into_int_value(),
             )
             .unwrap();
-
-        self.builder
-            .build_store(
-                alloca_vector,
-                vector_init.get_first_param().unwrap().into_pointer_value(),
-            )
-            .unwrap();
-
-        let vector: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
 
         let size: PointerValue<'ctx> = self
             .builder
-            .build_struct_gep(self.vector_type, vector, 0, "")
+            .build_struct_gep(
+                self.vector_type,
+                vector_init.get_first_param().unwrap().into_pointer_value(),
+                0,
+                "",
+            )
             .unwrap();
 
         self.builder
@@ -154,15 +143,14 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .unwrap_left()
             .into_int_value();
 
-        let vector_1 = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let capacity: PointerValue<'ctx> = self
             .builder
-            .build_struct_gep(self.vector_type, vector_1, 1, "")
+            .build_struct_gep(
+                self.vector_type,
+                vector_init.get_first_param().unwrap().into_pointer_value(),
+                1,
+                "",
+            )
             .unwrap();
 
         self.builder
@@ -175,15 +163,14 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .unwrap()
             .into_int_value();
 
-        let vector_2: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let element_size_2: PointerValue<'_> = self
             .builder
-            .build_struct_gep(self.vector_type, vector_2, 2, "")
+            .build_struct_gep(
+                self.vector_type,
+                vector_init.get_first_param().unwrap().into_pointer_value(),
+                2,
+                "",
+            )
             .unwrap();
 
         self.builder
@@ -219,18 +206,34 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .unwrap_left()
             .into_pointer_value();
 
-        let vector_4: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let data: PointerValue<'_> = self
             .builder
-            .build_struct_gep(self.vector_type, vector_4, 3, "")
+            .build_struct_gep(
+                self.vector_type,
+                vector_init.get_first_param().unwrap().into_pointer_value(),
+                3,
+                "",
+            )
             .unwrap();
 
         self.builder.build_store(data, data_allocated).unwrap();
+
+        let get_type: PointerValue<'ctx> = self
+            .builder
+            .build_struct_gep(
+                self.vector_type,
+                vector_init.get_first_param().unwrap().into_pointer_value(),
+                4,
+                "",
+            )
+            .unwrap();
+
+        self.builder
+            .build_store(
+                get_type,
+                vector_init.get_last_param().unwrap().into_int_value(),
+            )
+            .unwrap();
 
         self.builder.build_return(None).unwrap();
     }
@@ -249,24 +252,14 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
 
         self.builder.position_at_end(should_grow_block);
 
-        let alloc_vector: PointerValue<'_> = self
-            .builder
-            .build_alloca(self.context.ptr_type(AddressSpace::default()), "")
-            .unwrap();
-
-        self.builder
-            .build_store(alloc_vector, should_grow.get_first_param().unwrap())
-            .unwrap();
-
-        let vector: PointerValue<'_> = self
-            .builder
-            .build_load(alloc_vector.get_type(), alloc_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let size_get: PointerValue<'_> = self
             .builder
-            .build_struct_gep(self.vector_type, vector, 0, "")
+            .build_struct_gep(
+                self.vector_type,
+                should_grow.get_first_param().unwrap().into_pointer_value(),
+                0,
+                "",
+            )
             .unwrap();
 
         let size: IntValue<'_> = self
@@ -275,15 +268,14 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .unwrap()
             .into_int_value();
 
-        let vector_2: PointerValue<'_> = self
-            .builder
-            .build_load(alloc_vector.get_type(), alloc_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let capacity_get: PointerValue<'_> = self
             .builder
-            .build_struct_gep(self.vector_type, vector_2, 2, "")
+            .build_struct_gep(
+                self.vector_type,
+                should_grow.get_first_param().unwrap().into_pointer_value(),
+                2,
+                "",
+            )
             .unwrap();
 
         let capacity: IntValue<'_> = self
@@ -292,7 +284,7 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .unwrap()
             .into_int_value();
 
-        let cmp = self
+        let cmp: IntValue<'_> = self
             .builder
             .build_int_compare(IntPredicate::EQ, size, capacity, "")
             .unwrap();
@@ -315,24 +307,17 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
 
         self.builder.position_at_end(adjust_capacity_block);
 
-        let alloca_vector: PointerValue<'_> = self
-            .builder
-            .build_alloca(self.context.ptr_type(AddressSpace::default()), "")
-            .unwrap();
-
-        self.builder
-            .build_store(alloca_vector, adjust_capacity.get_first_param().unwrap())
-            .unwrap();
-
-        let vector: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let size_get: PointerValue<'_> = self
             .builder
-            .build_struct_gep(self.vector_type, vector, 0, "")
+            .build_struct_gep(
+                self.vector_type,
+                adjust_capacity
+                    .get_first_param()
+                    .unwrap()
+                    .into_pointer_value(),
+                0,
+                "",
+            )
             .unwrap();
 
         let size: IntValue<'_> = self
@@ -346,15 +331,17 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .build_int_mul(size, self.context.i64_type().const_int(2, false), "")
             .unwrap();
 
-        let vector_2: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let size_get_2: PointerValue<'_> = self
             .builder
-            .build_struct_gep(self.vector_type, vector_2, 0, "")
+            .build_struct_gep(
+                self.vector_type,
+                adjust_capacity
+                    .get_first_param()
+                    .unwrap()
+                    .into_pointer_value(),
+                0,
+                "",
+            )
             .unwrap();
 
         let size_2: IntValue<'_> = self
@@ -376,16 +363,17 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .unwrap()
             .into_int_value();
 
-        let vector_3: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         self.builder
             .build_call(
                 self.module.get_function("Vec.realloc").unwrap(),
-                &[vector_3.into(), new_capacity.into()],
+                &[
+                    adjust_capacity
+                        .get_first_param()
+                        .unwrap()
+                        .into_pointer_value()
+                        .into(),
+                    new_capacity.into(),
+                ],
                 "",
             )
             .unwrap();
@@ -408,35 +396,30 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
 
         self.builder.position_at_end(size_at_bytes_block);
 
-        let alloca_vector: PointerValue<'_> = self
-            .builder
-            .build_alloca(self.context.ptr_type(AddressSpace::default()), "")
-            .unwrap();
-
-        self.builder
-            .build_store(alloca_vector, size_at_bytes.get_first_param().unwrap())
-            .unwrap();
-
-        let vector: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let size_get: PointerValue<'_> = self
             .builder
-            .build_struct_gep(self.vector_type, vector, 0, "")
+            .build_struct_gep(
+                self.vector_type,
+                size_at_bytes
+                    .get_first_param()
+                    .unwrap()
+                    .into_pointer_value(),
+                0,
+                "",
+            )
             .unwrap();
-
-        let vector_2: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
 
         let element_size_get = self
             .builder
-            .build_struct_gep(self.vector_type, vector_2, 2, "")
+            .build_struct_gep(
+                self.vector_type,
+                size_at_bytes
+                    .get_first_param()
+                    .unwrap()
+                    .into_pointer_value(),
+                2,
+                "",
+            )
             .unwrap();
 
         let size: IntValue<'_> = self
@@ -474,33 +457,23 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
 
         self.builder.position_at_end(realloc_block);
 
-        let alloca_vector: PointerValue<'_> = self
-            .builder
-            .build_alloca(self.context.ptr_type(AddressSpace::default()), "")
-            .unwrap();
-
         let alloca_new_capacity: PointerValue<'ctx> = self
             .builder
             .build_alloca(self.context.i64_type(), "")
             .unwrap();
 
         self.builder
-            .build_store(alloca_vector, realloc.get_first_param().unwrap())
-            .unwrap();
-
-        self.builder
             .build_store(alloca_new_capacity, realloc.get_last_param().unwrap())
             .unwrap();
 
-        let vector: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let get_capacity: PointerValue<'ctx> = self
             .builder
-            .build_struct_gep(self.vector_type, vector, 1, "")
+            .build_struct_gep(
+                self.vector_type,
+                realloc.get_first_param().unwrap().into_pointer_value(),
+                1,
+                "",
+            )
             .unwrap();
 
         let capacity: IntValue<'_> = self
@@ -579,15 +552,14 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
 
         self.builder.position_at_end(is_capacity_false);
 
-        let vector_2 = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let get_element_size = self
             .builder
-            .build_struct_gep(self.vector_type, vector_2, 2, "")
+            .build_struct_gep(
+                self.vector_type,
+                realloc.get_first_param().unwrap().into_pointer_value(),
+                2,
+                "",
+            )
             .unwrap();
 
         let element_size = self
@@ -611,28 +583,26 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .build_store(new_capacity_in_bytes, new_capacity_in_bytes_to_allocate)
             .unwrap();
 
-        let vector_3 = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let get_data = self
             .builder
-            .build_struct_gep(self.vector_type, vector_3, 3, "")
+            .build_struct_gep(
+                self.vector_type,
+                realloc.get_first_param().unwrap().into_pointer_value(),
+                3,
+                "",
+            )
             .unwrap();
 
         self.builder.build_store(old_data, get_data).unwrap();
 
-        let vector_4 = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let get_data_2 = self
             .builder
-            .build_struct_gep(self.vector_type, vector_4, 3, "")
+            .build_struct_gep(
+                self.vector_type,
+                realloc.get_first_param().unwrap().into_pointer_value(),
+                3,
+                "",
+            )
             .unwrap();
 
         let load_new_capacity_in_bytes: IntValue<'_> = self
@@ -655,16 +625,14 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .into_pointer_value();
 
         self.builder.build_store(get_data_2, new_data).unwrap();
-
-        let vector_5 = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let get_data_3 = self
             .builder
-            .build_struct_gep(self.vector_type, vector_5, 3, "")
+            .build_struct_gep(
+                self.vector_type,
+                realloc.get_first_param().unwrap().into_pointer_value(),
+                3,
+                "",
+            )
             .unwrap();
 
         let get_data_4 = self
@@ -675,7 +643,12 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
 
         let get_data_5 = self
             .builder
-            .build_struct_gep(self.vector_type, vector_5, 3, "")
+            .build_struct_gep(
+                self.vector_type,
+                realloc.get_first_param().unwrap().into_pointer_value(),
+                3,
+                "",
+            )
             .unwrap();
 
         let get_data_6 = self
@@ -697,15 +670,14 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .unwrap()
             .into_int_value();
 
-        let vector_7 = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let get_capacity = self
             .builder
-            .build_struct_gep(self.vector_type, vector_7, 1, "")
+            .build_struct_gep(
+                self.vector_type,
+                realloc.get_first_param().unwrap().into_pointer_value(),
+                1,
+                "",
+            )
             .unwrap();
 
         self.builder
@@ -740,20 +712,15 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
 
         self.builder.position_at_end(block_push_back);
 
-        let alloca_vector: PointerValue<'ctx> = self
-            .builder
-            .build_alloca(self.context.ptr_type(AddressSpace::default()), "")
-            .unwrap();
-
         let alloca_element = self
             .builder
-            .build_alloca(self.context.ptr_type(AddressSpace::default()), "")
-            .unwrap();
-
-        self.builder
-            .build_store(
-                alloca_vector,
-                push_back.get_first_param().unwrap().into_pointer_value(),
+            .build_alloca(
+                push_back
+                    .get_last_param()
+                    .unwrap()
+                    .into_pointer_value()
+                    .get_type(),
+                "",
             )
             .unwrap();
 
@@ -764,17 +731,15 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             )
             .unwrap();
 
-        let vector = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let should_grow: IntValue<'_> = self
             .builder
             .build_call(
                 self.module.get_function("_Vec.should_grow").unwrap(),
-                &[vector.into()],
+                &[push_back
+                    .get_first_param()
+                    .unwrap()
+                    .into_pointer_value()
+                    .into()],
                 "",
             )
             .unwrap()
@@ -802,16 +767,14 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
 
         self.builder.position_at_end(then_block);
 
-        let vector_2 = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         self.builder
             .build_call(
                 self.module.get_function("_Vec.adjust_capacity").unwrap(),
-                &[vector_2.into()],
+                &[push_back
+                    .get_first_param()
+                    .unwrap()
+                    .into_pointer_value()
+                    .into()],
                 "",
             )
             .unwrap();
@@ -820,15 +783,14 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
 
         self.builder.position_at_end(else_block);
 
-        let vector_3: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let get_size: PointerValue<'_> = self
             .builder
-            .build_struct_gep(self.vector_type, vector_3, 0, "")
+            .build_struct_gep(
+                self.vector_type,
+                push_back.get_first_param().unwrap().into_pointer_value(),
+                0,
+                "",
+            )
             .unwrap();
 
         let size: IntValue<'_> = self
@@ -836,12 +798,6 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .build_load(self.context.i64_type(), get_size, "")
             .unwrap()
             .into_int_value();
-
-        let vector_4: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
 
         let element: PointerValue<'_> = self
             .builder
@@ -852,20 +808,27 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
         self.builder
             .build_call(
                 self.module.get_function("_Vec.assign").unwrap(),
-                &[vector_4.into(), size.into(), element.into()],
+                &[
+                    push_back
+                        .get_first_param()
+                        .unwrap()
+                        .into_pointer_value()
+                        .into(),
+                    size.into(),
+                    element.into(),
+                ],
                 "",
             )
             .unwrap();
 
-        let vector_5: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let get_size: PointerValue<'_> = self
             .builder
-            .build_struct_gep(self.vector_type, vector_5, 0, "")
+            .build_struct_gep(
+                self.vector_type,
+                push_back.get_first_param().unwrap().into_pointer_value(),
+                0,
+                "",
+            )
             .unwrap();
 
         let size: IntValue<'_> = self
@@ -879,15 +842,14 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .build_int_add(size, self.context.i64_type().const_int(1, false), "")
             .unwrap();
 
-        let vector_6: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let get_size: PointerValue<'ctx> = self
             .builder
-            .build_struct_gep(self.vector_type, vector_6, 0, "")
+            .build_struct_gep(
+                self.vector_type,
+                push_back.get_first_param().unwrap().into_pointer_value(),
+                0,
+                "",
+            )
             .unwrap();
 
         self.builder.build_store(get_size, new_size).unwrap();
@@ -913,11 +875,6 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
 
         self.builder.position_at_end(block_vector_offset);
 
-        let alloca_vector: PointerValue<'ctx> = self
-            .builder
-            .build_alloca(self.context.ptr_type(AddressSpace::default()), "")
-            .unwrap();
-
         let alloca_offset = self
             .builder
             .build_alloca(self.context.i64_type(), "")
@@ -927,19 +884,17 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .build_store(alloca_offset, vector_offset.get_last_param().unwrap())
             .unwrap();
 
-        self.builder
-            .build_store(alloca_vector, vector_offset.get_first_param().unwrap())
-            .unwrap();
-
-        let vector: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let get_data: PointerValue<'ctx> = self
             .builder
-            .build_struct_gep(self.vector_type, vector, 3, "")
+            .build_struct_gep(
+                self.vector_type,
+                vector_offset
+                    .get_first_param()
+                    .unwrap()
+                    .into_pointer_value(),
+                3,
+                "",
+            )
             .unwrap();
 
         let data = self
@@ -948,15 +903,17 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .unwrap()
             .into_pointer_value();
 
-        let vector_2: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let get_element_size: PointerValue<'ctx> = self
             .builder
-            .build_struct_gep(self.vector_type, vector_2, 2, "")
+            .build_struct_gep(
+                self.vector_type,
+                vector_offset
+                    .get_first_param()
+                    .unwrap()
+                    .into_pointer_value(),
+                2,
+                "",
+            )
             .unwrap();
 
         let element_size: IntValue<'_> = self
@@ -1005,14 +962,9 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
 
         self.builder.position_at_end(block_vector_assign);
 
-        let alloca_vector: PointerValue<'ctx> = self
-            .builder
-            .build_alloca(self.context.ptr_type(AddressSpace::default()), "")
-            .unwrap();
-
         let alloca_element: PointerValue<'ctx> = self
             .builder
-            .build_alloca(self.context.ptr_type(AddressSpace::default()), "")
+            .build_alloca(vector_assign.get_last_param().unwrap().get_type(), "")
             .unwrap();
 
         let alloca_index = self
@@ -1026,22 +978,12 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .unwrap();
 
         self.builder
-            .build_store(alloca_vector, vector_assign.get_first_param().unwrap())
-            .unwrap();
-
-        self.builder
             .build_store(alloca_element, vector_assign.get_last_param().unwrap())
             .unwrap();
 
         self.builder
             .build_store(alloca_index, vector_assign.get_nth_param(1).unwrap())
             .unwrap();
-
-        let vector: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
 
         let index = self
             .builder
@@ -1053,7 +995,14 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .builder
             .build_call(
                 self.module.get_function("_Vec.offset").unwrap(),
-                &[vector.into(), index.into()],
+                &[
+                    vector_assign
+                        .get_first_param()
+                        .unwrap()
+                        .into_pointer_value()
+                        .into(),
+                    index.into(),
+                ],
                 "",
             )
             .unwrap()
@@ -1064,15 +1013,17 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
 
         self.builder.build_store(alloc_offset, offset).unwrap();
 
-        let vector_2: PointerValue<'_> = self
-            .builder
-            .build_load(alloca_vector.get_type(), alloca_vector, "")
-            .unwrap()
-            .into_pointer_value();
-
         let get_element_size: PointerValue<'ctx> = self
             .builder
-            .build_struct_gep(self.vector_type, vector_2, 2, "")
+            .build_struct_gep(
+                self.vector_type,
+                vector_assign
+                    .get_first_param()
+                    .unwrap()
+                    .into_pointer_value(),
+                2,
+                "",
+            )
             .unwrap();
 
         let element_size: IntValue<'_> = self
@@ -1096,6 +1047,10 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             )
             .unwrap()
             .into_pointer_value();
+
+        self.builder
+            .build_memcpy(dest, dest_align_bytes, src, src_align_bytes, size)
+            .unwrap();
 
         self.builder
             .build_call(
@@ -1122,49 +1077,32 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
 
         self.builder.position_at_end(block_destroy);
 
-        let vector: PointerValue<'_> = self
+        let get_data: PointerValue<'ctx> = self
             .builder
-            .build_alloca(self.context.ptr_type(AddressSpace::default()), "")
+            .build_struct_gep(
+                self.vector_type,
+                destroy.get_first_param().unwrap().into_pointer_value(),
+                3,
+                "",
+            )
             .unwrap();
 
-        self.builder
-            .build_store(vector, destroy.get_first_param().unwrap())
-            .unwrap();
-
-        let vector_2: PointerValue<'_> = self
-            .builder
-            .build_load(vector.get_type(), vector, "")
-            .unwrap()
-            .into_pointer_value();
-
-        let get_data = self
-            .builder
-            .build_struct_gep(self.vector_type, vector_2, 3, "")
-            .unwrap();
-
-        let data = self
+        let data: PointerValue<'_> = self
             .builder
             .build_load(get_data.get_type(), get_data, "")
             .unwrap()
             .into_pointer_value();
 
-        self.builder
-            .build_call(
-                self.module.get_function("free").unwrap(),
-                &[data.into()],
-                "",
-            )
-            .unwrap();
-
-        let vector_3: PointerValue<'_> = self
-            .builder
-            .build_load(vector.get_type(), vector, "")
-            .unwrap()
-            .into_pointer_value();
+        self.builder.build_free(data).unwrap();
 
         let get_data_2: PointerValue<'ctx> = self
             .builder
-            .build_struct_gep(self.vector_type, vector_3, 3, "")
+            .build_struct_gep(
+                self.vector_type,
+                destroy.get_first_param().unwrap().into_pointer_value(),
+                3,
+                "",
+            )
             .unwrap();
 
         self.builder

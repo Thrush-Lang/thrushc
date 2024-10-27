@@ -23,7 +23,6 @@ use {
         },
         AddressSpace, OptimizationLevel,
     },
-    std::path::PathBuf,
 };
 
 pub struct Compiler<'a, 'ctx> {
@@ -158,7 +157,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             Instruction::EntryPoint { body } => {
                 self.emit_main();
 
-                /* let alloc_char = self
+                let alloc_char = self
                     .builder
                     .build_alloca(self.context.i8_type(), "")
                     .unwrap();
@@ -167,15 +166,16 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .build_store(alloc_char, self.context.i8_type().const_zero())
                     .unwrap();
 
-                let alloc_vec: PointerValue<'ctx> = self
+                let malloc_vec: PointerValue<'ctx> = self
                     .builder
-                    .build_alloca(
+                    .build_malloc(
                         self.context.struct_type(
                             &[
                                 self.context.i64_type().into(),                        // size
                                 self.context.i64_type().into(),                        // capacity
                                 self.context.i64_type().into(), // element_size
                                 self.context.ptr_type(AddressSpace::default()).into(), // data
+                                self.context.i8_type().into(),  // type
                             ],
                             false,
                         ),
@@ -187,9 +187,10 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .build_call(
                         self.module.get_function("Vec.init").unwrap(),
                         &[
-                            alloc_vec.into(),
+                            malloc_vec.into(),
                             self.context.i64_type().const_int(10, false).into(),
-                            self.context.i64_type().const_int(4, false).into(),
+                            self.context.i64_type().const_int(8, false).into(),
+                            self.context.i8_type().const_int(1, false).into(),
                         ],
                         "",
                     )
@@ -198,62 +199,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 self.builder
                     .build_call(
                         self.module.get_function("Vec.push_back").unwrap(),
-                        &[alloc_vec.into(), alloc_char.into()],
-                        "",
-                    )
-                    .unwrap();
-
-                self.builder
-                    .build_call(
-                        self.module.get_function("Vec.push_back").unwrap(),
-                        &[alloc_vec.into(), alloc_char.into()],
-                        "",
-                    )
-                    .unwrap();
-
-                self.builder
-                    .build_call(
-                        self.module.get_function("Vec.push_back").unwrap(),
-                        &[alloc_vec.into(), alloc_char.into()],
-                        "",
-                    )
-                    .unwrap();
-
-                self.builder
-                    .build_call(
-                        self.module.get_function("Vec.push_back").unwrap(),
-                        &[alloc_vec.into(), alloc_char.into()],
-                        "",
-                    )
-                    .unwrap();
-
-                let array: PointerValue<'_> = self
-                    .builder
-                    .build_call(
-                        self.module.get_function("Vec.to_array").unwrap(),
-                        &[alloc_vec.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .left()
-                    .unwrap()
-                    .into_pointer_value();
-
-                let load_array = self
-                    .builder
-                    .build_load(array.get_type(), array, "")
-                    .unwrap()
-                    .into_pointer_value();
-
-                let formatter: PointerValue<'_> = self.emit_string_constant("%s\0");
-
-                self.define_printf();
-
-                self.builder
-                    .build_call(
-                        self.module.get_function("printf").unwrap(),
-                        &[formatter.into(), load_array.into()],
+                        &[malloc_vec.into(), alloc_char.into()],
                         "",
                     )
                     .unwrap();
@@ -261,10 +207,12 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 self.builder
                     .build_call(
                         self.module.get_function("Vec.destroy").unwrap(),
-                        &[alloc_vec.into()],
+                        &[malloc_vec.into()],
                         "",
                     )
-                    .unwrap(); */
+                    .unwrap();
+
+                self.builder.build_free(malloc_vec).unwrap();
 
                 self.codegen(body);
 

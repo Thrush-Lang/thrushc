@@ -1049,10 +1049,6 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .into_pointer_value();
 
         self.builder
-            .build_memcpy(dest, dest_align_bytes, src, src_align_bytes, size)
-            .unwrap();
-
-        self.builder
             .build_call(
                 self.module.get_function("memcpy").unwrap(),
                 &[offset.into(), element.into(), element_size.into()],

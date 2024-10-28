@@ -1,7 +1,11 @@
 use {
     super::{super::logging, compiler::CompilerOptions},
     inkwell::module::Module,
-    std::{fs, path::Path, process::Command},
+    std::{
+        env, fs,
+        path::{Path, PathBuf},
+        process::Command,
+    },
 };
 
 pub struct FileBuilder<'a, 'ctx> {
@@ -33,15 +37,68 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
         self.optimization(self.options.optimization.to_str());
 
         if self.options.build {
-            self.handle_error(
-                Command::new(Path::new(self.backend).join("clang-18"))
-                    .arg("-opaque-pointers")
-                    .arg(linking)
-                    .arg("-ffast-math")
-                    .arg(&file)
-                    .arg("-o")
-                    .arg(&self.options.name),
-            );
+            let home: String = match env::consts::OS {
+                "windows" => env::var("APPDATA").unwrap(),
+                "linux" => env::var("HOME").unwrap(),
+                _ => panic!("Unsupported OS"),
+            };
+
+            let home: &Path = Path::new(&home);
+
+            if !home.exists() {
+                logging::log(
+                    logging::LogType::ERROR,
+                    "The home of your system don't exists.",
+                );
+                return;
+            }
+
+            if !home.join("thrushlang").exists() {
+                logging::log(
+                    logging::LogType::ERROR,
+                    "The home folder for thrush lang don't exists. Use the command 'throium config repair' to restore it.",
+                );
+                return;
+            }
+
+            if !home.join("thrushlang/apis/").exists() {
+                logging::log(
+                    logging::LogType::ERROR,
+                    "The folder of thrush lang with the compiler apis don't exists. Use the command 'throium config repair' to restore it.",
+                );
+                return;
+            }
+
+            if !home.join("thrushlang/apis/vectorapi.o").exists() && !self.options.rebuild_apis {
+                logging::log(
+                    logging::LogType::ERROR,
+                    "The file with the vector api don't exists. Use the command 'throium config repair' to restore it.",
+                );
+                return;
+            }
+
+            if self.options.include_vec_api {
+                self.handle_error(
+                    Command::new(Path::new(self.backend).join("clang-18"))
+                        .arg("-opaque-pointers")
+                        .arg(linking)
+                        .arg("-ffast-math")
+                        .arg(&file)
+                        .arg("-o")
+                        .arg(&self.options.name),
+                );
+            } else {
+                self.handle_error(
+                    Command::new(Path::new(self.backend).join("clang-18"))
+                        .arg("-opaque-pointers")
+                        .arg(linking)
+                        .arg("-ffast-math")
+                        .arg(&file)
+                        .arg("-o")
+                        .arg(&self.options.name)
+                        .arg(home.join("thrushlang/apis/vectorapi.o").to_str().unwrap()),
+                );
+            }
         } else if self.options.emit_object {
             self.handle_error(
                 Command::new(Path::new(self.backend).join("clang-18"))

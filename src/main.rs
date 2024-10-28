@@ -9,6 +9,7 @@ use {
     backend::{
         builder::FileBuilder,
         compiler::{Compiler, CompilerOptions, Linking, Opt},
+        infraestructures::vector::VectorAPI,
         instruction::Instruction,
     },
     constants::TARGETS,
@@ -35,8 +36,10 @@ pub static PATH: Mutex<String> = Mutex::new(String::new());
 fn main() {
     let mut parameters: Vec<String> = env::args().collect();
     let mut options: CompilerOptions = CompilerOptions::default();
-    let mut compile: bool = false;
     let mut backend: String = String::new();
+    let mut compile: bool = false;
+
+    let mut rebuild_vec_api: bool = false;
 
     parameters.remove(0);
 
@@ -67,6 +70,160 @@ fn main() {
 
             "-v" | "--version" => {
                 println!("{}", style(env!("CARGO_PKG_VERSION")).bold());
+
+                return;
+            }
+
+            "-api" | "api" => {
+                if parameters.len() < 3 {
+                    apis_help();
+                    return;
+                }
+
+                match parameters[1].as_str() {
+                    "vector" => {
+                        match parameters[2].as_str() {
+                            "rebuild" => {
+                                for (index, parameter) in parameters.iter().skip(3).enumerate() {
+                                    if parameter == "--backend" || parameter == "-backend" {
+                                        if parameters.get(3 + index + 1).is_none() {
+                                            vector_api_help();
+                                            return;
+                                        }
+
+                                        let backend_path: &Path =
+                                            Path::new(&parameters[3 + index + 1]);
+
+                                        if !backend_path.exists() {
+                                            logging::log(
+                                                logging::LogType::ERROR,
+                                                "The backend path does not exists.",
+                                            );
+
+                                            return;
+                                        } else if !backend_path.is_dir() {
+                                            logging::log(
+                                                logging::LogType::ERROR,
+                                                "The backend path don't terminate with type folder.",
+                                            );
+
+                                            return;
+                                        } else if !backend_path.ends_with("bin") {
+                                            logging::log(
+                                                logging::LogType::ERROR,
+                                                "The backend path don't terminate in bin folder.",
+                                            );
+
+                                            return;
+                                        } else if !backend_path.join("clang-18").is_file() {
+                                            logging::log(
+                                                logging::LogType::ERROR,
+                                                "The backend path don't contain a valid executable of clang-18.",
+                                            );
+
+                                            return;
+                                        } else if !backend_path.join("llvm-config").is_file() {
+                                            logging::log(
+                                                logging::LogType::ERROR,
+                                                "The backend path don't contain a valid executable for llvm-config.",
+                                            );
+
+                                            return;
+                                        } else if !backend_path.join("lld").is_file() {
+                                            logging::log(
+                                                logging::LogType::ERROR,
+                                                "The backend path don't contain a valid executable for linker of llvm (lld).",
+                                            );
+
+                                            return;
+                                        } else if !backend_path.join("opt").is_file() {
+                                            logging::log(
+                                                logging::LogType::ERROR,
+                                                "The backend path don't contain a valid executable for optimizer of llvm (opt).",
+                                            );
+
+                                            return;
+                                        }
+
+                                        backend.push_str(&parameters[3 + index + 1]);
+                                    } else if parameter == "--target" || parameter == "-t" {
+                                        if TARGETS.contains(&parameters[3 + index + 1].as_str()) {
+                                            options.target_triple =
+                                                TargetTriple::create(&parameters[3 + index + 1]);
+
+                                            continue;
+                                        }
+
+                                        logging::log(logging::LogType::ERROR, &format!(
+                                            "The target '{}' is not supported, see the list with Thrushr --print-targets.",
+                                            &parameters[3 + index + 1]
+                                        ));
+
+                                        return;
+                                    } else if parameter == "--emit-only-llvm"
+                                        || parameter == "-emit-only-llvm"
+                                    {
+                                        options.emit_llvm = true;
+                                    } else if parameter == "--codemodel" || parameter == "-codemd" {
+                                        match parameters[3 + index + 1].as_str() {
+                                            "jit" => {
+                                                options.code_model = CodeModel::JITDefault;
+                                            }
+                                            "sys" => {
+                                                options.code_model = CodeModel::Kernel;
+                                            }
+                                            "medium" => {
+                                                options.code_model = CodeModel::Medium;
+                                            }
+                                            "large" => options.code_model = CodeModel::Large,
+                                            _ => (),
+                                        }
+                                    } else if parameter == "--optimization" || parameter == "-opt" {
+                                        match parameters[3 + index + 1].as_str() {
+                                            "low" => {
+                                                options.optimization = Opt::Low;
+                                            }
+                                            "mid" => {
+                                                options.optimization = Opt::Mid;
+                                            }
+                                            "mcqueen" => {
+                                                options.optimization = Opt::Mcqueen;
+                                            }
+                                            _ => (),
+                                        }
+                                    } else if parameter == "--reloc" || parameter == "-reloc" {
+                                        match parameters[3 + index + 1].as_str() {
+                                            "dynamic" => {
+                                                options.reloc_mode = RelocMode::DynamicNoPic;
+                                            }
+                                            "pic" => {
+                                                options.reloc_mode = RelocMode::PIC;
+                                            }
+                                            "static" => {
+                                                options.reloc_mode = RelocMode::Static;
+                                            }
+                                            _ => (),
+                                        }
+                                    }
+                                }
+
+                                rebuild_vec_api = true;
+                                options.rebuild_apis = true;
+                                options.emit_object = true;
+                            }
+                            _ => {
+                                vector_api_help();
+                                return;
+                            }
+                        }
+
+                        break;
+                    }
+
+                    _ => {
+                        apis_help();
+                    }
+                }
 
                 return;
             }
@@ -178,6 +335,19 @@ fn main() {
 
                             backend.push_str(&parameters[i + 1]);
                         }
+                        "--include" | "-include" => match parameters[i + 1].as_str() {
+                            "vec_api" => {
+                                options.include_vec_api = true;
+                            }
+                            _ => {
+                                logging::log(
+                                    logging::LogType::ERROR,
+                                    "The include api's is not specified correctly.",
+                                );
+
+                                return;
+                            }
+                        },
                         "--lib" | "-lib" => {
                             options.emit_object = true;
                         }
@@ -208,15 +378,10 @@ fn main() {
                             "mcqueen" => {
                                 options.optimization = Opt::Mcqueen;
                             }
-                            _ => {
-                                options.optimization = Opt::None;
-                            }
+                            _ => (),
                         },
 
                         "--codemodel" | "-codemd" => match parameters[i + 1].as_str() {
-                            "default" => {
-                                options.code_model = CodeModel::Default;
-                            }
                             "jit" => {
                                 options.code_model = CodeModel::JITDefault;
                             }
@@ -227,15 +392,10 @@ fn main() {
                                 options.code_model = CodeModel::Medium;
                             }
                             "large" => options.code_model = CodeModel::Large,
-                            _ => {
-                                options.code_model = CodeModel::Default;
-                            }
+                            _ => (),
                         },
 
                         "--reloc" | "-reloc" => match parameters[i + 1].as_str() {
-                            "default" => {
-                                options.reloc_mode = RelocMode::Default;
-                            }
                             "dynamic" => {
                                 options.reloc_mode = RelocMode::DynamicNoPic;
                             }
@@ -245,9 +405,7 @@ fn main() {
                             "static" => {
                                 options.reloc_mode = RelocMode::Static;
                             }
-                            _ => {
-                                options.reloc_mode = RelocMode::Default;
-                            }
+                            _ => (),
                         },
 
                         "--emit-only-llvm" | "-emit-only-llvm" => {
@@ -290,18 +448,72 @@ fn main() {
         }
     }
 
-    if !compile {
+    if !compile && !options.rebuild_apis {
         return;
-    } else if backend.is_empty() && compile {
+    } else if backend.is_empty() {
         logging::log(
             logging::LogType::ERROR,
-            "Cannot compile file if don't specified the backend path for the compiler.",
+            "Cannot compile if don't specified the Backend path for the Compiler.",
         );
 
         return;
-    } else if &format!("{}.th", NAME.lock().unwrap().as_str()) == "main.th" {
+    }
+
+    Target::initialize_all(&InitializationConfig::default());
+
+    if options.rebuild_apis {
+        let context: Context = Context::create();
+        let builder: Builder<'_> = context.create_builder();
+
+        options.name = if rebuild_vec_api {
+            "vectorapi".to_string()
+        } else {
+            "genericapi".to_string()
+        };
+
+        let module: Module<'_> = context.create_module(&options.name);
+
+        module.set_triple(&options.target_triple);
+
+        let opt: OptimizationLevel = options.optimization.to_llvm_opt();
+
+        let machine: TargetMachine = Target::from_triple(&options.target_triple)
+            .unwrap()
+            .create_target_machine(
+                &options.target_triple,
+                "",
+                "",
+                opt,
+                options.reloc_mode,
+                options.code_model,
+            )
+            .unwrap();
+
+        module.set_data_layout(&machine.get_target_data().get_data_layout());
+
+        if rebuild_vec_api {
+            VectorAPI::include(&module, &builder, &context);
+        }
+
+        if options.emit_llvm {
+            module
+                .print_to_file(format!("{}.ll", options.name))
+                .unwrap();
+            return;
+        }
+
+        FileBuilder::new(&options, &module, &backend).build();
+
+        return;
+    } else if compile && format!("{}.th", NAME.lock().unwrap().as_str()) == "main.th" {
         options.is_main = true;
     }
+
+    println!(
+        "\n{} {}",
+        style("Compiling").bold().fg(Color::Rgb(141, 141, 142)),
+        PATH.lock().unwrap()
+    );
 
     let origin_content: String =
         read_to_string(PATH.lock().unwrap().as_str()).unwrap_or_else(|error| {
@@ -314,17 +526,9 @@ fn main() {
     let mut lexer: Lexer = Lexer::new(content);
     let mut parser: Parser = Parser::new();
 
-    Target::initialize_all(&InitializationConfig::default());
-
     let context: Context = Context::create();
     let builder: Builder<'_> = context.create_builder();
     let module: Module<'_> = context.create_module(&options.name);
-
-    println!(
-        "\n{} {}",
-        style("Compiling").bold().fg(Color::Rgb(141, 141, 142)),
-        PATH.lock().unwrap()
-    );
 
     let start_time: Instant = Instant::now();
 
@@ -357,7 +561,7 @@ fn main() {
 
                     module.set_data_layout(&machine.get_target_data().get_data_layout());
 
-                    Compiler::compile(&module, &builder, &context, instructions);
+                    Compiler::compile(&module, &builder, &context, &options, instructions);
 
                     FileBuilder::new(&options, &module, &backend).build();
                 }
@@ -475,7 +679,7 @@ fn compile_help() {
         style("•").bold(),
         style("--name [name]").bold().fg(Color::Rgb(141, 141, 142)),
         style("-n [name]").bold().fg(Color::Rgb(141, 141, 142)),
-        style("Name of the executable (Compiler dispatches it).").bold()
+        style("Name of the executable or object file.").bold()
     );
 
     println!(
@@ -485,7 +689,7 @@ fn compile_help() {
             .bold()
             .fg(Color::Rgb(141, 141, 142)),
         style("-t [target]").bold().fg(Color::Rgb(141, 141, 142)),
-        style("Target architecture for the Compiler or Interpreter.").bold()
+        style("Target architecture for the executable or object file.").bold()
     );
 
     println!(
@@ -497,7 +701,7 @@ fn compile_help() {
         style("-opt [opt-level]")
             .bold()
             .fg(Color::Rgb(141, 141, 142)),
-        style("Optimization level for the JIT compiler or the Compiler.").bold()
+        style("Optimization level for the executable to emit or object file.").bold()
     );
 
     println!(
@@ -509,7 +713,15 @@ fn compile_help() {
         style("-emit-only-llvm")
             .bold()
             .fg(Color::Rgb(141, 141, 142)),
-        style("Compile the code to LLVM IR.").bold()
+        style("Compile the code only to LLVM IR.").bold()
+    );
+
+    println!(
+        "{} ({} | {}) {}",
+        style("•").bold(),
+        style("--include").bold().fg(Color::Rgb(141, 141, 142)),
+        style("-include").bold().fg(Color::Rgb(141, 141, 142)),
+        style("Includes an internal API in the LLVM IR to be emited.").bold()
     );
 
     println!(
@@ -541,7 +753,7 @@ fn compile_help() {
         style("•").bold(),
         style("--lib").bold().fg(Color::Rgb(141, 141, 142)),
         style("-lib").bold().fg(Color::Rgb(141, 141, 142)),
-        style("Compile the file to an object and then link it to an executable.").bold()
+        style("Compile to an object file.").bold()
     );
 
     println!(
@@ -561,6 +773,114 @@ fn compile_help() {
         style("-codemd [model]")
             .bold()
             .fg(Color::Rgb(141, 141, 142)),
-        style("Define how code is organized and accessed in the executable.").bold()
+        style("Define how code is organized and accessed in the executable or object file.").bold()
+    );
+}
+
+fn apis_help() {
+    println!(
+        "{} {} {} {}\n",
+        style("Usage:").bold(),
+        style("thrushc").bold().fg(Color::Rgb(141, 141, 142)),
+        style("api").bold(),
+        style("[name] [command] --flags")
+            .bold()
+            .fg(Color::Rgb(141, 141, 142)),
+    );
+
+    println!("{}", style("Available APIs:\n").bold());
+
+    println!(
+        "{} ({} | {}) {}",
+        style("•").bold(),
+        style("vector").bold().fg(Color::Rgb(141, 141, 142)),
+        style("vector").bold().fg(Color::Rgb(141, 141, 142)),
+        style("Select the Backend Vector API.").bold()
+    );
+}
+
+fn vector_api_help() {
+    println!(
+        "{} {} {} {}\n",
+        style("Usage:").bold(),
+        style("thrushc").bold().fg(Color::Rgb(141, 141, 142)),
+        style("api").bold(),
+        style("vector [command] --flags")
+            .bold()
+            .fg(Color::Rgb(141, 141, 142)),
+    );
+
+    println!("{}", style("Available Commands:\n").bold());
+
+    println!(
+        "{} ({} | {}) {}",
+        style("•").bold(),
+        style("rebuild").bold().fg(Color::Rgb(141, 141, 142)),
+        style("rb").bold().fg(Color::Rgb(141, 141, 142)),
+        style("Rebuild the internal Backend Vector API.").bold()
+    );
+
+    println!("{}", style("Available Flags:\n").bold());
+
+    println!(
+        "{} ({} | {}) {}",
+        style("•").bold(),
+        style("--backend").bold().fg(Color::Rgb(141, 141, 142)),
+        style("-backend").bold().fg(Color::Rgb(141, 141, 142)),
+        style("Specific the path to the Backend Compiler to use it (Clang && LLVM).").bold()
+    );
+
+    println!(
+        "{} ({} | {}) {}",
+        style("•").bold(),
+        style("--target [target]")
+            .bold()
+            .fg(Color::Rgb(141, 141, 142)),
+        style("-t [target]").bold().fg(Color::Rgb(141, 141, 142)),
+        style("Target architecture for the executable or object file.").bold()
+    );
+
+    println!(
+        "{} ({} | {}) {}",
+        style("•").bold(),
+        style("--optimization [opt-level]")
+            .bold()
+            .fg(Color::Rgb(141, 141, 142)),
+        style("-opt [opt-level]")
+            .bold()
+            .fg(Color::Rgb(141, 141, 142)),
+        style("Optimization level for the executable to emit or object file.").bold()
+    );
+
+    println!(
+        "{} ({} | {}) {}",
+        style("•").bold(),
+        style("--emit-only-llvm")
+            .bold()
+            .fg(Color::Rgb(141, 141, 142)),
+        style("-emit-only-llvm")
+            .bold()
+            .fg(Color::Rgb(141, 141, 142)),
+        style("Compile the code only to LLVM IR.").bold()
+    );
+
+    println!(
+        "{} ({} | {}) {}",
+        style("•").bold(),
+        style("--reloc [mode]").bold().fg(Color::Rgb(141, 141, 142)),
+        style("-reloc [mode]").bold().fg(Color::Rgb(141, 141, 142)),
+        style("Indicate how references to memory addresses are handled.").bold()
+    );
+
+    println!(
+        "{} ({} | {}) {}",
+        style("•").bold(),
+        style("--codemodel [model]")
+            .bold()
+            .fg(Color::Rgb(141, 141, 142)),
+        style("-codemd [model]")
+            .bold()
+            .fg(Color::Rgb(141, 141, 142)),
+        style("Define how code is organized and accessed in the executable or object file.").bold()
     );
 }

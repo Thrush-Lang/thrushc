@@ -1,7 +1,7 @@
 use {
     super::{
         super::frontend::lexer::{DataTypes, TokenKind},
-        infraestructure::{BasicInfraestructure, StringInfraestructure, VectorInfraestructure},
+        infraestructures::{define::StringInfraestructure, vector::VectorAPI},
         instruction::Instruction,
         llvm::{
             build_alloca_with_float, build_alloca_with_integer, build_const_float,
@@ -33,6 +33,7 @@ pub struct Compiler<'a, 'ctx> {
     current: usize,
     scope: usize,
     locals: Vec<HashMap<String, BasicValueEnum<'ctx>>>,
+    options: &'a CompilerOptions,
 }
 
 impl<'a, 'ctx> Compiler<'a, 'ctx> {
@@ -40,6 +41,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         module: &'a Module<'ctx>,
         builder: &'a Builder<'ctx>,
         context: &'ctx Context,
+        options: &'a CompilerOptions,
         instructions: &'ctx [Instruction<'ctx>],
     ) {
         Self {
@@ -50,13 +52,18 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             current: 0,
             scope: 0,
             locals: Vec::new(),
+            options,
         }
         .start();
     }
 
     fn start(&mut self) {
-        BasicInfraestructure::new(self.module, self.context).define();
-        VectorInfraestructure::new(self.module, self.builder, self.context).define();
+        if self.options.include_vec_api {
+            VectorAPI::include(self.module, self.builder, self.context);
+        } else {
+            VectorAPI::define(self.module, self.builder, self.context);
+        }
+
         StringInfraestructure::new(self.module, self.builder, self.context).define();
 
         while !self.is_end() {
@@ -157,7 +164,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             Instruction::EntryPoint { body } => {
                 self.emit_main();
 
-                let alloc_char = self
+                /* let alloc_char = self
                     .builder
                     .build_alloca(self.context.i8_type(), "")
                     .unwrap();
@@ -218,7 +225,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     )
                     .unwrap();
 
-                self.builder.build_free(malloc_vec).unwrap();
+                self.builder.build_free(malloc_vec).unwrap(); */
 
                 self.codegen(body);
 
@@ -1132,6 +1139,8 @@ pub struct CompilerOptions {
     pub build: bool,
     pub linking: Linking,
     pub is_main: bool,
+    pub include_vec_api: bool,
+    pub rebuild_apis: bool,
     pub reloc_mode: RelocMode,
     pub code_model: CodeModel,
 }
@@ -1147,6 +1156,8 @@ impl Default for CompilerOptions {
             build: false,
             linking: Linking::default(),
             is_main: false,
+            include_vec_api: false,
+            rebuild_apis: false,
             reloc_mode: RelocMode::Default,
             code_model: CodeModel::Default,
         }

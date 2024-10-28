@@ -14,24 +14,19 @@ use inkwell::{
 
  Functions:
 
-    - {ptr, i64, i64} @Vec.init(i64)
-    - void @Vec.push(i64)
+    - Comming soon...
 
 ----------------------------------------------------------------------- */
 
-pub struct VectorInfraestructure<'a, 'ctx> {
+pub struct VectorAPI<'a, 'ctx> {
     module: &'a Module<'ctx>,
     builder: &'a Builder<'ctx>,
     context: &'ctx Context,
     vector_type: StructType<'ctx>,
 }
 
-impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
-    pub fn new(
-        module: &'a Module<'ctx>,
-        builder: &'a Builder<'ctx>,
-        context: &'ctx Context,
-    ) -> Self {
+impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
+    pub fn include(module: &'a Module<'ctx>, builder: &'a Builder<'ctx>, context: &'ctx Context) {
         Self {
             module,
             builder,
@@ -47,18 +42,54 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
                 false,
             ),
         }
+        .start_construction()
     }
 
-    pub fn define(&mut self) {
+    pub fn define(module: &'a Module<'ctx>, builder: &'a Builder<'ctx>, context: &'ctx Context) {
+        Self {
+            module,
+            builder,
+            context,
+            vector_type: context.struct_type(
+                &[
+                    context.i64_type().into(),                        // size
+                    context.i64_type().into(),                        // capacity
+                    context.i64_type().into(),                        // element_size
+                    context.ptr_type(AddressSpace::default()).into(), // data
+                    context.i8_type().into(),                         // type
+                ],
+                false,
+            ),
+        }
+        .start_definition()
+    }
+
+    fn start_construction(&mut self) {
         self.needed_functions();
         self.init();
         self.should_grow();
         self.size_at_bytes();
         self.realloc();
         self.adjust_capacity();
-        self.push();
+        self.size();
+        self.data();
+        self.push_i8();
         self.destroy();
     }
+
+    fn start_definition(&mut self) {
+        self.define_init();
+        self.define_size();
+        self.define_data();
+        self.define_push_i8();
+        self.define_destroy();
+    }
+
+    /*
+
+        CONSTRUCTION FUNCTIONS (START)
+
+    */
 
     fn init(&mut self) {
         let vector_init_type: FunctionType<'_> = self.context.void_type().fn_type(
@@ -72,8 +103,7 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
         );
 
         let vector_init: FunctionValue<'_> =
-            self.module
-                .add_function("Vec.init", vector_init_type, Some(Linkage::LinkerPrivate));
+            self.module.add_function("Vec.init", vector_init_type, None);
 
         let vector_init_block: BasicBlock<'_> = self.context.append_basic_block(vector_init, "");
 
@@ -493,7 +523,7 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .build_alloca(self.context.ptr_type(AddressSpace::default()), "")
             .unwrap();
 
-        let cmp_capacity = self
+        let cmp_capacity: IntValue<'_> = self
             .builder
             .build_int_compare(
                 IntPredicate::ULT,
@@ -695,8 +725,8 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
         self.builder.build_return(None).unwrap();
     }
 
-    fn push(&mut self) {
-        let push_back: FunctionValue<'_> = self.module.add_function(
+    fn push_i8(&mut self) {
+        let push_i8: FunctionValue<'_> = self.module.add_function(
             "Vec.push_i8",
             self.context.void_type().fn_type(
                 &[
@@ -705,18 +735,18 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
                 ],
                 true,
             ),
-            Some(Linkage::LinkerPrivate),
+            None,
         );
 
-        let block_push_back: BasicBlock<'_> = self.context.append_basic_block(push_back, "");
+        let block_push_i8: BasicBlock<'_> = self.context.append_basic_block(push_i8, "");
 
-        self.builder.position_at_end(block_push_back);
+        self.builder.position_at_end(block_push_i8);
 
         let should_grow: IntValue<'_> = self
             .builder
             .build_call(
                 self.module.get_function("_Vec.should_grow").unwrap(),
-                &[push_back
+                &[push_i8
                     .get_first_param()
                     .unwrap()
                     .into_pointer_value()
@@ -729,7 +759,7 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .unwrap()
             .into_int_value();
 
-        let cmp = self
+        let cmp: IntValue<'_> = self
             .builder
             .build_int_compare(
                 IntPredicate::EQ,
@@ -739,8 +769,8 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             )
             .unwrap();
 
-        let then_block: BasicBlock<'_> = self.context.append_basic_block(push_back, "");
-        let else_block: BasicBlock<'_> = self.context.append_basic_block(push_back, "");
+        let then_block: BasicBlock<'_> = self.context.append_basic_block(push_i8, "");
+        let else_block: BasicBlock<'_> = self.context.append_basic_block(push_i8, "");
 
         self.builder
             .build_conditional_branch(cmp, then_block, else_block)
@@ -751,7 +781,7 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
         self.builder
             .build_call(
                 self.module.get_function("_Vec.adjust_capacity").unwrap(),
-                &[push_back
+                &[push_i8
                     .get_first_param()
                     .unwrap()
                     .into_pointer_value()
@@ -764,27 +794,89 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
 
         self.builder.position_at_end(else_block);
 
-        let get_size: PointerValue<'_> = self
+        let size: IntValue<'_> = self
+            .builder
+            .build_call(
+                self.module.get_function("Vec.size").unwrap(),
+                &[push_i8
+                    .get_first_param()
+                    .unwrap()
+                    .into_pointer_value()
+                    .into()],
+                "",
+            )
+            .unwrap()
+            .try_as_basic_value()
+            .left()
+            .unwrap()
+            .into_int_value();
+
+        let data: PointerValue<'_> = self
+            .builder
+            .build_call(
+                self.module.get_function("Vec.data").unwrap(),
+                &[push_i8
+                    .get_first_param()
+                    .unwrap()
+                    .into_pointer_value()
+                    .into()],
+                "",
+            )
+            .unwrap()
+            .try_as_basic_value()
+            .unwrap_left()
+            .into_pointer_value();
+
+        unsafe {
+            let get_index = self
+                .builder
+                .build_in_bounds_gep(self.context.i8_type(), data, &[size], "")
+                .unwrap();
+
+            self.builder
+                .build_store(get_index, push_i8.get_last_param().unwrap())
+                .unwrap();
+        }
+
+        let new_size: IntValue<'_> = self
+            .builder
+            .build_int_add(size, self.context.i64_type().const_int(1, false), "")
+            .unwrap();
+
+        let get_size: PointerValue<'ctx> = self
             .builder
             .build_struct_gep(
                 self.vector_type,
-                push_back.get_first_param().unwrap().into_pointer_value(),
+                push_i8.get_first_param().unwrap().into_pointer_value(),
                 0,
                 "",
             )
             .unwrap();
 
-        let size: IntValue<'_> = self
-            .builder
-            .build_load(self.context.i64_type(), get_size, "")
-            .unwrap()
-            .into_int_value();
+        self.builder.build_store(get_size, new_size).unwrap();
 
-        let get_data: PointerValue<'ctx> = self
+        self.builder.build_return(None).unwrap();
+    }
+
+    fn data(&mut self) {
+        let get_data: FunctionValue<'_> = self.module.add_function(
+            "Vec.data",
+            self.context.ptr_type(AddressSpace::default()).fn_type(
+                &[self.context.ptr_type(AddressSpace::default()).into()],
+                false,
+            ),
+            None,
+        );
+
+        let block_get_data: BasicBlock<'_> = self.context.append_basic_block(get_data, "");
+
+        self.builder.position_at_end(block_get_data);
+
+        let get_data: PointerValue<'_> = self
             .builder
             .build_struct_gep(
                 self.vector_type,
-                push_back.get_first_param().unwrap().into_pointer_value(),
+                get_data.get_first_param().unwrap().into_pointer_value(),
                 3,
                 "",
             )
@@ -796,22 +888,28 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .unwrap()
             .into_pointer_value();
 
-        unsafe {
-            let get_index = self
-                .builder
-                .build_in_bounds_gep(self.context.i8_type(), data, &[size], "")
-                .unwrap();
+        self.builder.build_return(Some(&data)).unwrap();
+    }
 
-            self.builder
-                .build_store(get_index, push_back.get_last_param().unwrap())
-                .unwrap();
-        }
+    fn size(&mut self) {
+        let get_size: FunctionValue<'_> = self.module.add_function(
+            "Vec.size",
+            self.context.i64_type().fn_type(
+                &[self.context.ptr_type(AddressSpace::default()).into()],
+                false,
+            ),
+            None,
+        );
+
+        let block_get_size: BasicBlock<'_> = self.context.append_basic_block(get_size, "");
+
+        self.builder.position_at_end(block_get_size);
 
         let get_size: PointerValue<'_> = self
             .builder
             .build_struct_gep(
                 self.vector_type,
-                push_back.get_first_param().unwrap().into_pointer_value(),
+                get_size.get_first_param().unwrap().into_pointer_value(),
                 0,
                 "",
             )
@@ -823,24 +921,7 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             .unwrap()
             .into_int_value();
 
-        let new_size: IntValue<'_> = self
-            .builder
-            .build_int_add(size, self.context.i64_type().const_int(1, false), "")
-            .unwrap();
-
-        let get_size: PointerValue<'ctx> = self
-            .builder
-            .build_struct_gep(
-                self.vector_type,
-                push_back.get_first_param().unwrap().into_pointer_value(),
-                0,
-                "",
-            )
-            .unwrap();
-
-        self.builder.build_store(get_size, new_size).unwrap();
-
-        self.builder.build_return(None).unwrap();
+        self.builder.build_return(Some(&size)).unwrap();
     }
 
     fn destroy(&mut self) {
@@ -850,7 +931,7 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
                 &[self.context.ptr_type(AddressSpace::default()).into()],
                 false,
             ),
-            Some(Linkage::LinkerPrivate),
+            None,
         );
 
         let block_destroy: BasicBlock<'_> = self.context.append_basic_block(destroy, "");
@@ -921,115 +1002,7 @@ impl<'a, 'ctx> VectorInfraestructure<'a, 'ctx> {
             ),
             Some(Linkage::External),
         );
-    }
-}
 
-/* -----------------------------------------------------------------------
-
- String Backend Infraestructure
-
- Functions:
-
-    - void @String.append(ptr, char, i64)
-
------------------------------------------------------------------------ */
-
-pub struct StringInfraestructure<'a, 'ctx> {
-    module: &'a Module<'ctx>,
-    builder: &'a Builder<'ctx>,
-    context: &'ctx Context,
-}
-
-impl<'a, 'ctx> StringInfraestructure<'a, 'ctx> {
-    pub fn new(
-        module: &'a Module<'ctx>,
-        builder: &'a Builder<'ctx>,
-        context: &'ctx Context,
-    ) -> Self {
-        Self {
-            module,
-            builder,
-            context,
-        }
-    }
-
-    pub fn define(&mut self) {
-        self.define_string_append();
-    }
-
-    fn define_string_append(&mut self) {
-        let append: FunctionValue<'_> = self.module.add_function(
-            "String.append",
-            self.context.void_type().fn_type(
-                &[
-                    self.context.ptr_type(AddressSpace::default()).into(),
-                    self.context.i8_type().into(),
-                    self.context.i64_type().into(),
-                ],
-                true,
-            ),
-            Some(Linkage::LinkerPrivate),
-        );
-
-        let block_append: BasicBlock<'_> = self.context.append_basic_block(append, "");
-
-        self.builder.position_at_end(block_append);
-
-        let string: PointerValue<'_> = self
-            .builder
-            .build_load(
-                append.get_first_param().unwrap().get_type(),
-                append.get_first_param().unwrap().into_pointer_value(),
-                "",
-            )
-            .unwrap()
-            .into_pointer_value();
-
-        unsafe {
-            let ptr: PointerValue<'ctx> = self
-                .builder
-                .build_in_bounds_gep(
-                    self.context.i8_type(),
-                    string,
-                    &[append.get_last_param().unwrap().into_int_value()],
-                    "",
-                )
-                .unwrap();
-
-            self.builder
-                .build_store(ptr, append.get_nth_param(1).unwrap().into_int_value())
-                .unwrap();
-        }
-
-        self.builder.build_return(None).unwrap();
-    }
-}
-
-/* -----------------------------------------------------------------------
-
-    Basic Infraestructure
-
- Functions:
-
-    - ptr @malloc(i64)
-
------------------------------------------------------------------------ */
-
-pub struct BasicInfraestructure<'a, 'ctx> {
-    module: &'a Module<'ctx>,
-    context: &'ctx Context,
-}
-
-impl<'a, 'ctx> BasicInfraestructure<'a, 'ctx> {
-    pub fn new(module: &'a Module<'ctx>, context: &'ctx Context) -> Self {
-        Self { module, context }
-    }
-
-    pub fn define(&mut self) {
-        self.define_malloc();
-    }
-
-    fn define_malloc(&mut self) {
         self.module.add_function(
             "malloc",
             self.context
@@ -1038,4 +1011,85 @@ impl<'a, 'ctx> BasicInfraestructure<'a, 'ctx> {
             Some(Linkage::External),
         );
     }
+
+    /*
+
+        CONSTRUCTION FUNCTIONS (END)
+
+    */
+
+    /*
+
+        DEFINITION FUNCTIONS (START)
+
+    */
+
+    fn define_init(&mut self) {
+        self.module.add_function(
+            "Vec.init",
+            self.context.void_type().fn_type(
+                &[
+                    self.context.ptr_type(AddressSpace::default()).into(),
+                    self.context.i64_type().into(),
+                    self.context.i64_type().into(),
+                    self.context.i8_type().into(),
+                ],
+                true,
+            ),
+            Some(Linkage::External),
+        );
+    }
+
+    fn define_push_i8(&mut self) {
+        self.module.add_function(
+            "Vec.push_i8",
+            self.context.void_type().fn_type(
+                &[
+                    self.context.ptr_type(AddressSpace::default()).into(),
+                    self.context.i8_type().into(),
+                ],
+                true,
+            ),
+            Some(Linkage::External),
+        );
+    }
+
+    fn define_data(&mut self) {
+        self.module.add_function(
+            "Vec.data",
+            self.context.ptr_type(AddressSpace::default()).fn_type(
+                &[self.context.ptr_type(AddressSpace::default()).into()],
+                false,
+            ),
+            Some(Linkage::External),
+        );
+    }
+
+    fn define_size(&mut self) {
+        self.module.add_function(
+            "Vec.size",
+            self.context.i64_type().fn_type(
+                &[self.context.ptr_type(AddressSpace::default()).into()],
+                false,
+            ),
+            Some(Linkage::External),
+        );
+    }
+
+    fn define_destroy(&mut self) {
+        self.module.add_function(
+            "Vec.destroy",
+            self.context.void_type().fn_type(
+                &[self.context.ptr_type(AddressSpace::default()).into()],
+                false,
+            ),
+            Some(Linkage::External),
+        );
+    }
+
+    /*
+
+        DEFINITION FUNCTIONS (END)
+
+    */
 }

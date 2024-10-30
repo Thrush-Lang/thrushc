@@ -6,7 +6,7 @@ use {
             error::{ThrushError, ThrushErrorKind},
             logging, PATH,
         },
-        checking::{check_binary_instr, check_unary_instr},
+        checking,
         lexer::{DataTypes, Token, TokenKind},
         objects::Variable,
         scoper::ThrushScoper,
@@ -1176,7 +1176,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'instr> = self.and()?;
 
-            check_binary_instr(
+            checking::check_binary_instr(
                 op,
                 &instr.get_data_type(),
                 &right.get_data_type(),
@@ -1201,7 +1201,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'_> = self.equality()?;
 
-            check_binary_instr(
+            checking::check_binary_instr(
                 op,
                 &instr.get_data_type(),
                 &right.get_data_type(),
@@ -1226,7 +1226,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'_> = self.comparison()?;
 
-            check_binary_instr(
+            checking::check_binary_instr(
                 op,
                 &instr.get_data_type(),
                 &right.get_data_type(),
@@ -1255,7 +1255,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'_> = self.term()?;
 
-            check_binary_instr(
+            checking::check_binary_instr(
                 op,
                 &instr.get_data_type(),
                 &right.get_data_type(),
@@ -1284,7 +1284,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'_> = self.unary()?;
 
-            check_binary_instr(
+            checking::check_binary_instr(
                 op,
                 &instr.get_data_type(),
                 &right.get_data_type(),
@@ -1307,7 +1307,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let value: Instruction<'instr> = self.primary()?;
 
-            check_unary_instr(op, &value.get_data_type(), self.previous().line)?;
+            checking::check_unary_instr(op, &value.get_data_type(), self.previous().line)?;
 
             return Ok(Instruction::Unary {
                 op,
@@ -1321,7 +1321,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let value: Instruction<'instr> = self.primary()?;
 
-            check_unary_instr(op, &value.get_data_type(), self.previous().line)?;
+            checking::check_unary_instr(op, &value.get_data_type(), self.previous().line)?;
 
             return Ok(Instruction::Unary {
                 op,
@@ -1382,7 +1382,11 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     if self.match_token(TokenKind::PlusPlus)?
                         | self.match_token(TokenKind::MinusMinus)?
                     {
-                        check_unary_instr(&self.previous().kind, kind, self.previous().line)?;
+                        checking::check_unary_instr(
+                            &self.previous().kind,
+                            kind,
+                            self.previous().line,
+                        )?;
 
                         return Ok(Instruction::Unary {
                             op: &self.previous().kind,
@@ -1508,7 +1512,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     if self.match_token(TokenKind::PlusPlus)?
                         | self.match_token(TokenKind::MinusMinus)?
                     {
-                        check_unary_instr(
+                        checking::check_unary_instr(
                             &self.previous().kind,
                             &refvar.get_data_type(),
                             self.previous().line,

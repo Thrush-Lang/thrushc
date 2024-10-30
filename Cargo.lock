@@ -175,7 +175,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "thrush"
+name = "thrushc"
 version = "1.0.0"
 dependencies = [
  "ahash",

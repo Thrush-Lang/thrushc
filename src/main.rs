@@ -9,13 +9,10 @@ mod utils;
 
 use {
     backend::{
-        builder::FileBuilder,
-        compiler::{Compiler, CompilerOptions, Linking, Opt},
-        infraestructures::vector::VectorAPI,
+        builder::FileBuilder, compiler::Compiler, infraestructures::vector::VectorAPI,
         instruction::Instruction,
     },
     cli::CLIParser,
-    constants::TARGETS,
     frontend::{
         lexer::{Lexer, Token},
         parser::Parser,
@@ -24,12 +21,10 @@ use {
         builder::Builder,
         context::Context,
         module::Module,
-        targets::{
-            CodeModel, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
-        },
+        targets::{InitializationConfig, Target, TargetMachine},
         OptimizationLevel,
     },
-    std::{env, fs::read_to_string, option, path::Path, sync::Mutex, time::Instant},
+    std::{env, fs::read_to_string, sync::Mutex, time::Instant},
     stylic::{style, Color, Stylize},
 };
 

@@ -58,7 +58,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     }
 
     fn start(&mut self) {
-        if self.options.include_vec_api {
+        if self.options.insert_vector_natives {
             VectorAPI::include(self.module, self.builder, self.context);
         } else {
             VectorAPI::define(self.module, self.builder, self.context);
@@ -1131,16 +1131,17 @@ pub enum Linking {
 
 #[derive(Debug)]
 pub struct CompilerOptions {
-    pub name: String,
+    pub output: String,
     pub target_triple: TargetTriple,
     pub optimization: Opt,
     pub emit_llvm: bool,
-    pub emit_object: bool,
+    pub lib: bool,
     pub build: bool,
     pub linking: Linking,
     pub is_main: bool,
-    pub include_vec_api: bool,
-    pub rebuild_apis: bool,
+    pub insert_vector_natives: bool,
+    pub restore_natives_apis: bool,
+    pub restore_vector_natives: bool,
     pub reloc_mode: RelocMode,
     pub code_model: CodeModel,
 }
@@ -1148,16 +1149,17 @@ pub struct CompilerOptions {
 impl Default for CompilerOptions {
     fn default() -> Self {
         Self {
-            name: String::from("main"),
+            output: String::from("main"),
             target_triple: TargetMachine::get_default_triple(),
             optimization: Opt::default(),
             emit_llvm: false,
-            emit_object: false,
+            lib: false,
             build: false,
             linking: Linking::default(),
             is_main: false,
-            include_vec_api: false,
-            rebuild_apis: false,
+            insert_vector_natives: false,
+            restore_natives_apis: false,
+            restore_vector_natives: false,
             reloc_mode: RelocMode::Default,
             code_model: CodeModel::Default,
         }

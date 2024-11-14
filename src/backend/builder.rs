@@ -1,31 +1,25 @@
 use {
-    super::{super::logging, compiler::CompilerOptions},
-    inkwell::module::Module,
-    std::{
-        env, fs,
-        path::{Path, PathBuf},
-        process::Command,
+    super::{
+        super::{logging, utils, BACKEND_COMPILER, NAME},
+        compiler::CompilerOptions,
     },
+    inkwell::module::Module,
+    std::{env, fs, path::Path, process::Command},
 };
 
 pub struct FileBuilder<'a, 'ctx> {
     module: &'a Module<'ctx>,
     options: &'a CompilerOptions,
-    backend: &'a str,
 }
 
 impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
-    pub fn new(options: &'a CompilerOptions, module: &'a Module<'ctx>, backend: &'a str) -> Self {
-        Self {
-            options,
-            module,
-            backend,
-        }
+    pub fn new(options: &'a CompilerOptions, module: &'a Module<'ctx>) -> Self {
+        Self { options, module }
     }
 
     pub fn build(self) {
         let linking: &str = self.options.linking.to_str();
-        let file: String = format!("{}.ll", self.options.name);
+        let file: String = format!("{}.ll", utils::extract_file_name(&NAME.lock().unwrap()));
 
         if self.options.emit_llvm {
             self.module.print_to_file(file).unwrap();
@@ -53,62 +47,68 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
                 return;
             }
 
-            if !home.join("thrushlang").exists() {
+            if !home.join(".thrushc").exists() {
                 logging::log(
                     logging::LogType::ERROR,
-                    "The home folder for thrush lang don't exists. Use the command 'throium config repair' to restore it.",
+                    "The home folder for thrush lang don't exists. Use the command 'throium compiler restore' to restore it.",
                 );
                 return;
             }
 
-            if !home.join("thrushlang/apis/").exists() {
+            if !home.join(".thrushc/natives/").exists() {
                 logging::log(
                     logging::LogType::ERROR,
-                    "The folder of thrush lang with the compiler apis don't exists. Use the command 'throium config repair' to restore it.",
+                    "The folder of thrushc with the the native apis don't exists. Use the command 'throium natives restore' to restore it.",
                 );
                 return;
             }
 
-            if !home.join("thrushlang/apis/vectorapi.o").exists() && !self.options.rebuild_apis {
+            if !home.join(".thrushc/natives/vector.o").exists()
+                && !self.options.restore_natives_apis
+            {
                 logging::log(
                     logging::LogType::ERROR,
-                    "The file with the vector api don't exists. Use the command 'throium config repair' to restore it.",
+                    "The file with the vector native api don't exists. Use the command 'throium natives restore' to restore it.",
                 );
                 return;
             }
 
-            if self.options.include_vec_api {
+            if self.options.insert_vector_natives {
                 self.handle_error(
-                    Command::new(Path::new(self.backend).join("clang-18"))
-                        .arg("-opaque-pointers")
-                        .arg(linking)
-                        .arg("-ffast-math")
-                        .arg(&file)
-                        .arg("-o")
-                        .arg(&self.options.name),
+                    Command::new(
+                        Path::new(BACKEND_COMPILER.lock().unwrap().as_str()).join("clang-18"),
+                    )
+                    .arg("-opaque-pointers")
+                    .arg(linking)
+                    .arg("-ffast-math")
+                    .arg(&file)
+                    .arg("-o")
+                    .arg(&self.options.output),
                 );
             } else {
                 self.handle_error(
-                    Command::new(Path::new(self.backend).join("clang-18"))
-                        .arg("-opaque-pointers")
-                        .arg(linking)
-                        .arg("-ffast-math")
-                        .arg(&file)
-                        .arg("-o")
-                        .arg(&self.options.name)
-                        .arg(home.join("thrushlang/apis/vectorapi.o").to_str().unwrap()),
+                    Command::new(
+                        Path::new(BACKEND_COMPILER.lock().unwrap().as_str()).join("clang-18"),
+                    )
+                    .arg("-opaque-pointers")
+                    .arg(linking)
+                    .arg("-ffast-math")
+                    .arg(&file)
+                    .arg("-o")
+                    .arg(&self.options.output)
+                    .arg(home.join(".thrushc/natives/vector.o").to_str().unwrap()),
                 );
             }
-        } else if self.options.emit_object {
+        } else if self.options.lib {
             self.handle_error(
-                Command::new(Path::new(self.backend).join("clang-18"))
+                Command::new(Path::new(BACKEND_COMPILER.lock().unwrap().as_str()).join("clang-18"))
                     .arg("-opaque-pointers")
                     .arg(linking)
                     .arg("-ffast-math")
                     .arg("-c")
                     .arg(&file)
                     .arg("-o")
-                    .arg(format!("{}.o", self.options.name)),
+                    .arg(&self.options.output),
             );
         }
 
@@ -119,7 +119,7 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
 
     fn optimization(&self, opt_level: &str) {
         self.handle_error(
-            Command::new(Path::new(self.backend).join("opt"))
+            Command::new(Path::new(BACKEND_COMPILER.lock().unwrap().as_str()).join("opt"))
                 .arg(format!("-p={}", opt_level))
                 .arg("-p=globalopt")
                 .arg("-p=globaldce")
@@ -129,9 +129,15 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
                 .arg("-p=strip")
                 .arg("-p=mem2reg")
                 .arg("-p=memcpyopt")
-                .arg(format!("{}.ll", self.options.name))
+                .arg(format!(
+                    "{}.ll",
+                    utils::extract_file_name(&NAME.lock().unwrap())
+                ))
                 .arg("-o")
-                .arg(format!("{}.ll", self.options.name)),
+                .arg(format!(
+                    "{}.ll",
+                    utils::extract_file_name(&NAME.lock().unwrap())
+                )),
         );
     }
 

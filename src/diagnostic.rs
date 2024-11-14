@@ -106,11 +106,7 @@ impl Diagnostic {
     fn print_header(&mut self, line: usize, title: &str) {
         println!(
             "\n{} {}\n",
-            format_args!(
-                "{}{}",
-                style(NAME.lock().unwrap()).bold().bright_red(),
-                style(".th").bold()
-            ),
+            format_args!("{}", style(NAME.lock().unwrap()).bold().bright_red()),
             line
         );
 

@@ -1135,8 +1135,8 @@ pub struct CompilerOptions {
     pub target_triple: TargetTriple,
     pub optimization: Opt,
     pub emit_llvm: bool,
-    pub lib: bool,
-    pub build: bool,
+    pub library: bool,
+    pub executable: bool,
     pub linking: Linking,
     pub is_main: bool,
     pub insert_vector_natives: bool,
@@ -1144,17 +1144,18 @@ pub struct CompilerOptions {
     pub restore_vector_natives: bool,
     pub reloc_mode: RelocMode,
     pub code_model: CodeModel,
+    pub file_path: String,
 }
 
 impl Default for CompilerOptions {
     fn default() -> Self {
         Self {
-            output: String::from("main"),
+            output: String::new(),
             target_triple: TargetMachine::get_default_triple(),
             optimization: Opt::default(),
             emit_llvm: false,
-            lib: false,
-            build: false,
+            library: false,
+            executable: false,
             linking: Linking::default(),
             is_main: false,
             insert_vector_natives: false,
@@ -1162,6 +1163,7 @@ impl Default for CompilerOptions {
             restore_vector_natives: false,
             reloc_mode: RelocMode::Default,
             code_model: CodeModel::Default,
+            file_path: String::new(),
         }
     }
 }

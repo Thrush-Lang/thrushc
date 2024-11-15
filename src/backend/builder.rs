@@ -30,7 +30,7 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
 
         self.optimization(self.options.optimization.to_str());
 
-        if self.options.build {
+        if self.options.executable {
             let home: String = match env::consts::OS {
                 "windows" => env::var("APPDATA").unwrap(),
                 "linux" => env::var("HOME").unwrap(),
@@ -99,7 +99,7 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
                     .arg(home.join(".thrushc/natives/vector.o").to_str().unwrap()),
                 );
             }
-        } else if self.options.lib {
+        } else if self.options.library {
             self.handle_error(
                 Command::new(Path::new(BACKEND_COMPILER.lock().unwrap().as_str()).join("clang-18"))
                     .arg("-opaque-pointers")

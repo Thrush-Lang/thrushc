@@ -2,7 +2,6 @@ use super::super::{
     backend::instruction::Instruction,
     diagnostic::Diagnostic,
     error::{ThrushError, ThrushErrorKind},
-    PATH,
 };
 
 #[derive(Debug)]
@@ -18,11 +17,11 @@ struct ThrushBlock<'ctx> {
 }
 
 impl<'ctx> ThrushScoper<'ctx> {
-    pub fn new() -> Self {
+    pub fn new(file_path: &str) -> Self {
         Self {
             blocks: Vec::new(),
             errors: Vec::new(),
-            diagnostic: Diagnostic::new(&PATH.lock().unwrap()),
+            diagnostic: Diagnostic::new(file_path),
         }
     }
 

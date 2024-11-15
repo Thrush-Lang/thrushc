@@ -29,7 +29,6 @@ use {
 };
 
 pub static NAME: Mutex<String> = Mutex::new(String::new());
-pub static PATH: Mutex<String> = Mutex::new(String::new());
 pub static BACKEND_COMPILER: Mutex<String> = Mutex::new(String::new());
 
 fn main() {
@@ -39,7 +38,10 @@ fn main() {
     cli.parse();
 
     if BACKEND_COMPILER.lock().unwrap().is_empty() {
-        logging::log(logging::LogType::ERROR, "The Backend Compiler is not set.");
+        logging::log(
+            logging::LogType::ERROR,
+            "The Backend Compiler is not set. Use the flag `thrushc --backend \"PATH\"` to set it.",
+        );
         return;
     }
 
@@ -50,7 +52,7 @@ fn main() {
         cli.compiler_options.output = if cli.compiler_options.restore_vector_natives {
             "vector.o".to_string()
         } else {
-            "native".to_string()
+            "native.o".to_string()
         };
 
         let module: Module<'_> = context.create_module(&cli.compiler_options.output);
@@ -92,19 +94,24 @@ fn main() {
     println!(
         "\n{} {}",
         style("Compiling").bold().fg(Color::Rgb(141, 141, 142)),
-        PATH.lock().unwrap()
+        cli.compiler_options.file_path
     );
 
-    let origin_content: String =
-        read_to_string(PATH.lock().unwrap().as_str()).unwrap_or_else(|error| {
-            logging::log(logging::LogType::ERROR, error.to_string().as_str());
-            panic!()
-        });
+    let content: String = read_to_string(&cli.compiler_options.file_path).unwrap();
 
-    let content: &[u8] = origin_content.as_bytes();
+    let mut lexer: Lexer = Lexer::new(content.as_bytes(), &cli.compiler_options.file_path);
 
-    let mut lexer: Lexer = Lexer::new(content);
-    let mut parser: Parser = Parser::new();
+    let tokens: &[Token] = lexer.lex().unwrap_or_else(|msg| {
+        utils::notify_posible_issue(&msg);
+        unreachable!()
+    });
+
+    let mut parser: Parser = Parser::new(&cli.compiler_options, tokens);
+
+    let instructions: &[Instruction] = parser.start().unwrap_or_else(|msg| {
+        utils::notify_posible_issue(&msg);
+        unreachable!()
+    });
 
     let context: Context = Context::create();
     let builder: Builder<'_> = context.create_builder();
@@ -112,62 +119,38 @@ fn main() {
 
     let start_time: Instant = Instant::now();
 
-    let tokens: Result<&[Token], String> = lexer.lex();
+    module.set_triple(&cli.compiler_options.target_triple);
 
-    match tokens {
-        Ok(tokens) => {
-            parser.tokens = Some(tokens);
-            parser.options = Some(&cli.compiler_options);
+    let opt: OptimizationLevel = cli.compiler_options.optimization.to_llvm_opt();
 
-            let instructions: Result<&[Instruction<'_>], String> = parser.start();
+    let machine: TargetMachine = Target::from_triple(&cli.compiler_options.target_triple)
+        .unwrap()
+        .create_target_machine(
+            &cli.compiler_options.target_triple,
+            "",
+            "",
+            opt,
+            cli.compiler_options.reloc_mode,
+            cli.compiler_options.code_model,
+        )
+        .unwrap();
 
-            match instructions {
-                Ok(instructions) => {
-                    module.set_triple(&cli.compiler_options.target_triple);
+    module.set_data_layout(&machine.get_target_data().get_data_layout());
 
-                    let opt: OptimizationLevel = cli.compiler_options.optimization.to_llvm_opt();
+    Compiler::compile(
+        &module,
+        &builder,
+        &context,
+        &cli.compiler_options,
+        instructions,
+    );
 
-                    let machine: TargetMachine =
-                        Target::from_triple(&cli.compiler_options.target_triple)
-                            .unwrap()
-                            .create_target_machine(
-                                &cli.compiler_options.target_triple,
-                                "",
-                                "",
-                                opt,
-                                cli.compiler_options.reloc_mode,
-                                cli.compiler_options.code_model,
-                            )
-                            .unwrap();
-
-                    module.set_data_layout(&machine.get_target_data().get_data_layout());
-
-                    Compiler::compile(
-                        &module,
-                        &builder,
-                        &context,
-                        &cli.compiler_options,
-                        instructions,
-                    );
-
-                    FileBuilder::new(&cli.compiler_options, &module).build();
-                }
-
-                Err(msg) => {
-                    logging::log(logging::LogType::ERROR, &msg);
-                }
-            }
-        }
-
-        Err(msg) => {
-            logging::log(logging::LogType::ERROR, &msg);
-        }
-    }
+    FileBuilder::new(&cli.compiler_options, &module).build();
 
     println!(
         "{} {} {}",
         style("Finished").bold().fg(Color::Rgb(141, 141, 142)),
-        PATH.lock().unwrap(),
+        cli.compiler_options.file_path,
         style(&format!(
             "{}.{}s",
             start_time.elapsed().as_secs(),

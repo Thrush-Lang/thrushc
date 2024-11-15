@@ -2,7 +2,6 @@ use {
     super::super::{
         diagnostic::Diagnostic,
         error::{ThrushError, ThrushErrorKind},
-        PATH
     },
     core::str,
     std::num::ParseFloatError,
@@ -19,7 +18,7 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(code: &'a [u8]) -> Self {
+    pub fn new(code: &'a [u8], file_path: &str) -> Self {
         Self {
             tokens: Vec::new(),
             errors: Vec::new(),
@@ -27,7 +26,7 @@ impl<'a> Lexer<'a> {
             start: 0,
             current: 0,
             line: 1,
-            diagnostic: Diagnostic::new(&PATH.lock().unwrap())
+            diagnostic: Diagnostic::new(file_path)
         }
     }
 

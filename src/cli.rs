@@ -2,9 +2,9 @@ use {
     super::{
         backend::compiler::{CompilerOptions, Linking, Opt},
         constants::TARGETS,
-        BACKEND_COMPILER, NAME, PATH,
+        BACKEND_COMPILER, NAME,
     },
-    inkwell::targets::{CodeModel, RelocMode, TargetTriple},
+    inkwell::targets::{CodeModel, RelocMode, TargetMachine, TargetTriple},
     std::{path::Path, process},
     stylic::{style, Color, Stylize},
 };
@@ -45,9 +45,21 @@ impl CLIParser {
                 self.help();
             }
 
+            "targets" => {
+                *index += 1;
+                TARGETS.iter().for_each(|target| println!("{}", target));
+                process::exit(0);
+            }
+
+            "native-target" => {
+                *index += 1;
+                println!("{}", TargetMachine::get_default_triple());
+                process::exit(0);
+            }
+
             "version" | "-v" | "--version" => {
                 *index += 1;
-                println!("The Thrush Compiler v{}", env!("CARGO_PKG_VERSION"));
+                println!("v{}", env!("CARGO_PKG_VERSION"));
             }
 
             "native" => {
@@ -79,7 +91,7 @@ impl CLIParser {
                 match self.args[self.extract_relative_index(*index)].as_str() {
                     "restore" => {
                         self.compiler_options.restore_natives_apis = true;
-                        self.compiler_options.lib = true;
+                        self.compiler_options.library = true;
 
                         if native_api == "vector" {
                             self.compiler_options.restore_vector_natives = true;
@@ -197,9 +209,9 @@ impl CLIParser {
                 self.compiler_options.emit_llvm = true;
             }
 
-            "--lib" | "-lib" => {
+            "--library" | "-library" => {
                 *index += 1;
-                self.compiler_options.lib = true;
+                self.compiler_options.library = true;
             }
 
             "-target" | "--target" => {
@@ -267,9 +279,9 @@ impl CLIParser {
                 }
             }
 
-            "--build" | "-build" => {
+            "--executable" | "-executable" => {
                 *index += 1;
-                self.compiler_options.build = true;
+                self.compiler_options.executable = true;
             }
 
             path if Path::new(path).exists() => {
@@ -298,8 +310,7 @@ impl CLIParser {
                 self.compiler_options.output =
                     file.file_name().unwrap().to_string_lossy().to_string();
 
-                PATH.lock().unwrap().clear();
-                PATH.lock().unwrap().push_str(path);
+                self.compiler_options.file_path = path.to_string();
 
                 NAME.lock().unwrap().clear();
                 NAME.lock()
@@ -309,7 +320,6 @@ impl CLIParser {
 
             _ => {
                 self.help();
-                process::exit(0);
             }
         }
     }
@@ -468,16 +478,16 @@ impl CLIParser {
         println!(
             "{} ({} | {}) {}",
             style("•").bold(),
-            style("--build").bold().fg(Color::Rgb(141, 141, 142)),
-            style("-b").bold().fg(Color::Rgb(141, 141, 142)),
-            style("Compile the code into executable.").bold()
+            style("--executable").bold().fg(Color::Rgb(141, 141, 142)),
+            style("-executable").bold().fg(Color::Rgb(141, 141, 142)),
+            style("Compile the code into native executable.").bold()
         );
 
         println!(
             "{} ({} | {}) {}",
             style("•").bold(),
-            style("--lib").bold().fg(Color::Rgb(141, 141, 142)),
-            style("-lib").bold().fg(Color::Rgb(141, 141, 142)),
+            style("--library").bold().fg(Color::Rgb(141, 141, 142)),
+            style("-library").bold().fg(Color::Rgb(141, 141, 142)),
             style("Compile to an object file.").bold()
         );
 
@@ -505,5 +515,7 @@ impl CLIParser {
             style("Define how code is organized and accessed in the executable or object file.")
                 .bold()
         );
+
+        process::exit(0);
     }
 }

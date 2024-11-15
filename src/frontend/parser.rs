@@ -4,7 +4,7 @@ use {
             backend::{compiler::CompilerOptions, instruction::Instruction},
             diagnostic::Diagnostic,
             error::{ThrushError, ThrushErrorKind},
-            logging, PATH,
+            logging,
         },
         checking,
         lexer::{DataTypes, Token, TokenKind},
@@ -26,14 +26,13 @@ const VALID_INTEGER_TYPES: [DataTypes; 8] = [
 ];
 
 const VALID_FLOAT_TYPES: [DataTypes; 2] = [DataTypes::F32, DataTypes::F64];
-
 const STANDARD_FORMATS: [&str; 5] = ["%s", "%d", "%c", "%ld", "%f"];
 
 pub struct Parser<'instr, 'a> {
     stmts: Vec<Instruction<'instr>>,
     errors: Vec<ThrushError>,
-    pub tokens: Option<&'instr [Token]>,
-    pub options: Option<&'a CompilerOptions>,
+    tokens: &'instr [Token],
+    options: &'a CompilerOptions,
     function: u16,
     ret: Option<DataTypes>,
     current: usize,
@@ -46,20 +45,20 @@ pub struct Parser<'instr, 'a> {
 }
 
 impl<'instr, 'a> Parser<'instr, 'a> {
-    pub fn new() -> Self {
+    pub fn new(options: &'a CompilerOptions, tokens: &'instr [Token]) -> Self {
         Self {
             stmts: Vec::new(),
             errors: Vec::new(),
-            tokens: None,
-            options: None,
+            tokens,
+            options,
             current: 0,
             ret: None,
             function: 0,
             globals: HashMap::new(),
             locals: vec![HashMap::new()],
             scope: 0,
-            scoper: ThrushScoper::new(),
-            diagnostic: Diagnostic::new(&PATH.lock().unwrap()),
+            scoper: ThrushScoper::new(&options.file_path),
+            diagnostic: Diagnostic::new(&options.file_path),
             has_entry_point: false,
         }
     }
@@ -82,7 +81,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             });
 
             return Err(String::from("Compilation terminated."));
-        } else if self.options.unwrap().is_main && !self.has_entry_point {
+        } else if self.options.is_main && !self.has_entry_point {
             logging::log(
                 logging::LogType::ERROR,
                 "Missing entry point in main.th file. Write this: --> fn main() {} <--",
@@ -560,7 +559,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             String::from("Expected def <name>."),
         )?;
 
-        if name.lexeme.as_ref().unwrap() == "main" && self.options.unwrap().is_main {
+        if name.lexeme.as_ref().unwrap() == "main" && self.options.is_main {
             if self.has_entry_point {
                 return Err(ThrushError::Parse(
                     ThrushErrorKind::SyntaxError,
@@ -1688,12 +1687,12 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
     #[inline]
     fn peek(&self) -> Token {
-        self.tokens.unwrap()[self.current].clone()
+        self.tokens[self.current].clone()
     }
 
     #[inline]
     fn previous(&self) -> &'instr Token {
-        &self.tokens.unwrap()[self.current - 1]
+        &self.tokens[self.current - 1]
     }
 
     #[inline]

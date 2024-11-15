@@ -6,6 +6,6 @@
 
 This compiler compile target to **LLVM IR** and coming soon to another Backend Tools Infraestructures; This compile for native **Optimized Machine Code** with object files or executables.
 
-## Compiler Requeriments
+## Compiler Requirements
 
 - **Clang** && **LLVM** 18.1.7 (Linux Binaries)

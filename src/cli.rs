@@ -5,7 +5,7 @@ use {
         BACKEND_COMPILER, NAME,
     },
     inkwell::targets::{CodeModel, RelocMode, TargetMachine, TargetTriple},
-    std::{path::Path, process},
+    std::{path::PathBuf, process},
     stylic::{style, Color, Stylize},
 };
 
@@ -33,12 +33,11 @@ impl CLIParser {
         let mut depth: usize = 0;
 
         while depth != self.args.len() {
-            let arg: String = self.args[depth].clone();
-            self.analyze(&arg, &mut depth);
+            self.analyze(self.args[depth].clone(), &mut depth);
         }
     }
 
-    fn analyze(&mut self, arg: &str, index: &mut usize) {
+    fn analyze(&mut self, arg: String, index: &mut usize) {
         match arg.trim() {
             "help" | "-h" | "--help" => {
                 *index += 1;
@@ -113,56 +112,51 @@ impl CLIParser {
                 *index += 1;
 
                 if *index > self.args.len() {
-                    self.report_error("Missing argument for --backend");
+                    self.report_error(
+                        "Missing argument for backend flag. Did you mean --backend \"path\"?",
+                    );
                 }
 
-                let path: &Path = Path::new(&self.args[self.extract_relative_index(*index)]);
+                let path: PathBuf = PathBuf::from(&self.args[self.extract_relative_index(*index)]);
 
                 if !path.exists() {
                     self.report_error(&format!(
                         "The path {} don't exists.",
                         self.args[self.extract_relative_index(*index)]
                     ));
-                }
-
-                if !path.is_dir() {
+                } else if !path.is_dir() {
                     self.report_error(&format!(
                         "The path {} is not a directory.",
                         self.args[self.extract_relative_index(*index)]
                     ));
-                }
-
-                if !path.ends_with("bin") {
+                } else if !path.ends_with("bin") {
                     self.report_error(&format!(
-                        "The path {} don't ends with 'bin' folder.",
+                        "The path to LLVM Toolchain \"{}\" don't ends with 'bin' folder.",
                         self.args[self.extract_relative_index(*index)]
                     ));
-                }
-
-                if !path.join("clang-18").exists() {
+                } else if !path.join("clang-18").exists() {
                     self.report_error(&format!(
-                        "The path {} don't contains 'clang-18'.",
+                        "The path to LLVM Toolchain \"{}\" don't contains 'clang-18'.",
                         self.args[self.extract_relative_index(*index)]
                     ));
-                }
-
-                if !path.join("opt").exists() {
+                } else if !path.join("opt").exists() {
                     self.report_error(&format!(
-                        "The path {} don't contains LLVM Optimizer (opt).",
+                        "The path to LLVM Toolchain \"{}\" don't contains LLVM Optimizer (opt).",
                         self.args[self.extract_relative_index(*index)]
                     ));
-                }
-
-                if !path.join("lld").exists() {
+                } else if !path.join("lld").exists() {
                     self.report_error(&format!(
-                        "The path {} don't contains LLVM Linker (lld).",
+                        "The path to LLVM Toolchain \"{}\" don't contains LLVM Linker (lld).",
                         self.args[self.extract_relative_index(*index)]
                     ));
-                }
-
-                if !path.join("llvm-config").exists() {
+                } else if !path.join("llc").exists() {
                     self.report_error(&format!(
-                        "The path {} don't contains LLVM Configurator (llvm-config).",
+                        "The path to LLVM Toolchain \"{}\" don't contains LLVM Static Compiler (llc).",
+                        self.args[self.extract_relative_index(*index)]
+                    ));
+                } else if !path.join("llvm-config").exists() {
+                    self.report_error(&format!(
+                        "The path to LLVM Toolchain \"{}\" don't contains LLVM Configurator (llvm-config).",
                         self.args[self.extract_relative_index(*index)]
                     ));
                 }
@@ -237,13 +231,11 @@ impl CLIParser {
 
             "--static" | "-static" => {
                 *index += 1;
-
                 self.compiler_options.linking = Linking::Static;
             }
 
             "--dynamic" | "-dynamic" => {
                 *index += 1;
-
                 self.compiler_options.linking = Linking::Dynamic;
             }
 
@@ -284,23 +276,23 @@ impl CLIParser {
                 self.compiler_options.executable = true;
             }
 
-            path if Path::new(path).exists() => {
+            path if PathBuf::from(path).exists() => {
                 *index += 1;
 
-                let file: &Path = Path::new(path);
+                let mut file: PathBuf = PathBuf::from(path);
 
                 if file.is_dir() {
                     self.report_error(&format!("\"{}\" is a directory", path));
-                }
-                /* if path.chars().filter(|ch| *ch == '.').count() > 1 && file.canonicalize().is_ok() {
-                    file = file.canonicalize().unwrap();
-                } */
-                else if file.extension().is_none() {
+                } else if file.extension().is_none() {
                     self.report_error(&format!("\"{}\" does not have extension.", path));
                 } else if file.extension().unwrap() != "th" {
                     self.report_error(&format!("\"{}\" is not a Thrush Lang file.", path));
                 } else if file.file_name().is_none() {
                     self.report_error(&format!("\"{}\" does not have a name.", path));
+                }
+
+                if path.chars().filter(|ch| *ch == '.').count() > 2 && file.canonicalize().is_ok() {
+                    file = file.canonicalize().unwrap();
                 }
 
                 if file.file_name().unwrap() == "main.th" {

@@ -12,6 +12,7 @@ use {
         scoper::ThrushScoper,
     },
     ahash::AHashMap as HashMap,
+    std::process::exit,
 };
 
 const VALID_INTEGER_TYPES: [DataTypes; 8] = [
@@ -63,7 +64,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         }
     }
 
-    pub fn start(&mut self) -> Result<&[Instruction<'instr>], String> {
+    pub fn start(&mut self) -> &[Instruction<'instr>] {
         while !self.end() {
             match self.parse() {
                 Ok(instr) => {
@@ -80,19 +81,19 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 self.diagnostic.report(error);
             });
 
-            return Err(String::from("Compilation terminated."));
+            exit(1);
         } else if self.options.is_main && !self.has_entry_point {
             logging::log(
                 logging::LogType::ERROR,
-                "Missing entry point in main.th file. Write this: --> fn main() {} <--",
+                "Missing entrypoint \"fn main() {}\" in main.th file.",
             );
 
-            return Err(String::from("Compilation terminated."));
+            exit(1);
         }
 
-        self.scoper.analyze()?;
+        self.scoper.analyze();
 
-        Ok(self.stmts.as_slice())
+        self.stmts.as_slice()
     }
 
     fn parse(&mut self) -> Result<Instruction<'instr>, ThrushError> {
@@ -1481,7 +1482,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ));
                         }
 
-                        self.locals[self.scope].insert(name, Variable::new(var.0.clone(), false));
+                        self.locals[self.scope].insert(name, Variable::new(var.0, false));
 
                         return Ok(Instruction::MutVar {
                             name,

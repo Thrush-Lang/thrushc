@@ -1,6 +1,6 @@
 use {
     super::{
-        super::{logging, utils, BACKEND_COMPILER, NAME},
+        super::{logging, BACKEND_COMPILER, NAME},
         compiler::CompilerOptions,
     },
     inkwell::module::Module,
@@ -62,15 +62,9 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
                 .arg("-p=strip")
                 .arg("-p=mem2reg")
                 .arg("-p=memcpyopt")
-                .arg(format!(
-                    "{}.ll",
-                    utils::extract_file_name(&NAME.lock().unwrap())
-                ))
+                .arg(format!("{}.ll", &NAME.lock().unwrap()))
                 .arg("-o")
-                .arg(format!(
-                    "{}.ll",
-                    utils::extract_file_name(&NAME.lock().unwrap())
-                )),
+                .arg(format!("{}.ll", &NAME.lock().unwrap())),
         );
     }
 

@@ -4,7 +4,7 @@ use {
         error::{ThrushError, ThrushErrorKind},
     },
     core::str,
-    std::num::ParseFloatError,
+    std::{num::ParseFloatError, process::exit},
 };
 
 pub struct Lexer<'a> {
@@ -30,7 +30,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn lex(&mut self) -> Result<&[Token], String> {
+    pub fn lex(&mut self) -> &[Token] {
         while !self.end() {
             self.start = self.current;
 
@@ -45,12 +45,12 @@ impl<'a> Lexer<'a> {
                 self.diagnostic.report(error);
             });
        
-            return Err(String::from("Compilation terminated."));
+            exit(1);
         };
 
         self.make(TokenKind::Eof);
 
-        Ok(self.tokens.as_slice())
+        self.tokens.as_slice()
     }
 
     fn scan(&mut self) -> Result<(), ThrushError> {

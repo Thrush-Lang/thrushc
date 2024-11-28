@@ -5,7 +5,6 @@ mod diagnostic;
 mod error;
 mod frontend;
 mod logging;
-mod utils;
 
 use {
     backend::{
@@ -46,51 +45,51 @@ fn main() {
         return;
     }
 
-    if cli.compiler_options.restore_natives_apis {
+    if cli.options.restore_natives_apis {
         let context: Context = Context::create();
         let builder: Builder<'_> = context.create_builder();
 
-        cli.compiler_options.output = if cli.compiler_options.restore_vector_natives {
+        cli.options.output = if cli.options.restore_vector_natives {
             "vector.o".to_string()
         } else {
             "native.o".to_string()
         };
 
-        let module: Module<'_> = context.create_module(&cli.compiler_options.output);
+        let module: Module<'_> = context.create_module(&cli.options.output);
 
-        module.set_triple(&cli.compiler_options.target_triple);
+        module.set_triple(&cli.options.target_triple);
 
-        let opt: OptimizationLevel = cli.compiler_options.optimization.to_llvm_opt();
+        let opt: OptimizationLevel = cli.options.optimization.to_llvm_opt();
 
-        let machine: TargetMachine = Target::from_triple(&cli.compiler_options.target_triple)
+        let machine: TargetMachine = Target::from_triple(&cli.options.target_triple)
             .unwrap()
             .create_target_machine(
-                &cli.compiler_options.target_triple,
+                &cli.options.target_triple,
                 "",
                 "",
                 opt,
-                cli.compiler_options.reloc_mode,
-                cli.compiler_options.code_model,
+                cli.options.reloc_mode,
+                cli.options.code_model,
             )
             .unwrap();
 
         module.set_data_layout(&machine.get_target_data().get_data_layout());
 
-        if cli.compiler_options.restore_vector_natives {
+        if cli.options.restore_vector_natives {
             VectorAPI::include(&module, &builder, &context);
         }
 
-        if cli.compiler_options.emit_llvm {
+        if cli.options.emit_llvm {
             module
-                .print_to_file(format!("{}.ll", cli.compiler_options.output))
+                .print_to_file(format!("{}.ll", cli.options.output))
                 .unwrap();
             return;
         }
 
         FileBuilder::new(
-            &cli.compiler_options,
+            &cli.options,
             &module,
-            &format!("{}.ll", utils::extract_file_name(&NAME.lock().unwrap())),
+            &format!("{}.ll", &NAME.lock().unwrap()),
         )
         .build();
 
@@ -100,62 +99,54 @@ fn main() {
     println!(
         "\n{} {}",
         style("Compiling").bold().fg(Color::Rgb(141, 141, 142)),
-        cli.compiler_options.file_path
+        cli.options.file_path
     );
 
-    let content: String = read_to_string(&cli.compiler_options.file_path).unwrap();
+    let content: String = read_to_string(&cli.options.file_path).unwrap();
 
-    let mut lexer: Lexer = Lexer::new(content.as_bytes(), &cli.compiler_options.file_path);
+    let mut lexer: Lexer = Lexer::new(content.as_bytes(), &cli.options.file_path);
+    let tokens: &[Token] = lexer.lex();
 
-    let tokens: &[Token] = lexer.lex().unwrap_or_else(|msg| unreachable!());
-
-    let mut parser: Parser = Parser::new(&cli.compiler_options, tokens);
-
-    let instructions: &[Instruction] = parser.start().unwrap_or_else(|msg| unreachable!());
+    let mut parser: Parser = Parser::new(&cli.options, tokens);
+    let instructions: &[Instruction] = parser.start();
 
     let context: Context = Context::create();
     let builder: Builder<'_> = context.create_builder();
-    let module: Module<'_> = context.create_module(&cli.compiler_options.output);
+    let module: Module<'_> = context.create_module(&cli.options.output);
 
     let start_time: Instant = Instant::now();
 
-    module.set_triple(&cli.compiler_options.target_triple);
+    module.set_triple(&cli.options.target_triple);
 
-    let opt: OptimizationLevel = cli.compiler_options.optimization.to_llvm_opt();
+    let opt: OptimizationLevel = cli.options.optimization.to_llvm_opt();
 
-    let machine: TargetMachine = Target::from_triple(&cli.compiler_options.target_triple)
+    let machine: TargetMachine = Target::from_triple(&cli.options.target_triple)
         .unwrap()
         .create_target_machine(
-            &cli.compiler_options.target_triple,
+            &cli.options.target_triple,
             "",
             "",
             opt,
-            cli.compiler_options.reloc_mode,
-            cli.compiler_options.code_model,
+            cli.options.reloc_mode,
+            cli.options.code_model,
         )
         .unwrap();
 
     module.set_data_layout(&machine.get_target_data().get_data_layout());
 
-    Compiler::compile(
-        &module,
-        &builder,
-        &context,
-        &cli.compiler_options,
-        instructions,
-    );
+    Compiler::compile(&module, &builder, &context, &cli.options, instructions);
 
     FileBuilder::new(
-        &cli.compiler_options,
+        &cli.options,
         &module,
-        &format!("{}.ll", utils::extract_file_name(&NAME.lock().unwrap())),
+        &format!("{}.ll", &NAME.lock().unwrap()),
     )
     .build();
 
     println!(
         "{} {} {}",
         style("Finished").bold().fg(Color::Rgb(141, 141, 142)),
-        cli.compiler_options.file_path,
+        cli.options.file_path,
         style(&format!(
             "{}.{}s",
             start_time.elapsed().as_secs(),

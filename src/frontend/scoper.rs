@@ -1,7 +1,10 @@
-use super::super::{
-    backend::instruction::Instruction,
-    diagnostic::Diagnostic,
-    error::{ThrushError, ThrushErrorKind},
+use {
+    super::super::{
+        backend::instruction::Instruction,
+        diagnostic::Diagnostic,
+        error::{ThrushError, ThrushErrorKind},
+    },
+    std::process::exit,
 };
 
 #[derive(Debug)]
@@ -29,9 +32,9 @@ impl<'ctx> ThrushScoper<'ctx> {
         self.blocks.push(ThrushBlock { stmts });
     }
 
-    pub fn analyze(&mut self) -> Result<(), String> {
+    pub fn analyze(&mut self) {
         if self.blocks.is_empty() {
-            return Ok(());
+            return;
         }
 
         for depth in (0..=self.blocks.len() - 1).rev() {
@@ -50,10 +53,8 @@ impl<'ctx> ThrushScoper<'ctx> {
                 self.diagnostic.report(error);
             });
 
-            return Err(String::from("Compilation terminated."));
+            exit(1);
         }
-
-        Ok(())
     }
 
     fn analyze_instruction(

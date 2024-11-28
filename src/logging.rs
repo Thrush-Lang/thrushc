@@ -1,5 +1,9 @@
-use stylic::{style, Styled, Stylize};
+use {
+    std::io::{self, Write},
+    stylic::{style, Styled, Stylize},
+};
 
+#[derive(PartialEq)]
 pub enum LogType {
     INFO,
     WARN,
@@ -19,5 +23,15 @@ impl LogType {
 /// Logs a message to the compiler standard output (CSO)
 #[inline]
 pub fn log(ltype: LogType, msg: &str) {
-    println!("  {} {}", ltype.to_styled(), style(msg).bold());
+    if ltype == LogType::ERROR {
+        io::stderr()
+            .write_all(format!("  {} {}", ltype.to_styled(), style(msg).bold()).as_bytes())
+            .unwrap();
+
+        return;
+    }
+
+    io::stdout()
+        .write_all(format!("  {} {}", ltype.to_styled(), style(msg).bold()).as_bytes())
+        .unwrap();
 }

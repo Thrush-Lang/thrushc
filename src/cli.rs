@@ -10,14 +10,14 @@ use {
 };
 
 pub struct CLIParser {
-    pub compiler_options: CompilerOptions,
+    pub options: CompilerOptions,
     args: Vec<String>,
 }
 
 impl CLIParser {
     pub fn new(args: Vec<String>) -> Self {
         Self {
-            compiler_options: CompilerOptions::default(),
+            options: CompilerOptions::default(),
             args,
         }
     }
@@ -89,11 +89,11 @@ impl CLIParser {
 
                 match self.args[self.extract_relative_index(*index)].as_str() {
                     "restore" => {
-                        self.compiler_options.restore_natives_apis = true;
-                        self.compiler_options.library = true;
+                        self.options.restore_natives_apis = true;
+                        self.options.library = true;
 
                         if native_api == "vector" {
-                            self.compiler_options.restore_vector_natives = true;
+                            self.options.restore_vector_natives = true;
                         }
 
                         *index += 1;
@@ -177,8 +177,7 @@ impl CLIParser {
                     self.report_error(&format!("Missing argument for {}", arg));
                 }
 
-                self.compiler_options.output =
-                    self.args[self.extract_relative_index(*index)].to_string();
+                self.options.output = self.args[self.extract_relative_index(*index)].to_string();
             }
 
             "-opt" | "--optimization" => {
@@ -188,7 +187,7 @@ impl CLIParser {
                     self.report_error(&format!("Missing argument for {}", arg));
                 }
 
-                self.compiler_options.optimization =
+                self.options.optimization =
                     match self.args[self.extract_relative_index(*index)].as_str() {
                         "O0" => Opt::None,
                         "O1" => Opt::Low,
@@ -203,40 +202,40 @@ impl CLIParser {
             "-emit-only-llvm" | "--emit-only-llvm" => {
                 *index += 1;
 
-                if self.compiler_options.emit_asm {
+                if self.options.emit_asm {
                     self.report_error(&format!(
                         "You can't use \"{}\" and \"{}\" together.",
                         "--emit-only-llvm", "--emit-only-asm"
                     ));
                 }
 
-                self.compiler_options.emit_llvm = true;
+                self.options.emit_llvm = true;
             }
 
             "-emit-only-asm" | "--emit-only-asm" => {
                 *index += 1;
 
-                if self.compiler_options.emit_asm {
+                if self.options.emit_asm {
                     self.report_error(&format!(
                         "You can't use \"{}\" and \"{}\" together.",
                         "--emit-only-llvm", "--emit-only-asm"
                     ));
                 }
 
-                self.compiler_options.emit_asm = true;
+                self.options.emit_asm = true;
             }
 
             "--library" | "-library" => {
                 *index += 1;
 
-                if self.compiler_options.executable {
+                if self.options.executable {
                     self.report_error(&format!(
                         "You can't use \"{}\" and \"{}\" together.",
                         "--executable", "--library"
                     ));
                 }
 
-                self.compiler_options.library = true;
+                self.options.library = true;
             }
 
             "-target" | "--target" => {
@@ -248,7 +247,7 @@ impl CLIParser {
 
                 match self.args[self.extract_relative_index(*index)].as_str() {
                     target if TARGETS.contains(&target) => {
-                        self.compiler_options.target_triple = TargetTriple::create(target);
+                        self.options.target_triple = TargetTriple::create(target);
                         *index += 1;
                     }
 
@@ -264,29 +263,29 @@ impl CLIParser {
             "--static" | "-static" => {
                 *index += 1;
 
-                if self.compiler_options.linking == Linking::Dynamic {
+                if self.options.linking == Linking::Dynamic {
                     self.report_error(&format!(
                         "Can't use linking \"{}\" with \"{}\" linking.",
                         arg,
-                        self.compiler_options.linking.to_str()
+                        self.options.linking.to_str()
                     ));
                 }
 
-                self.compiler_options.linking = Linking::Static;
+                self.options.linking = Linking::Static;
             }
 
             "--dynamic" | "-dynamic" => {
                 *index += 1;
 
-                if self.compiler_options.linking == Linking::Static {
+                if self.options.linking == Linking::Static {
                     self.report_error(&format!(
                         "Can't use linking \"{}\" with \"{}\" linking.",
                         arg,
-                        self.compiler_options.linking.to_str()
+                        self.options.linking.to_str()
                     ));
                 }
 
-                self.compiler_options.linking = Linking::Dynamic;
+                self.options.linking = Linking::Dynamic;
             }
 
             "--reloc" | "-reloc" => {
@@ -296,7 +295,7 @@ impl CLIParser {
                     self.report_error(&format!("Missing argument for {}", arg));
                 }
 
-                self.compiler_options.reloc_mode =
+                self.options.reloc_mode =
                     match self.args[self.extract_relative_index(*index)].as_str() {
                         "dynamic-no-pic" => RelocMode::DynamicNoPic,
                         "pic" => RelocMode::PIC,
@@ -314,7 +313,7 @@ impl CLIParser {
                     self.report_error(&format!("Missing argument for {}", arg));
                 }
 
-                self.compiler_options.code_model =
+                self.options.code_model =
                     match self.args[self.extract_relative_index(*index)].as_str() {
                         "small" => CodeModel::Small,
                         "medium" => CodeModel::Medium,
@@ -328,7 +327,7 @@ impl CLIParser {
 
             "--executable" | "-executable" => {
                 *index += 1;
-                self.compiler_options.executable = true;
+                self.options.executable = true;
             }
 
             path if PathBuf::from(path).exists() => {
@@ -351,13 +350,12 @@ impl CLIParser {
                 }
 
                 if file.file_name().unwrap() == "main.th" {
-                    self.compiler_options.is_main = true;
+                    self.options.is_main = true;
                 }
 
-                self.compiler_options.output =
-                    file.file_name().unwrap().to_string_lossy().to_string();
+                self.options.output = file.file_name().unwrap().to_string_lossy().to_string();
 
-                self.compiler_options.file_path = path.to_string();
+                self.options.file_path = path.to_string();
 
                 NAME.lock().unwrap().clear();
                 NAME.lock()
@@ -372,7 +370,7 @@ impl CLIParser {
                     self.report_error(&format!("Missing argument for {}", arg));
                 }
 
-                self.compiler_options.extra_args =
+                self.options.extra_args =
                     self.args[self.extract_relative_index(*index)].to_string();
 
                 *index += 1;

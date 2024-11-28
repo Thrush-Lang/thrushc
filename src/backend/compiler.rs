@@ -1122,7 +1122,7 @@ pub enum Opt {
     Mcqueen,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, PartialEq)]
 pub enum Linking {
     #[default]
     Static,
@@ -1135,6 +1135,7 @@ pub struct CompilerOptions {
     pub target_triple: TargetTriple,
     pub optimization: Opt,
     pub emit_llvm: bool,
+    pub emit_asm: bool,
     pub library: bool,
     pub executable: bool,
     pub linking: Linking,
@@ -1145,6 +1146,7 @@ pub struct CompilerOptions {
     pub reloc_mode: RelocMode,
     pub code_model: CodeModel,
     pub file_path: String,
+    pub extra_args: String,
 }
 
 impl Default for CompilerOptions {
@@ -1154,6 +1156,7 @@ impl Default for CompilerOptions {
             target_triple: TargetMachine::get_default_triple(),
             optimization: Opt::default(),
             emit_llvm: false,
+            emit_asm: false,
             library: false,
             executable: false,
             linking: Linking::default(),
@@ -1164,17 +1167,29 @@ impl Default for CompilerOptions {
             reloc_mode: RelocMode::Default,
             code_model: CodeModel::Default,
             file_path: String::new(),
+            extra_args: String::new(),
         }
     }
 }
 
 impl Opt {
-    pub fn to_str(&self) -> &str {
+    pub fn to_str(&self, single_slash: bool, double_slash: bool) -> &str {
         match self {
-            Opt::None => "O0",
-            Opt::Low => "O1",
-            Opt::Mid => "O2",
-            Opt::Mcqueen => "O3",
+            Opt::None if !single_slash && !double_slash => "O0",
+            Opt::Low if !single_slash && !double_slash => "O1",
+            Opt::Mid if !single_slash && !double_slash => "O2",
+            Opt::Mcqueen if !single_slash && !double_slash => "O3",
+            Opt::None if single_slash => "-O0",
+            Opt::Low if single_slash => "-O1",
+            Opt::Mid if single_slash => "-O2",
+            Opt::Mcqueen if single_slash => "-O3",
+            Opt::None if double_slash => "-O0",
+            Opt::Low if double_slash => "-O1",
+            Opt::Mid if double_slash => "-O2",
+            Opt::Mcqueen if double_slash => "-O3",
+            _ if single_slash => "-O0",
+            _ if double_slash => "--O0",
+            _ => "O0",
         }
     }
 

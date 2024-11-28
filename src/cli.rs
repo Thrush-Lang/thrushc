@@ -182,7 +182,7 @@ impl CLIParser {
             }
 
             "-opt" | "--optimization" => {
-                *index += 2;
+                *index += 1;
 
                 if *index > self.args.len() {
                     self.report_error(&format!("Missing argument for {}", arg));
@@ -196,20 +196,51 @@ impl CLIParser {
                         "O3" => Opt::Mcqueen,
                         _ => Opt::default(),
                     };
+
+                *index += 1;
             }
 
             "-emit-only-llvm" | "--emit-only-llvm" => {
                 *index += 1;
+
+                if self.compiler_options.emit_asm {
+                    self.report_error(&format!(
+                        "You can't use \"{}\" and \"{}\" together.",
+                        "--emit-only-llvm", "--emit-only-asm"
+                    ));
+                }
+
                 self.compiler_options.emit_llvm = true;
+            }
+
+            "-emit-only-asm" | "--emit-only-asm" => {
+                *index += 1;
+
+                if self.compiler_options.emit_asm {
+                    self.report_error(&format!(
+                        "You can't use \"{}\" and \"{}\" together.",
+                        "--emit-only-llvm", "--emit-only-asm"
+                    ));
+                }
+
+                self.compiler_options.emit_asm = true;
             }
 
             "--library" | "-library" => {
                 *index += 1;
+
+                if self.compiler_options.executable {
+                    self.report_error(&format!(
+                        "You can't use \"{}\" and \"{}\" together.",
+                        "--executable", "--library"
+                    ));
+                }
+
                 self.compiler_options.library = true;
             }
 
             "-target" | "--target" => {
-                *index += 2;
+                *index += 1;
 
                 if *index > self.args.len() {
                     self.report_error(&format!("Missing argument for {}", arg));
@@ -218,6 +249,7 @@ impl CLIParser {
                 match self.args[self.extract_relative_index(*index)].as_str() {
                     target if TARGETS.contains(&target) => {
                         self.compiler_options.target_triple = TargetTriple::create(target);
+                        *index += 1;
                     }
 
                     _ => {
@@ -231,16 +263,34 @@ impl CLIParser {
 
             "--static" | "-static" => {
                 *index += 1;
+
+                if self.compiler_options.linking == Linking::Dynamic {
+                    self.report_error(&format!(
+                        "Can't use linking \"{}\" with \"{}\" linking.",
+                        arg,
+                        self.compiler_options.linking.to_str()
+                    ));
+                }
+
                 self.compiler_options.linking = Linking::Static;
             }
 
             "--dynamic" | "-dynamic" => {
                 *index += 1;
+
+                if self.compiler_options.linking == Linking::Static {
+                    self.report_error(&format!(
+                        "Can't use linking \"{}\" with \"{}\" linking.",
+                        arg,
+                        self.compiler_options.linking.to_str()
+                    ));
+                }
+
                 self.compiler_options.linking = Linking::Dynamic;
             }
 
             "--reloc" | "-reloc" => {
-                *index += 2;
+                *index += 1;
 
                 if *index > self.args.len() {
                     self.report_error(&format!("Missing argument for {}", arg));
@@ -252,7 +302,9 @@ impl CLIParser {
                         "pic" => RelocMode::PIC,
                         "static" => RelocMode::Static,
                         _ => RelocMode::Default,
-                    }
+                    };
+
+                *index += 1;
             }
 
             "--code-model" | "-code-model" => {
@@ -262,13 +314,16 @@ impl CLIParser {
                     self.report_error(&format!("Missing argument for {}", arg));
                 }
 
-                self.compiler_options.code_model = match self.args[*index].as_str() {
-                    "small" => CodeModel::Small,
-                    "medium" => CodeModel::Medium,
-                    "large" => CodeModel::Large,
-                    "kernel" => CodeModel::Kernel,
-                    _ => CodeModel::Default,
-                }
+                self.compiler_options.code_model =
+                    match self.args[self.extract_relative_index(*index)].as_str() {
+                        "small" => CodeModel::Small,
+                        "medium" => CodeModel::Medium,
+                        "large" => CodeModel::Large,
+                        "kernel" => CodeModel::Kernel,
+                        _ => CodeModel::Default,
+                    };
+
+                *index += 1;
             }
 
             "--executable" | "-executable" => {
@@ -308,6 +363,19 @@ impl CLIParser {
                 NAME.lock()
                     .unwrap()
                     .push_str(file.file_name().unwrap().to_str().unwrap());
+            }
+
+            "--backend-args" | "-backend-args" => {
+                *index += 1;
+
+                if *index > self.args.len() {
+                    self.report_error(&format!("Missing argument for {}", arg));
+                }
+
+                self.compiler_options.extra_args =
+                    self.args[self.extract_relative_index(*index)].to_string();
+
+                *index += 1;
             }
 
             _ => {
@@ -506,6 +574,18 @@ impl CLIParser {
                 .fg(Color::Rgb(141, 141, 142)),
             style("Define how code is organized and accessed in the executable or object file.")
                 .bold()
+        );
+
+        println!(
+            "{} ({} | {}) {}",
+            style("•").bold(),
+            style("--backend-args [str]")
+                .bold()
+                .fg(Color::Rgb(141, 141, 142)),
+            style("-backend-args [reloc-mode]")
+                .bold()
+                .fg(Color::Rgb(141, 141, 142)),
+            style("Pass more arguments to the Backend Compiler.").bold()
         );
 
         process::exit(0);

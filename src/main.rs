@@ -42,6 +42,7 @@ fn main() {
             logging::LogType::ERROR,
             "The Backend Compiler is not set. Use the flag `thrushc --backend \"PATH\"` to set it.",
         );
+
         return;
     }
 
@@ -86,7 +87,12 @@ fn main() {
             return;
         }
 
-        FileBuilder::new(&cli.compiler_options, &module).build();
+        FileBuilder::new(
+            &cli.compiler_options,
+            &module,
+            &format!("{}.ll", utils::extract_file_name(&NAME.lock().unwrap())),
+        )
+        .build();
 
         return;
     }
@@ -101,17 +107,11 @@ fn main() {
 
     let mut lexer: Lexer = Lexer::new(content.as_bytes(), &cli.compiler_options.file_path);
 
-    let tokens: &[Token] = lexer.lex().unwrap_or_else(|msg| {
-        utils::notify_posible_issue(&msg);
-        unreachable!()
-    });
+    let tokens: &[Token] = lexer.lex().unwrap_or_else(|msg| unreachable!());
 
     let mut parser: Parser = Parser::new(&cli.compiler_options, tokens);
 
-    let instructions: &[Instruction] = parser.start().unwrap_or_else(|msg| {
-        utils::notify_posible_issue(&msg);
-        unreachable!()
-    });
+    let instructions: &[Instruction] = parser.start().unwrap_or_else(|msg| unreachable!());
 
     let context: Context = Context::create();
     let builder: Builder<'_> = context.create_builder();
@@ -145,7 +145,12 @@ fn main() {
         instructions,
     );
 
-    FileBuilder::new(&cli.compiler_options, &module).build();
+    FileBuilder::new(
+        &cli.compiler_options,
+        &module,
+        &format!("{}.ll", utils::extract_file_name(&NAME.lock().unwrap())),
+    )
+    .build();
 
     println!(
         "{} {} {}",

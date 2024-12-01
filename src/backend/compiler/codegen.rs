@@ -1,8 +1,9 @@
 use {
+    super::options::CompilerOptions,
     super::{
-        super::frontend::lexer::{DataTypes, TokenKind},
-        infraestructures::{define::StringInfraestructure, vector::VectorAPI},
-        instruction::Instruction,
+        super::super::frontend::lexer::{DataTypes, TokenKind},
+        super::instruction::Instruction,
+        super::natives_apis::{define::StringInfraestructure, vector::VectorAPI},
         llvm::{
             build_alloca_with_float, build_alloca_with_integer, build_const_float,
             build_const_integer, build_int_array_type_from_size, datatype_float_to_type,
@@ -15,17 +16,16 @@ use {
         builder::Builder,
         context::Context,
         module::{Linkage, Module},
-        targets::{CodeModel, RelocMode, TargetMachine, TargetTriple},
         types::{ArrayType, FunctionType, VectorType},
         values::{
             BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, InstructionOpcode,
             InstructionValue, IntValue, PointerValue, VectorValue,
         },
-        AddressSpace, OptimizationLevel,
+        AddressSpace,
     },
 };
 
-pub struct Compiler<'a, 'ctx> {
+pub struct Codegen<'a, 'ctx> {
     module: &'a Module<'ctx>,
     builder: &'a Builder<'ctx>,
     context: &'ctx Context,
@@ -36,8 +36,8 @@ pub struct Compiler<'a, 'ctx> {
     options: &'a CompilerOptions,
 }
 
-impl<'a, 'ctx> Compiler<'a, 'ctx> {
-    pub fn compile(
+impl<'a, 'ctx> Codegen<'a, 'ctx> {
+    pub fn gen(
         module: &'a Module<'ctx>,
         builder: &'a Builder<'ctx>,
         context: &'ctx Context,
@@ -1110,104 +1110,5 @@ fn reference_of_a_variable_into_basicametadatavaluenum<'ctx, 'a>(
         }
 
         _ => todo!(),
-    }
-}
-
-#[derive(Default, Debug)]
-pub enum Opt {
-    #[default]
-    None,
-    Low,
-    Mid,
-    Mcqueen,
-}
-
-#[derive(Default, Debug, PartialEq)]
-pub enum Linking {
-    #[default]
-    Static,
-    Dynamic,
-}
-
-#[derive(Debug)]
-pub struct CompilerOptions {
-    pub output: String,
-    pub target_triple: TargetTriple,
-    pub optimization: Opt,
-    pub emit_llvm: bool,
-    pub emit_asm: bool,
-    pub library: bool,
-    pub executable: bool,
-    pub linking: Linking,
-    pub is_main: bool,
-    pub insert_vector_natives: bool,
-    pub restore_natives_apis: bool,
-    pub restore_vector_natives: bool,
-    pub reloc_mode: RelocMode,
-    pub code_model: CodeModel,
-    pub file_path: String,
-    pub extra_args: String,
-}
-
-impl Default for CompilerOptions {
-    fn default() -> Self {
-        Self {
-            output: String::new(),
-            target_triple: TargetMachine::get_default_triple(),
-            optimization: Opt::default(),
-            emit_llvm: false,
-            emit_asm: false,
-            library: false,
-            executable: false,
-            linking: Linking::default(),
-            is_main: false,
-            insert_vector_natives: false,
-            restore_natives_apis: false,
-            restore_vector_natives: false,
-            reloc_mode: RelocMode::Default,
-            code_model: CodeModel::Default,
-            file_path: String::new(),
-            extra_args: String::new(),
-        }
-    }
-}
-
-impl Opt {
-    pub fn to_str(&self, single_slash: bool, double_slash: bool) -> &str {
-        match self {
-            Opt::None if !single_slash && !double_slash => "O0",
-            Opt::Low if !single_slash && !double_slash => "O1",
-            Opt::Mid if !single_slash && !double_slash => "O2",
-            Opt::Mcqueen if !single_slash && !double_slash => "O3",
-            Opt::None if single_slash => "-O0",
-            Opt::Low if single_slash => "-O1",
-            Opt::Mid if single_slash => "-O2",
-            Opt::Mcqueen if single_slash => "-O3",
-            Opt::None if double_slash => "-O0",
-            Opt::Low if double_slash => "-O1",
-            Opt::Mid if double_slash => "-O2",
-            Opt::Mcqueen if double_slash => "-O3",
-            _ if single_slash => "-O0",
-            _ if double_slash => "--O0",
-            _ => "O0",
-        }
-    }
-
-    pub fn to_llvm_opt(&self) -> OptimizationLevel {
-        match self {
-            Opt::None => OptimizationLevel::None,
-            Opt::Low => OptimizationLevel::Default,
-            Opt::Mid => OptimizationLevel::Less,
-            Opt::Mcqueen => OptimizationLevel::Aggressive,
-        }
-    }
-}
-
-impl Linking {
-    pub fn to_str(&self) -> &str {
-        match self {
-            Linking::Static => "--static",
-            Linking::Dynamic => "-dynamic",
-        }
     }
 }

@@ -1,15 +1,15 @@
 use {
     super::{
         super::{
-            backend::{compiler::CompilerOptions, instruction::Instruction},
+            backend::{compiler::options::CompilerOptions, instruction::Instruction},
             diagnostic::Diagnostic,
             error::{ThrushError, ThrushErrorKind},
             logging,
         },
-        checking,
         lexer::{DataTypes, Token, TokenKind},
         objects::Variable,
         scoper::ThrushScoper,
+        type_checking,
     },
     ahash::AHashMap as HashMap,
     std::process::exit,
@@ -1176,7 +1176,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'instr> = self.and()?;
 
-            checking::check_binary_instr(
+            type_checking::check_binary_instr(
                 op,
                 &instr.get_data_type(),
                 &right.get_data_type(),
@@ -1201,7 +1201,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'_> = self.equality()?;
 
-            checking::check_binary_instr(
+            type_checking::check_binary_instr(
                 op,
                 &instr.get_data_type(),
                 &right.get_data_type(),
@@ -1226,7 +1226,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'_> = self.comparison()?;
 
-            checking::check_binary_instr(
+            type_checking::check_binary_instr(
                 op,
                 &instr.get_data_type(),
                 &right.get_data_type(),
@@ -1255,7 +1255,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'_> = self.term()?;
 
-            checking::check_binary_instr(
+            type_checking::check_binary_instr(
                 op,
                 &instr.get_data_type(),
                 &right.get_data_type(),
@@ -1284,7 +1284,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'_> = self.unary()?;
 
-            checking::check_binary_instr(
+            type_checking::check_binary_instr(
                 op,
                 &instr.get_data_type(),
                 &right.get_data_type(),
@@ -1307,7 +1307,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let value: Instruction<'instr> = self.primary()?;
 
-            checking::check_unary_instr(op, &value.get_data_type(), self.previous().line)?;
+            type_checking::check_unary_instr(op, &value.get_data_type(), self.previous().line)?;
 
             return Ok(Instruction::Unary {
                 op,
@@ -1321,7 +1321,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             let op: &TokenKind = &self.previous().kind;
             let value: Instruction<'instr> = self.primary()?;
 
-            checking::check_unary_instr(op, &value.get_data_type(), self.previous().line)?;
+            type_checking::check_unary_instr(op, &value.get_data_type(), self.previous().line)?;
 
             return Ok(Instruction::Unary {
                 op,
@@ -1382,7 +1382,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     if self.match_token(TokenKind::PlusPlus)?
                         | self.match_token(TokenKind::MinusMinus)?
                     {
-                        checking::check_unary_instr(
+                        type_checking::check_unary_instr(
                             &self.previous().kind,
                             kind,
                             self.previous().line,
@@ -1512,7 +1512,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     if self.match_token(TokenKind::PlusPlus)?
                         | self.match_token(TokenKind::MinusMinus)?
                     {
-                        checking::check_unary_instr(
+                        type_checking::check_unary_instr(
                             &self.previous().kind,
                             &refvar.get_data_type(),
                             self.previous().line,

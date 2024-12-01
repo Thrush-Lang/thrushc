@@ -355,10 +355,10 @@ impl<'a> Lexer<'a> {
 
         match lexeme.parse::<usize>() {
             Ok(num) => match num {
-                0usize..=255usize => Ok(DataTypes::U8),
-                0usize..=65_535usize => Ok(DataTypes::U16),
-                0usize..=4_294_967_295usize => Ok(DataTypes::U32),
-                0usize..=18_446_744_073_709_551_615usize => Ok(DataTypes::U64),
+                1usize..=255usize => Ok(DataTypes::U8),
+                256usize..=65_535usize => Ok(DataTypes::U16),
+                65_536usize..=4_294_967_295usize => Ok(DataTypes::U32),
+                4_294_967_296usize..=18_446_744_073_709_551_615usize => Ok(DataTypes::U64),
                 _ => Err(ThrushError::Parse(
                     ThrushErrorKind::UnreachableNumber,
                     String::from("The number is out of bounds."),

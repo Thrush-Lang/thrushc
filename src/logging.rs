@@ -20,7 +20,6 @@ impl LogType {
     }
 }
 
-/// Logs a message to the compiler standard output (CSO)
 #[inline]
 pub fn log(ltype: LogType, msg: &str) {
     if ltype == LogType::ERROR {

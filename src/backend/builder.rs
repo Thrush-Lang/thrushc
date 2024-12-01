@@ -1,7 +1,7 @@
 use {
     super::{
         super::{logging, BACKEND_COMPILER, NAME},
-        compiler::CompilerOptions,
+        compiler::options::CompilerOptions,
     },
     inkwell::module::Module,
     std::{env, fs, path::PathBuf, process::Command},

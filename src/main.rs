@@ -8,8 +8,8 @@ mod logging;
 
 use {
     backend::{
-        builder::FileBuilder, compiler::Compiler, infraestructures::vector::VectorAPI,
-        instruction::Instruction,
+        builder::FileBuilder, compiler::Compiler, instruction::Instruction,
+        natives_apis::vector::VectorAPI,
     },
     cli::CLIParser,
     frontend::{

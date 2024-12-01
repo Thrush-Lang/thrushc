@@ -1,6 +1,6 @@
 use {
     super::{
-        backend::compiler::{CompilerOptions, Linking, Opt},
+        backend::compiler::options::{CompilerOptions, Linking, Opt},
         constants::TARGETS,
         BACKEND_COMPILER, NAME,
     },
@@ -292,7 +292,7 @@ impl CLIParser {
                 *index += 1;
 
                 if *index > self.args.len() {
-                    self.report_error(&format!("Missing argument for {}", arg));
+                    self.report_error(&format!("Missing argument for \"{}\".", arg));
                 }
 
                 self.options.reloc_mode =
@@ -310,7 +310,7 @@ impl CLIParser {
                 *index += 1;
 
                 if *index > self.args.len() {
-                    self.report_error(&format!("Missing argument for {}", arg));
+                    self.report_error(&format!("Missing argument for \"{}\".", arg));
                 }
 
                 self.options.code_model =
@@ -323,6 +323,27 @@ impl CLIParser {
                     };
 
                 *index += 1;
+            }
+
+            "--insert" | "-insert" => {
+                *index += 1;
+
+                if *index > self.args.len() {
+                    self.report_error(&format!("Missing native api for \"{}\".", arg));
+                }
+
+                match self.args[self.extract_relative_index(*index)].as_str() {
+                    "vector-api" => {
+                        self.options.insert_vector_natives = true;
+                        *index += 1;
+                    }
+                    _ => {
+                        self.report_error(&format!(
+                            "Invalid insert api name: \"{}\".",
+                            self.args[self.extract_relative_index(*index)]
+                        ));
+                    }
+                }
             }
 
             "--executable" | "-executable" => {

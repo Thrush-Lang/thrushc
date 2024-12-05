@@ -97,7 +97,7 @@ fn main() {
     }
 
     println!(
-        "\n{} {}",
+        "{} {}",
         style("Compiling").bold().fg(Color::Rgb(141, 141, 142)),
         cli.options.file_path
     );

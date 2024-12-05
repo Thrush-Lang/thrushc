@@ -32,7 +32,7 @@ pub enum Instruction<'ctx> {
     Var {
         name: &'ctx str,
         kind: DataTypes,
-        value: Option<Box<Instruction<'ctx>>>,
+        value: Box<Instruction<'ctx>>,
         line: usize,
     },
     RefVar {
@@ -67,6 +67,11 @@ pub enum Instruction<'ctx> {
 
     Group {
         instr: Box<Instruction<'ctx>>,
+    },
+
+    Free {
+        name: &'ctx str,
+        is_string: bool,
     },
 
     Null,

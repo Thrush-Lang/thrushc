@@ -1,6 +1,8 @@
 pub mod codegen;
-mod llvm;
+mod locals;
 pub mod options;
+mod utils;
+mod variable;
 
 use {
     super::instruction::Instruction,

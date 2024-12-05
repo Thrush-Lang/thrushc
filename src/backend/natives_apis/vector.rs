@@ -57,23 +57,27 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
     fn start_construction(&mut self) {
         self.needed_functions();
         self.init();
+        self.destroy();
         self.should_grow();
-        self.size_at_bytes();
         self.realloc();
         self.adjust_capacity();
         self.size();
         self.data();
         self.push();
+        self.get();
         self.clone();
-        self.destroy();
+        self.set();
     }
 
     fn start_definition(&mut self) {
         self.define_init();
+        self.define_realloc();
         self.define_size();
         self.define_data();
         self.define_push();
         self.define_clone();
+        self.define_get();
+        self.define_set();
         self.define_destroy();
     }
 
@@ -255,6 +259,108 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
         self.builder.build_return(None).unwrap();
     }
 
+    fn get(&mut self) {
+        for name in &["i8", "i16", "i32", "i64"] {
+            let get_type: IntType<'_> = match *name {
+                "i8" => self.context.i8_type(),
+                "i16" => self.context.i16_type(),
+                "i32" => self.context.i32_type(),
+                "i64" => self.context.i64_type(),
+                _ => unreachable!(),
+            };
+
+            let get: FunctionValue<'_> = self.module.add_function(
+                &format!("Vec.get_{}", name),
+                get_type.fn_type(
+                    &[
+                        self.context.ptr_type(AddressSpace::default()).into(),
+                        self.context.i64_type().into(),
+                    ],
+                    true,
+                ),
+                None,
+            );
+
+            let get_block: BasicBlock<'_> = self.context.append_basic_block(get, "");
+
+            self.builder.position_at_end(get_block);
+
+            let data: PointerValue<'ctx> = self
+                .builder
+                .build_struct_gep(
+                    self.vector_type,
+                    get.get_first_param().unwrap().into_pointer_value(),
+                    3,
+                    "",
+                )
+                .unwrap();
+
+            let index: IntValue<'_> = get.get_nth_param(1).unwrap().into_int_value();
+            let size = self
+                .builder
+                .build_call(
+                    self.module.get_function("Vec.size").unwrap(),
+                    &[get.get_first_param().unwrap().into_pointer_value().into()],
+                    "",
+                )
+                .unwrap()
+                .try_as_basic_value()
+                .unwrap_left()
+                .into_int_value();
+
+            let cmp = self
+                .builder
+                .build_int_compare(IntPredicate::UGT, index, size, "")
+                .unwrap();
+
+            let block_then: BasicBlock<'_> = self.context.append_basic_block(get, "");
+            let block_else: BasicBlock<'_> = self.context.append_basic_block(get, "");
+
+            self.builder
+                .build_conditional_branch(cmp, block_then, block_else)
+                .unwrap();
+
+            self.builder.position_at_end(block_then);
+
+            unsafe {
+                let last_index: IntValue<'ctx> = self
+                    .builder
+                    .build_int_sub(size, self.context.i64_type().const_int(1, false), "")
+                    .unwrap();
+
+                let value: PointerValue<'ctx> = self
+                    .builder
+                    .build_gep(get_type, data, &[last_index], "")
+                    .unwrap();
+
+                let char: IntValue<'_> = self
+                    .builder
+                    .build_load(get_type, value, "")
+                    .unwrap()
+                    .into_int_value();
+
+                self.builder.build_return(Some(&char)).unwrap();
+            }
+
+            self.builder.position_at_end(block_else);
+
+            unsafe {
+                let value: PointerValue<'ctx> = self
+                    .builder
+                    .build_in_bounds_gep(get_type, data, &[index], "")
+                    .unwrap();
+
+                let char: IntValue<'_> = self
+                    .builder
+                    .build_load(get_type, value, "")
+                    .unwrap()
+                    .into_int_value();
+
+                self.builder.build_return(Some(&char)).unwrap();
+            }
+        }
+    }
+
     fn should_grow(&mut self) {
         let should_grow: FunctionValue<'_> = self.module.add_function(
             "_Vec.should_grow",
@@ -390,6 +496,7 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
                         .into_pointer_value()
                         .into(),
                     new_capacity.into(),
+                    self.context.bool_type().const_zero().into(),
                 ],
                 "",
             )
@@ -398,7 +505,7 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
         self.builder.build_return(None).unwrap();
     }
 
-    fn size_at_bytes(&mut self) {
+    /* fn size_at_bytes(&mut self) {
         let size_at_bytes: FunctionValue<'_> = self.module.add_function(
             "_Vec.size_at_bytes",
             self.context.i64_type().fn_type(
@@ -455,7 +562,7 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
             self.builder.build_int_mul(size, element_size, "").unwrap();
 
         self.builder.build_return(Some(&size_in_bytes)).unwrap();
-    }
+    } */
 
     fn realloc(&mut self) {
         let realloc: FunctionValue<'_> = self.module.add_function(
@@ -464,17 +571,18 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
                 &[
                     self.context.ptr_type(AddressSpace::default()).into(),
                     self.context.i64_type().into(),
+                    self.context.bool_type().into(),
                 ],
                 true,
             ),
-            Some(Linkage::LinkerPrivate),
+            None,
         );
 
         let realloc_block: BasicBlock<'_> = self.context.append_basic_block(realloc, "");
 
         self.builder.position_at_end(realloc_block);
 
-        let alloca_new_capacity: PointerValue<'ctx> = self
+        /* let alloca_new_capacity: PointerValue<'ctx> = self
             .builder
             .build_alloca(self.context.i64_type(), "")
             .unwrap();
@@ -569,7 +677,7 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
 
         self.builder.position_at_end(is_capacity_false);
 
-        let get_element_size = self
+        let get_element_size: PointerValue<'ctx> = self
             .builder
             .build_struct_gep(
                 self.vector_type,
@@ -579,7 +687,7 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
             )
             .unwrap();
 
-        let element_size = self
+        let element_size: IntValue<'_> = self
             .builder
             .build_load(self.context.i64_type(), get_element_size, "")
             .unwrap()
@@ -591,7 +699,7 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
             .unwrap()
             .into_int_value();
 
-        let new_capacity_in_bytes_to_allocate = self
+        let new_capacity_in_bytes_to_allocate: IntValue<'_> = self
             .builder
             .build_int_mul(get_new_capacity_2, element_size, "")
             .unwrap();
@@ -600,7 +708,7 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
             .build_store(new_capacity_in_bytes, new_capacity_in_bytes_to_allocate)
             .unwrap();
 
-        let get_data = self
+        let get_data: PointerValue<'ctx> = self
             .builder
             .build_struct_gep(
                 self.vector_type,
@@ -612,7 +720,7 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
 
         self.builder.build_store(old_data, get_data).unwrap();
 
-        let get_data_2 = self
+        let get_data_2: PointerValue<'ctx> = self
             .builder
             .build_struct_gep(
                 self.vector_type,
@@ -712,7 +820,206 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
                 ],
                 "",
             )
+            .unwrap(); */
+
+        let cmp_realloc_set_to_zero: IntValue<'_> = self
+            .builder
+            .build_int_compare(
+                IntPredicate::EQ,
+                realloc.get_last_param().unwrap().into_int_value(),
+                self.context.bool_type().const_int(1, false),
+                "",
+            )
             .unwrap();
+
+        let yes_block: BasicBlock<'ctx> = self.context.append_basic_block(realloc, "");
+        let no_block: BasicBlock<'ctx> = self.context.append_basic_block(realloc, "");
+
+        self.builder
+            .build_conditional_branch(cmp_realloc_set_to_zero, yes_block, no_block)
+            .unwrap();
+
+        self.builder.position_at_end(no_block);
+
+        let get_data: PointerValue<'ctx> = self
+            .builder
+            .build_struct_gep(
+                self.vector_type,
+                realloc.get_first_param().unwrap().into_pointer_value(),
+                3,
+                "",
+            )
+            .unwrap();
+
+        let data: PointerValue<'_> = self
+            .builder
+            .build_load(get_data.get_type(), get_data, "")
+            .unwrap()
+            .into_pointer_value();
+
+        let get_element_size: PointerValue<'ctx> = self
+            .builder
+            .build_struct_gep(
+                self.vector_type,
+                realloc.get_first_param().unwrap().into_pointer_value(),
+                2,
+                "",
+            )
+            .unwrap();
+
+        let element_size: IntValue<'_> = self
+            .builder
+            .build_load(self.context.i64_type(), get_element_size, "")
+            .unwrap()
+            .into_int_value();
+
+        let new_size: IntValue<'_> = self
+            .builder
+            .build_int_add(
+                realloc.get_nth_param(1).unwrap().into_int_value(),
+                self.context.i64_type().const_int(2, false),
+                "",
+            )
+            .unwrap();
+
+        let get_capacity: PointerValue<'ctx> = self
+            .builder
+            .build_struct_gep(
+                self.vector_type,
+                realloc.get_first_param().unwrap().into_pointer_value(),
+                1,
+                "",
+            )
+            .unwrap();
+
+        self.builder.build_store(get_capacity, new_size).unwrap();
+
+        let new_size_to_alloc: IntValue<'_> = self
+            .builder
+            .build_int_mul(new_size, element_size, "")
+            .unwrap();
+
+        let new_data: PointerValue<'ctx> = self
+            .builder
+            .build_call(
+                self.module.get_function("realloc").unwrap(),
+                &[data.into(), new_size_to_alloc.into()],
+                "",
+            )
+            .unwrap()
+            .try_as_basic_value()
+            .left()
+            .unwrap()
+            .into_pointer_value();
+
+        let get_data_2: PointerValue<'ctx> = self
+            .builder
+            .build_struct_gep(
+                self.vector_type,
+                realloc.get_first_param().unwrap().into_pointer_value(),
+                3,
+                "",
+            )
+            .unwrap();
+
+        self.builder.build_store(get_data_2, new_data).unwrap();
+
+        self.builder.build_return(None).unwrap();
+
+        self.builder.position_at_end(yes_block);
+
+        let get_element_size: PointerValue<'ctx> = self
+            .builder
+            .build_struct_gep(
+                self.vector_type,
+                realloc.get_first_param().unwrap().into_pointer_value(),
+                2,
+                "",
+            )
+            .unwrap();
+
+        let element_size: IntValue<'_> = self
+            .builder
+            .build_load(self.context.i64_type(), get_element_size, "")
+            .unwrap()
+            .into_int_value();
+
+        let new_size: IntValue<'_> = self
+            .builder
+            .build_int_add(
+                realloc.get_nth_param(1).unwrap().into_int_value(),
+                self.context.i64_type().const_int(2, false),
+                "",
+            )
+            .unwrap();
+
+        let get_capacity: PointerValue<'ctx> = self
+            .builder
+            .build_struct_gep(
+                self.vector_type,
+                realloc.get_first_param().unwrap().into_pointer_value(),
+                1,
+                "",
+            )
+            .unwrap();
+
+        self.builder.build_store(get_capacity, new_size).unwrap();
+
+        let new_size_to_alloc: IntValue<'_> = self
+            .builder
+            .build_int_mul(new_size, element_size, "")
+            .unwrap();
+
+        let get_size: PointerValue<'ctx> = self
+            .builder
+            .build_struct_gep(
+                self.vector_type,
+                realloc.get_first_param().unwrap().into_pointer_value(),
+                0,
+                "",
+            )
+            .unwrap();
+
+        self.builder
+            .build_store(get_size, self.context.i64_type().const_int(0, false))
+            .unwrap();
+
+        self.builder
+            .build_call(
+                self.module.get_function("Vec.destroy").unwrap(),
+                &[realloc
+                    .get_first_param()
+                    .unwrap()
+                    .into_pointer_value()
+                    .into()],
+                "",
+            )
+            .unwrap();
+
+        let new_data: PointerValue<'ctx> = self
+            .builder
+            .build_call(
+                self.module.get_function("malloc").unwrap(),
+                &[new_size_to_alloc.into()],
+                "",
+            )
+            .unwrap()
+            .try_as_basic_value()
+            .left()
+            .unwrap()
+            .into_pointer_value();
+
+        let get_data_2: PointerValue<'ctx> = self
+            .builder
+            .build_struct_gep(
+                self.vector_type,
+                realloc.get_first_param().unwrap().into_pointer_value(),
+                3,
+                "",
+            )
+            .unwrap();
+
+        self.builder.build_store(get_data_2, new_data).unwrap();
 
         self.builder.build_return(None).unwrap();
     }
@@ -995,7 +1302,134 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
         self.builder.build_return(Some(&malloc_clone)).unwrap();
     }
 
+    fn set(&mut self) {
+        for name in &["i8", "i16", "i32", "i64"] {
+            let set_type: IntType<'_> = match *name {
+                "i8" => self.context.i8_type(),
+                "i16" => self.context.i16_type(),
+                "i32" => self.context.i32_type(),
+                "i64" => self.context.i64_type(),
+                _ => unreachable!(),
+            };
+
+            let set: FunctionValue<'_> = self.module.add_function(
+                &format!("Vec.set_{}", name),
+                self.context.void_type().fn_type(
+                    &[
+                        self.context.ptr_type(AddressSpace::default()).into(),
+                        self.context.i64_type().into(),
+                        set_type.into(),
+                    ],
+                    true,
+                ),
+                None,
+            );
+
+            let block_set: BasicBlock<'_> = self.context.append_basic_block(set, "");
+
+            self.builder.position_at_end(block_set);
+
+            let get_data: PointerValue<'ctx> = self
+                .builder
+                .build_struct_gep(
+                    self.vector_type,
+                    set.get_first_param().unwrap().into_pointer_value(),
+                    3,
+                    "",
+                )
+                .unwrap();
+
+            let size: IntValue<'ctx> = self
+                .builder
+                .build_call(
+                    self.module.get_function("Vec.size").unwrap(),
+                    &[set.get_first_param().unwrap().into_pointer_value().into()],
+                    "",
+                )
+                .unwrap()
+                .try_as_basic_value()
+                .unwrap_left()
+                .into_int_value();
+
+            let index: IntValue<'ctx> = self
+                .builder
+                .build_int_sub(size, self.context.i64_type().const_int(1, false), "")
+                .unwrap();
+
+            let cmp: IntValue<'_> = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::UGT,
+                    set.get_nth_param(1).unwrap().into_int_value(),
+                    index,
+                    "",
+                )
+                .unwrap();
+
+            let is_true: BasicBlock<'_> = self.context.append_basic_block(set, "");
+            let is_false: BasicBlock<'_> = self.context.append_basic_block(set, "");
+
+            self.builder
+                .build_conditional_branch(cmp, is_true, is_false)
+                .unwrap();
+
+            self.builder.position_at_end(is_false);
+
+            unsafe {
+                let data: PointerValue<'_> = self
+                    .builder
+                    .build_load(get_data.get_type(), get_data, "")
+                    .unwrap()
+                    .into_pointer_value();
+
+                let char_ptr: PointerValue<'ctx> = self
+                    .builder
+                    .build_in_bounds_gep(
+                        set_type,
+                        data,
+                        &[set.get_nth_param(1).unwrap().into_int_value()],
+                        "",
+                    )
+                    .unwrap();
+
+                self.builder
+                    .build_store(char_ptr, set.get_nth_param(2).unwrap().into_int_value())
+                    .unwrap();
+
+                self.builder.build_return(None).unwrap();
+            }
+
+            self.builder.position_at_end(is_true);
+
+            self.builder
+                .build_call(
+                    self.module
+                        .get_function(&format!("Vec.push_{}", name))
+                        .unwrap(),
+                    &[
+                        set.get_first_param().unwrap().into_pointer_value().into(),
+                        set.get_nth_param(2).unwrap().into_int_value().into(),
+                    ],
+                    "",
+                )
+                .unwrap();
+
+            self.builder.build_return(None).unwrap();
+        }
+    }
+
     fn needed_functions(&self) {
+        if self.module.get_function("free").is_none() {
+            self.module.add_function(
+                "free",
+                self.context.void_type().fn_type(
+                    &[self.context.ptr_type(AddressSpace::default()).into()],
+                    false,
+                ),
+                Some(Linkage::External),
+            );
+        }
+
         self.module.add_function(
             "llvm.umax.i64",
             self.context.i64_type().fn_type(
@@ -1029,6 +1463,18 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
                 .fn_type(&[self.context.i64_type().into()], false),
             Some(Linkage::External),
         );
+
+        self.module.add_function(
+            "realloc",
+            self.context.ptr_type(AddressSpace::default()).fn_type(
+                &[
+                    self.context.ptr_type(AddressSpace::default()).into(),
+                    self.context.i64_type().into(),
+                ],
+                true,
+            ),
+            Some(Linkage::External),
+        );
     }
 
     /*
@@ -1052,6 +1498,21 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
                     self.context.i64_type().into(),
                     self.context.i64_type().into(),
                     self.context.i8_type().into(),
+                ],
+                true,
+            ),
+            Some(Linkage::External),
+        );
+    }
+
+    fn define_realloc(&mut self) {
+        self.module.add_function(
+            "Vec.realloc",
+            self.context.void_type().fn_type(
+                &[
+                    self.context.ptr_type(AddressSpace::default()).into(),
+                    self.context.i64_type().into(),
+                    self.context.bool_type().into(),
                 ],
                 true,
             ),
@@ -1114,6 +1575,55 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
             ),
             Some(Linkage::External),
         );
+    }
+
+    fn define_get(&mut self) {
+        for name in &["i8", "i16", "i32", "i64"] {
+            let get_type: IntType<'_> = match *name {
+                "i8" => self.context.i8_type(),
+                "i16" => self.context.i16_type(),
+                "i32" => self.context.i32_type(),
+                "i64" => self.context.i64_type(),
+                _ => unreachable!(),
+            };
+
+            self.module.add_function(
+                &format!("Vec.get_{}", name),
+                get_type.fn_type(
+                    &[
+                        self.context.ptr_type(AddressSpace::default()).into(),
+                        self.context.i64_type().into(),
+                    ],
+                    true,
+                ),
+                Some(Linkage::External),
+            );
+        }
+    }
+
+    fn define_set(&mut self) {
+        for name in &["i8", "i16", "i32", "i64"] {
+            let set_type: IntType<'_> = match *name {
+                "i8" => self.context.i8_type(),
+                "i16" => self.context.i16_type(),
+                "i32" => self.context.i32_type(),
+                "i64" => self.context.i64_type(),
+                _ => unreachable!(),
+            };
+
+            self.module.add_function(
+                &format!("Vec.set_{}", name),
+                self.context.void_type().fn_type(
+                    &[
+                        self.context.ptr_type(AddressSpace::default()).into(),
+                        self.context.i64_type().into(),
+                        set_type.into(),
+                    ],
+                    true,
+                ),
+                Some(Linkage::External),
+            );
+        }
     }
 
     fn define_destroy(&mut self) {

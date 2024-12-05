@@ -132,34 +132,20 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
             return;
         }
 
-        let mut default_args: Vec<&str> = Vec::from([
+        let mut default_args: Vec<&'a str> = Vec::from([
             "-opaque-pointers",
             self.options.linking.to_str(),
             "-ffast-math",
             self.file,
-            "-o",
-            &self.options.output,
         ]);
 
-        if !self.options.insert_vector_natives {
-            default_args.push(home.join(".thrushc/natives/vector.o").to_str().unwrap());
-        }
-
-        self.arguments.extend(
-            [
-                "-opaque-pointers",
-                self.options.linking.to_str(),
-                "-ffast-math",
-                self.file,
-                "-o",
-                &self.options.output,
-            ]
-            .iter(),
-        );
-
-        self.options.extra_args.split(",").for_each(|arg| {
-            self.arguments.insert(0, arg.trim());
+        self.options.extra_args.split(";").for_each(|arg| {
+            default_args.push(arg.trim());
         });
+
+        default_args.extend(["-o", &self.options.output]);
+
+        self.arguments.extend(default_args.iter());
 
         self.handle_error(
             Command::new(PathBuf::from(BACKEND_COMPILER.lock().unwrap().as_str()).join("clang-18"))
@@ -175,15 +161,15 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
                 "-ffast-math",
                 "-c",
                 self.file,
-                "-o",
-                &self.options.output,
             ]
             .iter(),
         );
 
-        self.options.extra_args.split(",").for_each(|arg| {
-            self.arguments.insert(0, arg.trim());
+        self.options.extra_args.split(";").for_each(|arg| {
+            self.arguments.push(arg.trim());
         });
+
+        self.arguments.extend(["-o", &self.options.output]);
 
         self.handle_error(
             Command::new(PathBuf::from(BACKEND_COMPILER.lock().unwrap().as_str()).join("clang-18"))

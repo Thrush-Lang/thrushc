@@ -7,7 +7,6 @@ use {
             logging,
         },
         lexer::{DataTypes, Token, TokenKind},
-        objects::Variable,
         scoper::ThrushScoper,
         type_checking,
     },
@@ -29,6 +28,8 @@ const VALID_INTEGER_TYPES: [DataTypes; 8] = [
 const VALID_FLOAT_TYPES: [DataTypes; 2] = [DataTypes::F32, DataTypes::F64];
 const STANDARD_FORMATS: [&str; 5] = ["%s", "%d", "%c", "%ld", "%f"];
 
+type ParserLocals<'instr> = Vec<HashMap<&'instr str, (DataTypes, bool, bool, usize)>>;
+
 pub struct Parser<'instr, 'a> {
     stmts: Vec<Instruction<'instr>>,
     errors: Vec<ThrushError>,
@@ -38,7 +39,7 @@ pub struct Parser<'instr, 'a> {
     ret: Option<DataTypes>,
     current: usize,
     globals: HashMap<&'instr str, DataTypes>,
-    locals: Vec<HashMap<&'instr str, Variable>>,
+    locals: ParserLocals<'instr>,
     scope: usize,
     scoper: ThrushScoper<'instr>,
     diagnostic: Diagnostic,
@@ -192,13 +193,13 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
             self.define_local(
                 name.lexeme.as_ref().unwrap(),
-                Variable::new(*kind.as_ref().unwrap(), true),
+                (*kind.as_ref().unwrap(), true, false, 0),
             );
 
             return Ok(Instruction::Var {
                 name: name.lexeme.as_ref().unwrap(),
                 kind: kind.unwrap(),
-                value: None,
+                value: Box::new(Instruction::Null),
                 line: name.line,
             });
         }
@@ -424,21 +425,21 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             Instruction::Var {
                 name: name.lexeme.as_ref().unwrap(),
                 kind: value.get_data_type(),
-                value: Some(Box::new(value)),
+                value: Box::new(value),
                 line: name.line,
             }
         } else {
             Instruction::Var {
                 name: name.lexeme.as_ref().unwrap(),
                 kind: kind.unwrap(),
-                value: Some(Box::new(value)),
+                value: Box::new(value),
                 line: name.line,
             }
         };
 
         self.define_local(
             name.lexeme.as_ref().unwrap(),
-            Variable::new(variable.get_kind().unwrap(), false),
+            (variable.get_kind().unwrap(), false, false, 0),
         );
 
         self.consume(
@@ -530,6 +531,21 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             stmts.push(self.parse()?)
         }
 
+        let mut frees: Vec<Instruction> = Vec::new();
+
+        for stmt in self.locals[self.scope].iter_mut() {
+            if let (_, (DataTypes::String, false, false, 0)) = stmt {
+                frees.push(Instruction::Free {
+                    name: stmt.0,
+                    is_string: true,
+                });
+
+                stmt.1 .2 = true;
+            }
+        }
+
+        stmts.extend(frees);
+
         self.end_scope();
 
         self.scoper.add_scope(stmts.clone());
@@ -557,15 +573,15 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             TokenKind::Identifier,
             ThrushErrorKind::SyntaxError,
             String::from("Expected function name"),
-            String::from("Expected def <name>."),
+            String::from("Expected fn < name >."),
         )?;
 
         if name.lexeme.as_ref().unwrap() == "main" && self.options.is_main {
             if self.has_entry_point {
                 return Err(ThrushError::Parse(
                     ThrushErrorKind::SyntaxError,
-                    String::from("Duplicated Entry Point"),
-                    String::from("The language not support two entry points, remove one."),
+                    String::from("Duplicated EntryPoint"),
+                    String::from("The language not support two entrypoints, remove one."),
                     name.line,
                 ));
             }
@@ -603,7 +619,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 return Err(ThrushError::Parse(
                     ThrushErrorKind::SyntaxError,
                     String::from("Syntax Error"),
-                    String::from("Expected 'block' for the function body."),
+                    String::from("Expected 'block ({ ... })' for the function body."),
                     self.peek().line,
                 ));
             }
@@ -1166,6 +1182,14 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     fn expression(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         let instr: Instruction = self.or()?;
 
+        self.locals.iter_mut().for_each(|scope| {
+            scope.values_mut().for_each(|variable| {
+                if variable.3 > 0 {
+                    variable.3 -= 1;
+                }
+            });
+        });
+
         Ok(instr)
     }
 
@@ -1482,7 +1506,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ));
                         }
 
-                        self.locals[self.scope].insert(name, Variable::new(var.0, false));
+                        self.locals[self.scope].insert(name, (var.0, false, false, 0));
 
                         return Ok(Instruction::MutVar {
                             name,
@@ -1573,13 +1597,17 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     }
 
     #[inline]
-    fn find_variable(&self, name: &str) -> Result<(DataTypes, bool), ThrushError> {
-        for scope in self.locals.iter().rev() {
+    fn find_variable(&mut self, name: &'instr str) -> Result<(DataTypes, bool), ThrushError> {
+        for scope in self.locals.iter_mut().rev() {
             if scope.contains_key(name) {
-                return Ok((
-                    scope.get(name).unwrap().kind,
-                    scope.get(name).unwrap().is_null,
-                ));
+                // DataTypes, bool <- (is_null), bool <- (is_freeded), usize <- (number of references)
+                let mut var: (DataTypes, bool, bool, usize) = *scope.get(name).unwrap();
+
+                var.3 += 1;
+
+                scope.insert(name, var);
+
+                return Ok((var.0, var.1));
             }
         }
 
@@ -1595,12 +1623,14 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         ))
     }
 
+    #[inline]
     fn define_global(&mut self, name: &'instr str, kind: DataTypes) {
         self.globals.insert(name, kind);
     }
 
-    fn define_local(&mut self, name: &'instr str, var: Variable) {
-        self.locals[self.scope].insert(name, var);
+    #[inline]
+    fn define_local(&mut self, name: &'instr str, value: (DataTypes, bool, bool, usize)) {
+        self.locals[self.scope].insert(name, value);
     }
 
     #[inline]

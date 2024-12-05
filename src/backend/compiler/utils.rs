@@ -1,14 +1,16 @@
 use {
-    super::{super::super::frontend::lexer::DataTypes, super::instruction::Instruction},
+    super::super::{super::frontend::lexer::DataTypes, instruction::Instruction},
     inkwell::{
         builder::Builder,
         context::Context,
         types::{ArrayType, BasicMetadataTypeEnum, FloatType, FunctionType, IntType},
-        values::{FloatValue, IntValue, PointerValue},
+        values::{
+            BasicValueEnum, FloatValue, InstructionOpcode, InstructionValue, IntValue, PointerValue,
+        },
     },
 };
 
-pub fn datatype_integer_to_type<'ctx>(context: &'ctx Context, kind: &DataTypes) -> IntType<'ctx> {
+pub fn datatype_int_to_type<'ctx>(context: &'ctx Context, kind: &DataTypes) -> IntType<'ctx> {
     match kind {
         DataTypes::I8 | DataTypes::Char => context.i8_type(),
         DataTypes::I16 => context.i16_type(),
@@ -65,7 +67,7 @@ pub fn build_const_integer<'ctx>(
     }
 }
 
-pub fn build_alloca_with_integer<'a, 'ctx>(
+pub fn build_alloca_int<'a, 'ctx>(
     builder: &'a Builder<'ctx>,
     kind: IntType<'ctx>,
 ) -> PointerValue<'ctx> {
@@ -164,4 +166,42 @@ pub fn datatype_to_basicmetadata_type_enum<'ctx>(
 
         _ => unreachable!(),
     }
+}
+
+#[inline]
+pub fn float_autocast<'ctx>(
+    origin_kind: &DataTypes,
+    kind: &DataTypes,
+    builder: &Builder<'ctx>,
+    context: &'ctx Context,
+    ptr: PointerValue<'ctx>,
+    load: BasicValueEnum<'ctx>,
+) {
+    let store: InstructionValue<'_> = if origin_kind != kind {
+        let cast: BasicValueEnum<'ctx> = if kind == &DataTypes::F32 {
+            builder
+                .build_cast(
+                    InstructionOpcode::FPExt,
+                    load.into_float_value(),
+                    datatype_float_to_type(context, kind),
+                    "",
+                )
+                .unwrap()
+        } else {
+            builder
+                .build_cast(
+                    InstructionOpcode::FPTrunc,
+                    load.into_float_value(),
+                    datatype_float_to_type(context, kind),
+                    "",
+                )
+                .unwrap()
+        };
+
+        builder.build_store(ptr, cast).unwrap()
+    } else {
+        builder.build_store(ptr, load).unwrap()
+    };
+
+    store.set_alignment(4).unwrap();
 }

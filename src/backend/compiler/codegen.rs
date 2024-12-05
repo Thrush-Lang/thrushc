@@ -1,25 +1,24 @@
 use {
-    super::options::CompilerOptions,
     super::{
-        super::super::frontend::lexer::{DataTypes, TokenKind},
-        super::instruction::Instruction,
-        super::natives_apis::{define::StringInfraestructure, vector::VectorAPI},
-        llvm::{
-            build_alloca_with_float, build_alloca_with_integer, build_const_float,
-            build_const_integer, build_int_array_type_from_size, datatype_float_to_type,
-            datatype_integer_to_type, datatype_to_fn_type,
+        super::super::frontend::lexer::DataTypes,
+        super::{instruction::Instruction, natives_apis::vector::VectorAPI},
+        utils::{
+            build_const_float, build_const_integer, build_int_array_type_from_size,
+            datatype_float_to_type, datatype_int_to_type, datatype_to_fn_type,
         },
+        variable,
     },
+    super::{locals::CompilerLocals, options::CompilerOptions},
     ahash::AHashMap as HashMap,
     inkwell::{
         basic_block::BasicBlock,
         builder::Builder,
         context::Context,
         module::{Linkage, Module},
-        types::{ArrayType, FunctionType, VectorType},
+        types::{ArrayType, FunctionType},
         values::{
             BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, InstructionOpcode,
-            InstructionValue, IntValue, PointerValue, VectorValue,
+            InstructionValue, IntValue, PointerValue,
         },
         AddressSpace,
     },
@@ -31,8 +30,8 @@ pub struct Codegen<'a, 'ctx> {
     context: &'ctx Context,
     instructions: &'ctx [Instruction<'ctx>],
     current: usize,
-    scope: usize,
-    locals: Vec<HashMap<String, BasicValueEnum<'ctx>>>,
+    function: Option<FunctionValue<'ctx>>,
+    locals: CompilerLocals<'ctx>,
     options: &'a CompilerOptions,
 }
 
@@ -50,8 +49,8 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             context,
             instructions,
             current: 0,
-            scope: 0,
-            locals: Vec::new(),
+            function: None,
+            locals: CompilerLocals::new(),
             options,
         }
         .start();
@@ -64,8 +63,6 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             VectorAPI::define(self.module, self.builder, self.context);
         }
 
-        StringInfraestructure::new(self.module, self.builder, self.context).define();
-
         while !self.is_end() {
             let instr: &Instruction<'_> = self.advance();
             self.codegen(instr);
@@ -75,15 +72,33 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
     fn codegen(&mut self, instr: &'ctx Instruction<'ctx>) -> Instruction<'ctx> {
         match instr {
             Instruction::Block { stmts, .. } => {
-                self.scope += 1;
-                self.locals.push(HashMap::new());
+                self.locals.push();
 
                 stmts.iter().for_each(|instr| {
                     self.codegen(instr);
                 });
 
-                self.scope -= 1;
                 self.locals.pop();
+
+                Instruction::Null
+            }
+
+            Instruction::Free { name, is_string } => {
+                let variable: BasicValueEnum<'_> = self.locals.find_and_get(name).unwrap();
+
+                if let BasicValueEnum::PointerValue(ptr) = variable {
+                    if *is_string {
+                        self.builder
+                            .build_call(
+                                self.module.get_function("Vec.destroy").unwrap(),
+                                &[ptr.into()],
+                                "",
+                            )
+                            .unwrap();
+                    }
+
+                    self.builder.build_free(ptr).unwrap();
+                }
 
                 Instruction::Null
             }
@@ -95,7 +110,9 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 return_kind,
                 is_public,
             } => {
-                self.emit_function(name, params, body, return_kind, *is_public);
+                self.function =
+                    Some(self.emit_function(name, params, body, return_kind, *is_public));
+
                 Instruction::Null
             }
 
@@ -121,24 +138,31 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
 
             Instruction::Var {
                 name, kind, value, ..
-            } => match value {
-                Some(value) => {
-                    self.emit_variable(name, kind, value);
-                    Instruction::Null
-                }
-                None => {
-                    self.emit_variable(name, kind, &Instruction::Null);
-                    Instruction::Null
-                }
-            },
+            } => {
+                variable::compile(
+                    self.module,
+                    self.builder,
+                    self.context,
+                    name,
+                    kind,
+                    value,
+                    &mut self.locals,
+                );
 
-            Instruction::Indexe { origin, index, .. } => {
-                let variable: BasicValueEnum<'_> = self.get_variable(origin);
+                Instruction::Null
+            }
+
+            Instruction::Indexe {
+                origin: origin_name,
+                index,
+                ..
+            } => {
+                let variable: BasicValueEnum<'_> = self.locals.find_and_get(origin_name).unwrap();
 
                 let value: IntValue<'_> = self
                     .builder
                     .build_call(
-                        self.module.get_function("String.extract").unwrap(),
+                        self.module.get_function("Vec.get").unwrap(),
                         &[
                             variable.into_pointer_value().into(),
                             self.context.i64_type().const_int(*index, false).into(),
@@ -157,12 +181,21 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             }
 
             Instruction::MutVar { name, kind, value } => {
-                self.emit_mut_variable(name, kind, value);
+                variable::compile_mut(
+                    self.module,
+                    self.builder,
+                    self.context,
+                    &mut self.locals,
+                    name,
+                    kind,
+                    value,
+                );
+
                 Instruction::Null
             }
 
             Instruction::EntryPoint { body } => {
-                self.emit_main();
+                self.function = Some(self.emit_main());
 
                 /* let alloc_char = self
                     .builder
@@ -245,17 +278,20 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             &[self.context.ptr_type(AddressSpace::default()).into()],
             true,
         );
+
         self.module
             .add_function("printf", printf, Some(Linkage::External));
     }
 
-    fn emit_main(&mut self) {
+    fn emit_main(&mut self) -> FunctionValue<'ctx> {
         let main_type: FunctionType = self.context.i32_type().fn_type(&[], false);
         let main: FunctionValue = self.module.add_function("main", main_type, None);
 
         let entry_point: BasicBlock = self.context.append_basic_block(main, "");
 
         self.builder.position_at_end(entry_point);
+
+        main
     }
 
     fn emit_print(&mut self, instrs: &'ctx [Instruction]) {
@@ -279,8 +315,8 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 args.push(reference_of_a_variable_into_basicametadatavaluenum(
                     self.builder,
                     self.context,
-                    &self.locals,
-                    self.scope,
+                    &self.locals.blocks,
+                    self.locals.scope,
                     name,
                     kind,
                 ));
@@ -298,7 +334,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             .unwrap();
     }
 
-    fn emit_mut_variable(&mut self, name: &str, kind: &DataTypes, value: &Instruction) {
+    /* fn emit_mut_variable(&mut self, name: &str, kind: &DataTypes, value: &Instruction) {
         let variable: BasicValueEnum<'_> = self.get_variable(name);
 
         match kind {
@@ -323,7 +359,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     todo!()
                 }
 
-                self.locals[self.scope - 1].insert(name.to_string(), variable);
+                self.locals.insert(name.to_string(), variable);
             }
 
             DataTypes::F32 | DataTypes::F64 => {
@@ -337,7 +373,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     todo!()
                 }
 
-                self.locals[self.scope - 1].insert(name.to_string(), variable);
+                self.locals.insert(name.to_string(), variable);
             }
 
             DataTypes::Bool => {
@@ -355,371 +391,231 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             DataTypes::String => {
                 if let Instruction::String(value) = value {
                     let string: PointerValue<'_> = self.emit_string(value).as_pointer_value();
-
-                    self.locals[self.scope - 1].insert(name.to_string(), string.into());
+                    self.locals.insert(name.to_string(), string.into());
                 }
             }
 
             _ => todo!(),
         };
-    }
+    } */
 
-    fn emit_variable(&mut self, name: &str, kind: &DataTypes, value: &Instruction) {
-        let ptr: PointerValue<'_> = match kind {
-            DataTypes::I8 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
+    /* match kind {
+        DataTypes::F32 | DataTypes::F64 => {
+            if let Instruction::Null = value {
+                let store: InstructionValue<'_> = self
+                    .builder
+                    .build_store(ptr, build_const_float(self.context, kind, 0.0))
+                    .unwrap();
 
-            DataTypes::I16 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
-
-            DataTypes::I32 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
-
-            DataTypes::I64 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
-
-            DataTypes::U8 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
-
-            DataTypes::U16 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
-
-            DataTypes::U32 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
-
-            DataTypes::U64 => build_alloca_with_integer(
-                self.builder,
-                datatype_integer_to_type(self.context, kind),
-            ),
-
-            DataTypes::F32 => {
-                build_alloca_with_float(self.builder, datatype_float_to_type(self.context, kind))
-            }
-
-            DataTypes::F64 => {
-                build_alloca_with_float(self.builder, datatype_float_to_type(self.context, kind))
-            }
-
-            _ => self.context.ptr_type(AddressSpace::default()).const_null(),
-        };
-
-        match kind {
-            DataTypes::I8
-            | DataTypes::I16
-            | DataTypes::I32
-            | DataTypes::I64
-            | DataTypes::U8
-            | DataTypes::U16
-            | DataTypes::U32
-            | DataTypes::U64 => {
-                if let Instruction::Null = value {
-                    let store: InstructionValue<'_> = self
-                        .builder
-                        .build_store(ptr, build_const_integer(self.context, kind, 0))
-                        .unwrap();
-
-                    store.set_alignment(4).unwrap();
-                } else if let Instruction::Integer(kind_value, num) = value {
-                    if ![
-                        DataTypes::I8,
-                        DataTypes::I16,
-                        DataTypes::I32,
-                        DataTypes::I64,
-                        DataTypes::U8,
-                        DataTypes::U16,
-                        DataTypes::U32,
-                        DataTypes::U64,
-                    ]
-                    .contains(kind_value)
-                    {
-                        todo!()
-                    } else if let DataTypes::I8
-                    | DataTypes::I16
-                    | DataTypes::I32
-                    | DataTypes::I64
-                    | DataTypes::U8
-                    | DataTypes::U16
-                    | DataTypes::U32
-                    | DataTypes::U64 = kind_value
-                    {
-                        let store: InstructionValue<'_> = self
-                            .builder
-                            .build_store(ptr, build_const_integer(self.context, kind, *num as u64))
-                            .unwrap();
-
-                        store.set_alignment(4).unwrap();
-                    }
-                } else if let Instruction::RefVar {
-                    name,
-                    kind: kind_refvar,
-                    ..
-                } = value
-                {
-                    let variable: BasicValueEnum<'_> = self.get_variable(name);
-
-                    let load: BasicValueEnum<'ctx> = self
-                        .builder
-                        .build_load(
-                            datatype_integer_to_type(self.context, kind_refvar),
-                            variable.into_pointer_value(),
-                            "",
-                        )
-                        .unwrap();
-
-                    let store: InstructionValue<'_> = if kind != kind_refvar {
-                        let cast: IntValue<'_> = self
-                            .builder
-                            .build_int_cast(
-                                load.into_int_value(),
-                                datatype_integer_to_type(self.context, kind),
-                                "",
-                            )
-                            .unwrap();
-
-                        self.builder.build_store(ptr, cast).unwrap()
-                    } else {
-                        self.builder.build_store(ptr, load).unwrap()
-                    };
-
-                    store.set_alignment(4).unwrap();
-                } else {
+                store.set_alignment(4).unwrap()
+            } else if let Instruction::Integer(kind_value, num) = value {
+                if ![DataTypes::F32, DataTypes::F64].contains(kind_value) {
                     todo!()
                 }
 
-                self.locals[self.scope - 1].insert(name.to_string(), ptr.into());
+                let store: InstructionValue<'_> = self
+                    .builder
+                    .build_store(ptr, build_const_float(self.context, kind, *num))
+                    .unwrap();
+
+                store.set_alignment(4).unwrap();
+            } else if let Instruction::RefVar {
+                name,
+                kind: kind_refvar,
+                ..
+            } = value
+            {
+                let variable = self.get_variable(name);
+                let load: BasicValueEnum<'ctx> = self
+                    .builder
+                    .build_load(
+                        datatype_float_to_type(self.context, kind_refvar),
+                        variable.into_pointer_value(),
+                        "",
+                    )
+                    .unwrap();
+
+                self.transform_an_float(kind, kind_refvar, ptr, load);
+            } else {
+                unreachable!()
             }
 
-            DataTypes::F32 | DataTypes::F64 => {
-                if let Instruction::Null = value {
-                    let store: InstructionValue<'_> = self
-                        .builder
-                        .build_store(ptr, build_const_float(self.context, kind, 0.0))
-                        .unwrap();
+            self.locals.insert(name.to_string(), ptr.into());
+        }
 
-                    store.set_alignment(4).unwrap()
-                } else if let Instruction::Integer(kind_value, num) = value {
-                    if ![DataTypes::F32, DataTypes::F64].contains(kind_value) {
-                        todo!()
-                    }
+        DataTypes::String => match value {
+            Instruction::Null => {
+                self.locals.insert(
+                    name.to_string(),
+                    self.context
+                        .ptr_type(AddressSpace::default())
+                        .const_null()
+                        .into(),
+                );
+            }
 
-                    let store: InstructionValue<'_> = self
-                        .builder
-                        .build_store(ptr, build_const_float(self.context, kind, *num))
-                        .unwrap();
+            Instruction::String(str) => {
+                let string: GlobalValue<'_> = self.emit_string(str);
 
-                    store.set_alignment(4).unwrap();
-                } else if let Instruction::RefVar {
-                    name,
-                    kind: kind_refvar,
-                    ..
-                } = value
-                {
-                    let variable = self.get_variable(name);
-                    let load: BasicValueEnum<'ctx> = self
+                self.locals.insert(
+                    name.to_string(),
+                    string.get_initializer().unwrap().into_vector_value().into(),
+                );
+            }
+
+            Instruction::RefVar {
+                name: refvar_name, ..
+            } => {
+                let variable: BasicValueEnum<'_> = self.get_variable(refvar_name);
+
+                self.locals
+                    .insert(name.to_string(), variable.into_vector_value().into());
+            }
+
+            Instruction::Binary {
+                left, op, right, ..
+            } => match (&(**left), op, &(**right)) {
+                (
+                    Instruction::String(left_str),
+                    TokenKind::Plus,
+                    Instruction::String(right_str),
+                ) => {
+                    /* let first_string_ptr: PointerValue<'_> = self.emit_string(left_str);
+                    let second_string_ptr: PointerValue<'_> = self.emit_string(right_str);
+
+                    let new_string: PointerValue<'_> = self
                         .builder
-                        .build_load(
-                            datatype_float_to_type(self.context, kind_refvar),
-                            variable.into_pointer_value(),
+                        .build_call(
+                            self.module.get_function("String.concat").unwrap(),
+                            &[first_string_ptr.into(), second_string_ptr.into()],
                             "",
                         )
-                        .unwrap();
+                        .unwrap()
+                        .try_as_basic_value()
+                        .left()
+                        .unwrap()
+                        .into_pointer_value();
 
-                    self.transform_an_float(kind, kind_refvar, ptr, load);
-                } else {
-                    unreachable!()
+                    self.locals[self.scope - 1].insert(name.to_string(), new_string.into()); */
                 }
-
-                self.locals[self.scope - 1].insert(name.to_string(), ptr.into());
-            }
-
-            DataTypes::String => match value {
-                Instruction::Null => {
-                    self.locals[self.scope - 1].insert(
-                        name.to_string(),
-                        self.context
-                            .ptr_type(AddressSpace::default())
-                            .const_null()
-                            .into(),
-                    );
-                }
-
-                Instruction::String(str) => {
-                    let string: GlobalValue<'_> = self.emit_string(str);
-
-                    self.locals[self.scope - 1].insert(
-                        name.to_string(),
-                        string.get_initializer().unwrap().into_vector_value().into(),
-                    );
-                }
-
-                Instruction::RefVar {
-                    name: refvar_name, ..
-                } => {
-                    let variable: BasicValueEnum<'_> = self.get_variable(refvar_name);
-
-                    self.locals[self.scope - 1]
-                        .insert(name.to_string(), variable.into_vector_value().into());
-                }
-
-                Instruction::Binary {
-                    left, op, right, ..
-                } => match (&(**left), op, &(**right)) {
-                    (
-                        Instruction::String(left_str),
-                        TokenKind::Plus,
-                        Instruction::String(right_str),
-                    ) => {
-                        /* let first_string_ptr: PointerValue<'_> = self.emit_string(left_str);
-                        let second_string_ptr: PointerValue<'_> = self.emit_string(right_str);
-
-                        let new_string: PointerValue<'_> = self
-                            .builder
-                            .build_call(
-                                self.module.get_function("String.concat").unwrap(),
-                                &[first_string_ptr.into(), second_string_ptr.into()],
-                                "",
-                            )
-                            .unwrap()
-                            .try_as_basic_value()
-                            .left()
-                            .unwrap()
-                            .into_pointer_value();
-
-                        self.locals[self.scope - 1].insert(name.to_string(), new_string.into()); */
-                    }
-
-                    _ => unreachable!(),
-                },
 
                 _ => unreachable!(),
             },
 
-            DataTypes::Bool => match value {
-                Instruction::Null => {
-                    self.locals[self.scope - 1].insert(
-                        name.to_string(),
-                        self.context
-                            .ptr_type(AddressSpace::default())
-                            .const_null()
-                            .into(),
-                    );
-                }
+            _ => unreachable!(),
+        },
 
-                Instruction::Boolean(bool) => {
-                    self.emit_boolean(name, *bool);
-                }
+        DataTypes::Bool => match value {
+            Instruction::Null => {
+                self.locals.insert(
+                    name.to_string(),
+                    self.context
+                        .ptr_type(AddressSpace::default())
+                        .const_null()
+                        .into(),
+                );
+            }
 
-                Instruction::RefVar {
-                    name: refvar_name, ..
-                } => {
-                    let variable: BasicValueEnum<'_> = self.get_variable(refvar_name);
+            Instruction::Boolean(bool) => {
+                self.emit_boolean(name, *bool);
+            }
 
-                    let ptr: PointerValue<'_> = self.emit_boolean(name, false);
+            Instruction::RefVar {
+                name: refvar_name, ..
+            } => {
+                let variable: BasicValueEnum<'_> = self.get_variable(refvar_name);
 
-                    let load: BasicValueEnum<'ctx> = self
-                        .builder
-                        .build_load(self.context.bool_type(), variable.into_pointer_value(), "")
-                        .unwrap();
+                let ptr: PointerValue<'_> = self.emit_boolean(name, false);
 
-                    let store: InstructionValue<'_> = self.builder.build_store(ptr, load).unwrap();
+                let load: BasicValueEnum<'ctx> = self
+                    .builder
+                    .build_load(self.context.bool_type(), variable.into_pointer_value(), "")
+                    .unwrap();
 
-                    store.set_alignment(4).unwrap();
-                }
+                let store: InstructionValue<'_> = self.builder.build_store(ptr, load).unwrap();
 
-                _ => unimplemented!(),
-            },
+                store.set_alignment(4).unwrap();
+            }
 
-            DataTypes::Char => match value {
-                Instruction::Null => {
-                    self.locals[self.scope - 1].insert(
-                        name.to_string(),
-                        self.context
-                            .ptr_type(AddressSpace::default())
-                            .const_null()
-                            .into(),
-                    );
-                }
+            _ => unimplemented!(),
+        },
 
-                Instruction::Char(char) => {
-                    self.emit_char(name, Some(*char));
-                }
+        DataTypes::Char => match value {
+            Instruction::Null => {
+                self.locals.insert(
+                    name.to_string(),
+                    self.context
+                        .ptr_type(AddressSpace::default())
+                        .const_null()
+                        .into(),
+                );
+            }
 
-                Instruction::RefVar {
-                    name: refvar_name, ..
-                } => {
-                    let variable: BasicValueEnum<'_> = self.get_variable(refvar_name);
+            Instruction::Char(char) => {
+                self.emit_char(name, Some(*char));
+            }
 
-                    let ptr: PointerValue<'_> = self.emit_char(name, None);
+            Instruction::RefVar {
+                name: refvar_name, ..
+            } => {
+                let variable: BasicValueEnum<'_> = self.get_variable(refvar_name);
 
-                    let load: BasicValueEnum<'ctx> = self
-                        .builder
-                        .build_load(self.context.i8_type(), variable.into_pointer_value(), "")
-                        .unwrap();
+                let ptr: PointerValue<'_> = self.emit_char(name, None);
 
-                    let store: InstructionValue<'_> = self.builder.build_store(ptr, load).unwrap();
+                let load: BasicValueEnum<'ctx> = self
+                    .builder
+                    .build_load(self.context.i8_type(), variable.into_pointer_value(), "")
+                    .unwrap();
 
-                    store.set_alignment(4).unwrap();
-                }
+                let store: InstructionValue<'_> = self.builder.build_store(ptr, load).unwrap();
 
-                Instruction::Indexe {
-                    origin,
-                    name: indexe_name,
-                    index,
-                    ..
-                } => {
-                    let variable: BasicValueEnum<'_> = self.get_variable(origin);
+                store.set_alignment(4).unwrap();
+            }
 
-                    let string: VectorValue<'_> = variable.into_vector_value();
+            Instruction::Indexe {
+                origin,
+                name: indexe_name,
+                index,
+                ..
+            } => {
+                let variable: BasicValueEnum<'_> = self.get_variable(origin);
 
-                    let char: PointerValue<'ctx> = self
-                        .builder
-                        .build_alloca(self.context.i8_type(), "")
-                        .unwrap();
+                let string: VectorValue<'_> = variable.into_vector_value();
 
-                    if *index > string.get_type().get_size() as u64 {
-                        self.builder
-                            .build_store(char, self.context.i8_type().const_zero())
-                            .unwrap();
+                let char: PointerValue<'ctx> = self
+                    .builder
+                    .build_alloca(self.context.i8_type(), "")
+                    .unwrap();
 
-                        self.locals[self.scope - 1]
-                            .insert(indexe_name.unwrap().to_string(), char.into());
-
-                        return;
-                    }
-
+                if *index > string.get_type().get_size() as u64 {
                     self.builder
-                        .build_store(
-                            char,
-                            string
-                                .get_element_as_constant(*index as u32)
-                                .into_int_value(),
-                        )
+                        .build_store(char, self.context.i8_type().const_zero())
                         .unwrap();
 
-                    self.locals[self.scope - 1]
+                    self.locals
                         .insert(indexe_name.unwrap().to_string(), char.into());
+
+                    return;
                 }
 
-                _ => todo!(),
-            },
+                self.builder
+                    .build_store(
+                        char,
+                        string
+                            .get_element_as_constant(*index as u32)
+                            .into_int_value(),
+                    )
+                    .unwrap();
+
+                self.locals
+                    .insert(indexe_name.unwrap().to_string(), char.into());
+            }
 
             _ => todo!(),
-        };
-    }
+        },
+
+        _ => todo!(),
+    }; */
 
     fn emit_return(&mut self, instr: &Instruction) {
         match &instr {
@@ -747,7 +643,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
         body: &'ctx Instruction<'ctx>,
         return_kind: &Option<DataTypes>,
         is_public: bool,
-    ) {
+    ) -> FunctionValue<'ctx> {
         let kind: FunctionType = datatype_to_fn_type(self.context, return_kind, params, None);
 
         let function: FunctionValue<'_> =
@@ -776,6 +672,8 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
         if return_kind.is_none() {
             self.builder.build_return(None).unwrap();
         }
+
+        function
     }
 
     fn emit_char_from_indexe(&mut self, value: IntValue<'ctx>) -> PointerValue<'ctx> {
@@ -791,7 +689,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
         char
     }
 
-    fn emit_char(&mut self, name: &str, value: Option<u8>) -> PointerValue<'ctx> {
+    /* fn emit_char(&mut self, name: &str, value: Option<u8>) -> PointerValue<'ctx> {
         let char: PointerValue<'ctx> = self
             .builder
             .build_alloca(self.context.i8_type(), "")
@@ -806,12 +704,12 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             store.set_alignment(4).unwrap();
         }
 
-        self.locals[self.scope - 1].insert(name.to_string(), char.into());
+        self.locals.insert(name.to_string(), char.into());
 
         char
-    }
+    } */
 
-    fn emit_boolean(&mut self, name: &str, value: bool) -> PointerValue<'ctx> {
+    /* fn emit_boolean(&mut self, name: &str, value: bool) -> PointerValue<'ctx> {
         let boolean: PointerValue<'ctx> = self
             .builder
             .build_alloca(self.context.bool_type(), "")
@@ -827,10 +725,10 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 .unwrap();
         }
 
-        self.locals[self.scope - 1].insert(name.to_string(), boolean.into());
+        self.locals.insert(name.to_string(), boolean.into());
 
         boolean
-    }
+    } */
 
     fn emit_string_constant(&mut self, string: &str) -> PointerValue<'ctx> {
         let kind: ArrayType<'_> = self.context.i8_type().array_type(string.len() as u32);
@@ -852,7 +750,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             .unwrap()
     }
 
-    fn emit_string(&mut self, value: &str) -> GlobalValue<'ctx> {
+    /* fn emit_string(&mut self, value: &str) -> GlobalValue<'ctx> {
         let global: GlobalValue<'_> = self.module.add_global(
             self.context.i8_type().vec_type(value.len() as u32),
             Some(AddressSpace::default()),
@@ -869,55 +767,20 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
         global.set_initializer(&VectorType::const_vector(&contain));
 
         global
-    }
+    } */
 
-    fn transform_an_float(
-        &mut self,
-        origin_kind: &DataTypes,
-        kind: &DataTypes,
-        ptr: PointerValue<'ctx>,
-        load: BasicValueEnum<'ctx>,
-    ) {
-        let store: InstructionValue<'_> = if origin_kind != kind {
-            let cast: BasicValueEnum<'ctx> = if kind == &DataTypes::F32 {
-                self.builder
-                    .build_cast(
-                        InstructionOpcode::FPExt,
-                        load.into_float_value(),
-                        datatype_float_to_type(self.context, kind),
-                        "",
-                    )
-                    .unwrap()
-            } else {
-                self.builder
-                    .build_cast(
-                        InstructionOpcode::FPTrunc,
-                        load.into_float_value(),
-                        datatype_float_to_type(self.context, kind),
-                        "",
-                    )
-                    .unwrap()
-            };
-
-            self.builder.build_store(ptr, cast).unwrap()
-        } else {
-            self.builder.build_store(ptr, load).unwrap()
-        };
-
-        store.set_alignment(4).unwrap();
-    }
-
-    #[inline]
+    /* #[inline]
     fn get_variable(&self, name: &str) -> BasicValueEnum<'ctx> {
-        for index in (0..self.scope).rev() {
-            if self.locals[index].contains_key(name) {
-                return *self.locals[index].get(name).unwrap();
+        for position in (0..self.locals.scope).rev() {
+            if self.locals.contains_in_block(position, name) {
+                return *self.locals.get_in_block(position, name).unwrap();
             }
         }
 
         panic!("\nUnexpected error at compiler internal at `fn get_variable()`\n Report this issue at https://github.com/Thrush-Lang/thrushc")
-    }
+    } */
 
+    #[inline]
     fn advance(&mut self) -> &'ctx Instruction<'ctx> {
         let c: &Instruction = &self.instructions[self.current];
         self.current += 1;
@@ -1007,7 +870,7 @@ fn reference_of_a_variable_into_basicametadatavaluenum<'ctx, 'a>(
             let ptr: PointerValue<'ctx> = variable.into_pointer_value();
 
             builder
-                .build_load(datatype_integer_to_type(context, kind), ptr, "")
+                .build_load(datatype_int_to_type(context, kind), ptr, "")
                 .unwrap()
                 .into()
         }
@@ -1052,52 +915,31 @@ fn reference_of_a_variable_into_basicametadatavaluenum<'ctx, 'a>(
         }
 
         DataTypes::String => {
-            let ptr_string_ref: VectorValue<'ctx> = variable.into_vector_value();
+            let ptr: PointerValue<'ctx> = variable.into_pointer_value();
 
-            let string_type: ArrayType<'_> = context
-                .i8_type()
-                .array_type(ptr_string_ref.get_type().get_size());
-
-            let string: PointerValue<'ctx> = builder.build_alloca(string_type, "").unwrap();
-
-            for i in 0..ptr_string_ref.get_type().get_size() {
-                unsafe {
-                    let gep_element_of_the_string: PointerValue<'ctx> = builder
-                        .build_in_bounds_gep(
-                            string_type,
-                            string,
-                            &[
-                                context.i64_type().const_int(0, false),
-                                context.i64_type().const_int(i as u64, false),
-                            ],
-                            "",
-                        )
-                        .unwrap();
-
-                    builder
-                        .build_store(
-                            gep_element_of_the_string,
-                            ptr_string_ref.get_element_as_constant(i).into_int_value(),
-                        )
-                        .unwrap();
-                }
-            }
-
-            unsafe {
-                let string_loaded: PointerValue<'ctx> = builder
-                    .build_in_bounds_gep(
-                        string_type,
-                        string,
+            let get_data: PointerValue<'ctx> = builder
+                .build_struct_gep(
+                    context.struct_type(
                         &[
-                            context.i64_type().const_int(0, false),
-                            context.i64_type().const_int(0, false),
+                            context.i64_type().into(),                        // size
+                            context.i64_type().into(),                        // capacity
+                            context.i64_type().into(),                        // element_size
+                            context.ptr_type(AddressSpace::default()).into(), // data
+                            context.i8_type().into(),                         // type
                         ],
-                        "",
-                    )
-                    .unwrap();
+                        false,
+                    ),
+                    ptr,
+                    3,
+                    "",
+                )
+                .unwrap();
 
-                string_loaded.into()
-            }
+            let load: BasicValueEnum<'ctx> = builder
+                .build_load(get_data.get_type(), get_data, "")
+                .unwrap();
+
+            load.into()
         }
 
         DataTypes::Bool => {

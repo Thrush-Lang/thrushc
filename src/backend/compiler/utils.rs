@@ -3,10 +3,13 @@ use {
     inkwell::{
         builder::Builder,
         context::Context,
+        module::{Linkage, Module},
         types::{ArrayType, BasicMetadataTypeEnum, FloatType, FunctionType, IntType},
         values::{
-            BasicValueEnum, FloatValue, InstructionOpcode, InstructionValue, IntValue, PointerValue,
+            BasicValueEnum, FloatValue, GlobalValue, InstructionOpcode, InstructionValue, IntValue,
+            PointerValue,
         },
+        AddressSpace,
     },
 };
 
@@ -204,4 +207,27 @@ pub fn float_autocast<'ctx>(
     };
 
     store.set_alignment(4).unwrap();
+}
+
+pub fn build_string_constant<'ctx>(
+    module: &Module<'ctx>,
+    builder: &Builder<'ctx>,
+    context: &'ctx Context,
+    string: &str,
+) -> PointerValue<'ctx> {
+    let kind: ArrayType<'_> = context.i8_type().array_type(string.len() as u32);
+    let global: GlobalValue<'_> = module.add_global(kind, Some(AddressSpace::default()), "");
+
+    global.set_linkage(Linkage::LinkerPrivate);
+    global.set_initializer(&context.const_string(string.as_ref(), false));
+    global.set_constant(true);
+    global.set_unnamed_addr(true);
+
+    builder
+        .build_pointer_cast(
+            global.as_pointer_value(),
+            context.ptr_type(AddressSpace::default()),
+            "",
+        )
+        .unwrap()
 }

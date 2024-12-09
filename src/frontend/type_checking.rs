@@ -527,6 +527,41 @@ pub fn check_binary_instr(
     }
 }
 
+#[inline]
+pub fn check_binary_int_with_parent_instr(
+    parent_kind: &DataTypes,
+    a: &DataTypes,
+    op: &TokenKind,
+    b: &DataTypes,
+    line: usize,
+) -> Result<(), ThrushError> {
+    if let DataTypes::U8
+    | DataTypes::U16
+    | DataTypes::U32
+    | DataTypes::U64
+    | DataTypes::I8
+    | DataTypes::I16
+    | DataTypes::I32
+    | DataTypes::I64 = parent_kind
+    {
+        if *a as u8 > *parent_kind as u8 || *b as u8 > *parent_kind as u8 {
+            return Err(ThrushError::Parse(
+                ThrushErrorKind::SyntaxError,
+                String::from("Syntax Error"),
+                format!(
+                    "Arithmetic operation {} = ({} {} {}) is impossible. Check your operands and types.",
+                    parent_kind, a, op, b
+                ),
+                line,
+            ));
+        }
+
+        return Ok(());
+    }
+
+    unreachable!()
+}
+
 /*
 
 UNARY INSTRUCTION
@@ -538,10 +573,10 @@ OPERATOR B OPERATOR
 
 #[inline]
 fn check_unary_instr_negate(a: &DataTypes, line: usize) -> Result<(), ThrushError> {
-    if let DataTypes::U8
-    | DataTypes::U16
-    | DataTypes::U32
-    | DataTypes::U64
+    if let DataTypes::I8
+    | DataTypes::I16
+    | DataTypes::I32
+    | DataTypes::I64
     | DataTypes::F32
     | DataTypes::F64
     | DataTypes::Integer = a

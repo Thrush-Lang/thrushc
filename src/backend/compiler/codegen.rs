@@ -1,21 +1,25 @@
 use {
     super::{
-        super::super::frontend::lexer::DataTypes,
-        super::{instruction::Instruction, natives_apis::vector::VectorAPI},
+        super::{
+            super::frontend::lexer::DataTypes,
+            instruction::Instruction,
+            natives_apis::{debug::DebugAPI, vector::VectorAPI},
+        },
+        locals::CompilerLocals,
+        options::CompilerOptions,
         utils::{
             build_const_float, build_const_integer, build_int_array_type_from_size,
             datatype_float_to_type, datatype_int_to_type, datatype_to_fn_type,
         },
         variable,
     },
-    super::{locals::CompilerLocals, options::CompilerOptions},
     ahash::AHashMap as HashMap,
     inkwell::{
         basic_block::BasicBlock,
         builder::Builder,
         context::Context,
         module::{Linkage, Module},
-        types::{ArrayType, FunctionType},
+        types::{ArrayType, FunctionType, StructType},
         values::{
             BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, InstructionOpcode,
             InstructionValue, IntValue, PointerValue,
@@ -57,10 +61,19 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
     }
 
     fn start(&mut self) {
-        if self.options.insert_vector_natives {
+        self.declare_basics();
+        self.define_math_functions();
+
+        if self.options.include_vector_api {
             VectorAPI::include(self.module, self.builder, self.context);
         } else {
             VectorAPI::define(self.module, self.builder, self.context);
+        }
+
+        if self.options.include_debug_api {
+            DebugAPI::include(self.module, self.builder, self.context);
+        } else {
+            DebugAPI::define(self.module, self.builder, self.context);
         }
 
         while !self.is_end() {
@@ -143,6 +156,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     self.module,
                     self.builder,
                     self.context,
+                    &self.function.unwrap(),
                     name,
                     kind,
                     value,
@@ -177,7 +191,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
 
                 let char: PointerValue<'_> = self.emit_char_from_indexe(value);
 
-                return Instruction::BasicValueEnum(char.into());
+                Instruction::BasicValueEnum(char.into())
             }
 
             Instruction::MutVar { name, kind, value } => {
@@ -270,6 +284,81 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             }
 
             _ => todo!(),
+        }
+    }
+
+    fn declare_basics(&mut self) {
+        let stderr: GlobalValue = self.module.add_global(
+            self.context.ptr_type(AddressSpace::default()),
+            Some(AddressSpace::default()),
+            "stderr",
+        );
+
+        stderr.set_linkage(Linkage::External);
+
+        let stdout: GlobalValue = self.module.add_global(
+            self.context.ptr_type(AddressSpace::default()),
+            Some(AddressSpace::default()),
+            "stdout",
+        );
+
+        stdout.set_linkage(Linkage::External);
+    }
+
+    fn define_math_functions(&mut self) {
+        let i8_type: StructType<'_> = self.context.struct_type(
+            &[
+                self.context.i8_type().into(),
+                self.context.bool_type().into(),
+            ],
+            false,
+        );
+
+        let i16_type: StructType<'_> = self.context.struct_type(
+            &[
+                self.context.i16_type().into(),
+                self.context.bool_type().into(),
+            ],
+            false,
+        );
+
+        let i32_type: StructType<'_> = self.context.struct_type(
+            &[
+                self.context.i32_type().into(),
+                self.context.bool_type().into(),
+            ],
+            false,
+        );
+
+        let i64_type: StructType<'_> = self.context.struct_type(
+            &[
+                self.context.i64_type().into(),
+                self.context.bool_type().into(),
+            ],
+            false,
+        );
+
+        for &size in &[
+            ("8", i8_type),
+            ("16", i16_type),
+            ("32", i32_type),
+            ("64", i64_type),
+        ] {
+            for &signed in &["u", "s"] {
+                for &op in &["add", "sub", "mul", "div"] {
+                    self.module.add_function(
+                        &format!("llvm.{}{}.with.overflow.i{}", signed, op, size.0),
+                        size.1.fn_type(
+                            &[
+                                size.1.get_field_type_at_index(0).unwrap().into(),
+                                size.1.get_field_type_at_index(0).unwrap().into(),
+                            ],
+                            false,
+                        ),
+                        Some(Linkage::External),
+                    );
+                }
+            }
         }
     }
 

@@ -409,9 +409,25 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     }
                 }
 
-                Instruction::Binary { .. }
-                | Instruction::Unary { .. }
-                | Instruction::Group { .. } => {}
+                Instruction::Unary { .. } | Instruction::Group { .. } => {}
+
+                Instruction::Binary {
+                    left,
+                    op,
+                    right,
+                    kind: type_binary,
+                    ..
+                } => {
+                    if let DataTypes::Integer = type_binary {
+                        type_checking::check_binary_int_with_parent_instr(
+                            kind.as_ref().unwrap(),
+                            &left.get_data_type(),
+                            op,
+                            &right.get_data_type(),
+                            name.line,
+                        )?;
+                    }
+                }
 
                 e => {
                     println!("{:?}", e);
@@ -1212,6 +1228,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 op,
                 right: Box::new(right),
                 kind: DataTypes::Bool,
+                line: self.previous().line,
             }
         }
 
@@ -1237,6 +1254,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 op,
                 right: Box::new(right),
                 kind: DataTypes::Bool,
+                line: self.previous().line,
             }
         }
 
@@ -1262,6 +1280,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 op,
                 right: Box::from(right),
                 kind: DataTypes::Bool,
+                line: self.previous().line,
             }
         }
 
@@ -1291,6 +1310,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 op,
                 right: Box::from(right),
                 kind: DataTypes::Bool,
+                line: self.previous().line,
             };
         }
 
@@ -1320,6 +1340,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 op,
                 right: Box::from(right),
                 kind: DataTypes::Integer,
+                line: self.previous().line,
             };
         }
 
@@ -1344,13 +1365,14 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         {
             let op: &TokenKind = &self.previous().kind;
             let value: Instruction<'instr> = self.primary()?;
+            let value_type: &DataTypes = &value.get_data_type();
 
-            type_checking::check_unary_instr(op, &value.get_data_type(), self.previous().line)?;
+            type_checking::check_unary_instr(op, value_type, self.previous().line)?;
 
             return Ok(Instruction::Unary {
                 op,
                 value: Box::from(value),
-                kind: DataTypes::Integer,
+                kind: *value_type,
             });
         }
 
@@ -1415,7 +1437,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                         return Ok(Instruction::Unary {
                             op: &self.previous().kind,
                             value: Box::from(instr),
-                            kind: DataTypes::Integer,
+                            kind: *kind,
                         });
                     }
 

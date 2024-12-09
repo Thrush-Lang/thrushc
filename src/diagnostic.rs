@@ -71,7 +71,7 @@ impl Diagnostic {
     fn print_report(&mut self, title: &str, help: &str, line: usize) {
         self.print_header(line, title);
 
-        let content: &str = if line == self.lines.len() - 1 {
+        let content: &str = if line > self.lines.len() - 1 {
             self.lines.last().unwrap().trim()
         } else {
             self.lines[line - 1].trim()

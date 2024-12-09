@@ -72,7 +72,7 @@ impl CLIParser {
 
                 let native_api: &str = &self.args[self.extract_relative_index(*index)];
 
-                if native_api != "vector" {
+                if native_api != "vector" && native_api != "debug" {
                     self.report_error(&format!(
                         "Unknown native API: {}",
                         self.args[self.extract_relative_index(*index)]
@@ -93,7 +93,9 @@ impl CLIParser {
                         self.options.library = true;
 
                         if native_api == "vector" {
-                            self.options.restore_vector_natives = true;
+                            self.options.restore_vector_api = true;
+                        } else if native_api == "debug" {
+                            self.options.restore_debug_api = true;
                         }
 
                         *index += 1;
@@ -325,21 +327,28 @@ impl CLIParser {
                 *index += 1;
             }
 
-            "--insert" | "-insert" => {
+            "--include" | "-include" => {
                 *index += 1;
 
                 if *index > self.args.len() {
-                    self.report_error(&format!("Missing native api for \"{}\".", arg));
+                    self.report_error(&format!(
+                        "Missing Native API specification for \"{}\".",
+                        arg
+                    ));
                 }
 
                 match self.args[self.extract_relative_index(*index)].as_str() {
                     "vector-api" => {
-                        self.options.insert_vector_natives = true;
+                        self.options.include_vector_api = true;
+                        *index += 1;
+                    }
+                    "debug-api" => {
+                        self.options.include_debug_api = true;
                         *index += 1;
                     }
                     _ => {
                         self.report_error(&format!(
-                            "Invalid insert api name: \"{}\".",
+                            "Unknown Native API name: \"{}\".",
                             self.args[self.extract_relative_index(*index)]
                         ));
                     }
@@ -533,9 +542,9 @@ impl CLIParser {
         println!(
             "{} ({} | {}) {}",
             style("•").bold(),
-            style("--insert").bold().fg(Color::Rgb(141, 141, 142)),
-            style("-insert").bold().fg(Color::Rgb(141, 141, 142)),
-            style("Insert an Native API in the LLVM IR to be emited.").bold()
+            style("--include").bold().fg(Color::Rgb(141, 141, 142)),
+            style("-include").bold().fg(Color::Rgb(141, 141, 142)),
+            style("Include a Native API Code in the IR.").bold()
         );
 
         println!(

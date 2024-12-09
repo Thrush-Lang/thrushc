@@ -1,18 +1,30 @@
+#![allow(clippy::too_many_arguments)]
+
 use {
-    super::{super::super::frontend::lexer::DataTypes, locals::CompilerLocals, utils, Instruction},
+    super::{
+        super::super::{frontend::lexer::DataTypes, NAME},
+        general,
+        locals::CompilerLocals,
+        utils, Instruction,
+    },
     inkwell::{
+        basic_block::BasicBlock,
         builder::Builder,
         context::Context,
         module::Module,
-        values::{BasicValueEnum, InstructionValue, IntValue, PointerValue},
-        AddressSpace,
+        values::{
+            BasicValueEnum, FunctionValue, InstructionValue, IntValue, PointerValue, StructValue,
+        },
+        AddressSpace, IntPredicate,
     },
+    std::default,
 };
 
 pub fn compile<'ctx>(
     module: &Module<'ctx>,
     builder: &Builder<'ctx>,
     context: &'ctx Context,
+    function: &FunctionValue<'ctx>,
     name: &str,
     kind: &DataTypes,
     value: &Instruction<'ctx>,
@@ -71,7 +83,17 @@ pub fn compile<'ctx>(
         | DataTypes::U16
         | DataTypes::U32
         | DataTypes::U64 => {
-            compile_integer_var(builder, context, value, kind, name, default_ptr, locals);
+            compile_integer_var(
+                module,
+                function,
+                builder,
+                context,
+                value,
+                kind,
+                name,
+                default_ptr,
+                locals,
+            );
         }
         DataTypes::F32 | DataTypes::F64 => {
             compile_float_var(builder, context, value, kind, name, default_ptr, locals);
@@ -79,7 +101,7 @@ pub fn compile<'ctx>(
         DataTypes::String => {
             compile_string_var(module, builder, context, name, value, default_ptr, locals)
         }
-        DataTypes::Bool => compile_boolean_var(builder, context, name, value, locals),
+        DataTypes::Bool => compile_boolean_var(module, builder, context, name, value, locals),
         DataTypes::Char => {
             compile_char_var(module, builder, context, name, value, default_ptr, locals)
         }
@@ -275,6 +297,8 @@ fn compile_string_var<'ctx>(
 }
 
 fn compile_integer_var<'ctx>(
+    module: &Module<'ctx>,
+    function: &FunctionValue<'ctx>,
     builder: &Builder<'ctx>,
     context: &'ctx Context,
     value: &Instruction<'ctx>,
@@ -354,6 +378,85 @@ fn compile_integer_var<'ctx>(
 
         locals.insert(name.to_string(), default_ptr.into());
     }
+
+    if let Instruction::Binary {
+        left,
+        op,
+        right,
+        line,
+        ..
+    } = value
+    {
+        let result: StructValue<'_> =
+            general::compile_binary_op(module, builder, context, left, op, right, kind)
+                .into_struct_value();
+
+        let overflowed: IntValue<'_> = builder
+            .build_extract_value(result, 1, "")
+            .unwrap()
+            .into_int_value();
+
+        let true_block: BasicBlock<'_> = context.append_basic_block(*function, "");
+        let false_block: BasicBlock<'_> = context.append_basic_block(*function, "");
+
+        builder
+            .build_conditional_branch(overflowed, true_block, false_block)
+            .unwrap();
+
+        builder.position_at_end(true_block);
+
+        builder
+            .build_call(
+                module.get_function("panic").unwrap(),
+                &[
+                    module
+                        .get_global("stderr")
+                        .unwrap()
+                        .as_pointer_value()
+                        .into(),
+                    utils::build_string_constant(module, builder, context, "%s\0").into(),
+                    utils::build_string_constant(
+                        module,
+                        builder,
+                        context,
+                        &format!(
+                            "Thrush Panic - (Integer or Float Overflow Type)
+
+Details:
+
+    ● File: {}
+    ● Line: {:?}
+    ● Instruction: {} {} {}
+    ● Operation: {}
+
+● Help: Check that the limit of a primitive type has not been overflowed. \n\0",
+                            NAME.lock().unwrap(),
+                            line,
+                            left.get_data_type(),
+                            op,
+                            right.get_data_type(),
+                            op
+                        ),
+                    )
+                    .into(),
+                ],
+                "",
+            )
+            .unwrap();
+
+        builder.build_unreachable().unwrap();
+
+        builder.position_at_end(false_block);
+
+        let result: IntValue<'_> = builder
+            .build_extract_value(result, 0, "")
+            .unwrap()
+            .into_int_value();
+
+        builder.build_store(default_ptr, result).unwrap();
+
+        locals.insert(name.to_string(), default_ptr.into());
+    }
 }
 
 fn compile_float_var<'ctx>(
@@ -420,6 +523,7 @@ fn compile_float_var<'ctx>(
 }
 
 fn compile_boolean_var<'ctx>(
+    module: &Module<'ctx>,
     builder: &Builder<'ctx>,
     context: &'ctx Context,
     name: &str,
@@ -458,6 +562,27 @@ fn compile_boolean_var<'ctx>(
                 .unwrap();
 
             let store: InstructionValue<'_> = builder.build_store(default_ptr, load).unwrap();
+
+            store.set_alignment(4).unwrap();
+
+            locals.insert(name.to_string(), default_ptr.into());
+        }
+
+        Instruction::Binary {
+            left,
+            op,
+            right,
+            kind,
+            ..
+        } => {
+            let result =
+                general::compile_binary_op(module, builder, context, left, op, right, kind)
+                    .into_int_value();
+
+            let default_ptr: PointerValue<'ctx> =
+                builder.build_alloca(context.bool_type(), "").unwrap();
+
+            let store: InstructionValue<'_> = builder.build_store(default_ptr, result).unwrap();
 
             store.set_alignment(4).unwrap();
 

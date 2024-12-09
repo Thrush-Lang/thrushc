@@ -1,4 +1,5 @@
 pub mod codegen;
+mod general;
 mod locals;
 pub mod options;
 mod utils;

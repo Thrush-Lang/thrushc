@@ -127,7 +127,15 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
         {
             logging::log(
                     logging::LogType::ERROR,
-                    "The file with the vector native api don't exists. Use the command 'throium natives restore' to restore it.",
+                    "The file with the Vector Native API don't exists. Use the command 'throium natives restore' to restore it.",
+                );
+            return;
+        } else if !home.join(".thrushc/natives/debug.o").exists()
+            && !self.options.restore_natives_apis
+        {
+            logging::log(
+                    logging::LogType::ERROR,
+                    "The file with the Debug Native API don't exists. Use the command 'throium natives restore' to restore it.",
                 );
             return;
         }

@@ -57,6 +57,7 @@ pub enum Instruction<'ctx> {
         op: &'ctx TokenKind,
         right: Box<Instruction<'ctx>>,
         kind: DataTypes,
+        line: usize,
     },
 
     Unary {

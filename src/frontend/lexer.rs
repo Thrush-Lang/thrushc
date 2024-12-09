@@ -2,9 +2,7 @@ use {
     super::super::{
         diagnostic::Diagnostic,
         error::{ThrushError, ThrushErrorKind},
-    },
-    core::str,
-    std::{num::ParseFloatError, process::exit},
+    }, core::str, inkwell::IntPredicate, std::{num::ParseFloatError, process::exit}
 };
 
 pub struct Lexer<'a> {
@@ -306,7 +304,8 @@ impl<'a> Lexer<'a> {
         lexeme: String,
     ) -> Result<DataTypes, ThrushError> {
 
-        if self.previous_token().kind == TokenKind::Minus && !lexeme.contains(".") {
+        if self.previous_token().kind == TokenKind::Minus && !lexeme.contains(".") && !self.tokens[self.tokens.len() - 2].kind.is_integer() {
+
             let lexeme: String = String::from("-") + &lexeme;
 
             return match lexeme.parse::<isize>() {
@@ -353,16 +352,16 @@ impl<'a> Lexer<'a> {
             
         }
 
-        match lexeme.parse::<usize>() {
+        match lexeme.parse::<isize>() {
             Ok(num) => match num {
-                1usize..=255usize => Ok(DataTypes::U8),
-                256usize..=65_535usize => Ok(DataTypes::U16),
-                65_536usize..=4_294_967_295usize => Ok(DataTypes::U32),
-                4_294_967_296usize..=18_446_744_073_709_551_615usize => Ok(DataTypes::U64),
+                0isize..=127isize => Ok(DataTypes::U8),
+                128isize..=65_535isize => Ok(DataTypes::U16),
+                65_536isize..=4_294_967_295isize => Ok(DataTypes::U32),
+                4_294_967_296isize..= 9_223_372_036_854_775_807isize => Ok(DataTypes::U64),
                 _ => Err(ThrushError::Parse(
                     ThrushErrorKind::UnreachableNumber,
                     String::from("The number is out of bounds."),
-                    String::from("The size is out of bounds of an usize (0 to n)."),
+                    String::from("The size is out of bounds of an isize (0 to n)."),
                     self.line,
                 )),
             },
@@ -571,37 +570,68 @@ impl std::fmt::Display for TokenKind {
     }
 }
 
+impl TokenKind {
+    #[inline]
+    pub fn is_integer(&self) -> bool {
+        matches!(self, TokenKind::Integer(_, _))
+    }
+
+    #[inline]
+    pub fn to_llvm_intrinsic_identifier(&self) -> &str {
+        match self {
+            TokenKind::Plus => "add",
+            TokenKind::Minus => "sub",
+            TokenKind::Star => "mul",
+            _ => "",
+        }
+    }
+
+    #[inline]
+    pub fn to_int_predicate(&self) -> IntPredicate {
+        match self {
+            TokenKind::EqEq => IntPredicate::EQ,
+            TokenKind::BangEqual => IntPredicate::NE,
+            TokenKind::Greater => IntPredicate::SGT,
+            TokenKind::GreaterEqual => IntPredicate::SGE,
+            TokenKind::Less => IntPredicate::SLT,
+            TokenKind::LessEqual => IntPredicate::SLE,
+            _ => unreachable!(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum DataTypes {
     // Integer DataTypes
-    U8,
-    U16,
-    U32,
-    U64,
-    I8,
-    I16,
-    I32,
-    I64,
-    Integer,
+    U8 = 0,
+    U16 = 1,
+    U32 = 2,
+    U64 = 3,
+    I8 = 4,
+    I16 = 5,
+    I32 = 6,
+    I64 = 7,
+    Integer = 8,
 
     // Floating Point DataTypes
-    F32,
-    F64,
-    Float,
+    F32 = 9,
+    F64 = 10,
+    Float = 11,
     // Boolean DataTypes
-    Bool,
+    Bool = 12,
 
     // String DataTypes
-    String,
-    Char,
+    String = 13,
+    Char = 14,
 
     // Void Type
-    Void,
+    Void = 15,
 }
 
 
 impl std::fmt::Display for DataTypes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+
         match self {
             DataTypes::U8 => write!(f, "u8"),
             DataTypes::U16 => write!(f, "u16"),

@@ -8,8 +8,10 @@ mod logging;
 
 use {
     backend::{
-        builder::FileBuilder, compiler::Compiler, instruction::Instruction,
-        natives_apis::vector::VectorAPI,
+        builder::FileBuilder,
+        compiler::Compiler,
+        instruction::Instruction,
+        natives_apis::{debug::DebugAPI, vector::VectorAPI},
     },
     cli::CLIParser,
     frontend::{
@@ -49,8 +51,10 @@ fn main() {
         let context: Context = Context::create();
         let builder: Builder<'_> = context.create_builder();
 
-        cli.options.output = if cli.options.restore_vector_natives {
+        cli.options.output = if cli.options.restore_vector_api {
             "vector.o".to_string()
+        } else if cli.options.restore_debug_api {
+            "debug.o".to_string()
         } else {
             "native.o".to_string()
         };
@@ -75,8 +79,10 @@ fn main() {
 
         module.set_data_layout(&machine.get_target_data().get_data_layout());
 
-        if cli.options.restore_vector_natives {
+        if cli.options.restore_vector_api {
             VectorAPI::include(&module, &builder, &context);
+        } else if cli.options.restore_debug_api {
+            DebugAPI::include(&module, &builder, &context);
         }
 
         if cli.options.emit_llvm {
@@ -115,6 +121,8 @@ fn main() {
     let module: Module<'_> = context.create_module(&cli.options.output);
 
     let start_time: Instant = Instant::now();
+
+    println!("{:?}", instructions);
 
     module.set_triple(&cli.options.target_triple);
 

@@ -2,7 +2,11 @@
 
 use {
     super::{
-        super::super::{frontend::lexer::DataTypes, NAME},
+        super::super::{
+            diagnostic::{self, Diagnostic},
+            frontend::lexer::DataTypes,
+            NAME,
+        },
         general,
         locals::CompilerLocals,
         utils, Instruction,
@@ -15,9 +19,8 @@ use {
         values::{
             BasicValueEnum, FunctionValue, InstructionValue, IntValue, PointerValue, StructValue,
         },
-        AddressSpace, IntPredicate,
+        AddressSpace,
     },
-    std::default,
 };
 
 pub fn compile<'ctx>(
@@ -29,6 +32,7 @@ pub fn compile<'ctx>(
     kind: &DataTypes,
     value: &Instruction<'ctx>,
     locals: &mut CompilerLocals<'ctx>,
+    diagnostics: &mut Diagnostic,
 ) {
     let default_ptr: PointerValue<'_> = match kind {
         DataTypes::I8 => {
@@ -93,6 +97,7 @@ pub fn compile<'ctx>(
                 name,
                 default_ptr,
                 locals,
+                diagnostics,
             );
         }
         DataTypes::F32 | DataTypes::F64 => {
@@ -306,6 +311,7 @@ fn compile_integer_var<'ctx>(
     name: &str,
     default_ptr: PointerValue<'ctx>,
     locals: &mut CompilerLocals<'ctx>,
+    diagnostics: &mut Diagnostic,
 ) {
     if let Instruction::Null = value {
         let store: InstructionValue<'_> = builder
@@ -420,22 +426,31 @@ fn compile_integer_var<'ctx>(
                         builder,
                         context,
                         &format!(
-                            "Thrush Panic - (Integer or Float Overflow Type)
+                            "{}
 
 Details:
 
     ● File: {}
-    ● Line: {:?}
+    ● Line: {}
     ● Instruction: {} {} {}
     ● Operation: {}
 
-● Help: Check that the limit of a primitive type has not been overflowed. \n\0",
+    Code:
+
+        {}
+
+{} \n\0",
+                            diagnostic::render_panic_message("Integer / Float Overflow"),
                             NAME.lock().unwrap(),
                             line,
                             left.get_data_type(),
                             op,
                             right.get_data_type(),
-                            op
+                            op,
+                            diagnostics.draw_only_line(*line),
+                            diagnostic::create_help_message(
+                                "Check that the limit of a primitive type has not been overflowed."
+                            )
                         ),
                     )
                     .into(),
@@ -443,6 +458,8 @@ Details:
                 "",
             )
             .unwrap();
+
+        diagnostics.clear();
 
         builder.build_unreachable().unwrap();
 

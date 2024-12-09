@@ -7,7 +7,7 @@ use {
         fs::File,
         io::{BufRead, BufReader},
     },
-    stylic::{style, Stylize},
+    stylic::{style, Color, Stylize},
 };
 
 #[derive(Debug)]
@@ -68,6 +68,31 @@ impl Diagnostic {
         }
     }
 
+    pub fn draw_only_line(&mut self, line: usize) -> &str {
+        let content: &str = if line > self.lines.len() - 1 {
+            self.lines.last().unwrap().trim()
+        } else {
+            self.lines[line - 1].trim()
+        };
+
+        self.drawer.push_str(&format!("{} | ", line));
+        self.buffer.push_str(&format!("{}\n", content));
+
+        for _ in 0..content.len() + 10 {
+            self.drawer
+                .push_str(style("─").bright_red().to_string().as_str());
+        }
+
+        self.buffer.push_str(&self.drawer);
+
+        &self.buffer
+    }
+
+    pub fn clear(&mut self) {
+        self.buffer.clear();
+        self.drawer.clear();
+    }
+
     fn print_report(&mut self, title: &str, help: &str, line: usize) {
         self.print_header(line, title);
 
@@ -116,4 +141,24 @@ impl Diagnostic {
             title
         );
     }
+}
+
+#[inline]
+pub fn render_panic_message(subject: &str) -> String {
+    format!(
+        "{} {} {}",
+        style("PANIC").bold().bright_red(),
+        style("-").bold(),
+        subject
+    )
+}
+
+#[inline]
+pub fn create_help_message(msg: &str) -> String {
+    format!(
+        "● {}{} {}",
+        style("Help").bold().bright_green(),
+        style(":").bold(),
+        msg
+    )
 }

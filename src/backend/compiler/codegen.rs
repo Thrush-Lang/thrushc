@@ -1,7 +1,7 @@
 use {
     super::{
         super::{
-            super::frontend::lexer::DataTypes,
+            super::{diagnostic::Diagnostic, frontend::lexer::DataTypes},
             instruction::Instruction,
             natives_apis::{debug::DebugAPI, vector::VectorAPI},
         },
@@ -35,6 +35,7 @@ pub struct Codegen<'a, 'ctx> {
     current: usize,
     function: Option<FunctionValue<'ctx>>,
     locals: CompilerLocals<'ctx>,
+    diagnostics: Diagnostic,
     options: &'a CompilerOptions,
 }
 
@@ -54,6 +55,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             current: 0,
             function: None,
             locals: CompilerLocals::new(),
+            diagnostics: Diagnostic::new(&options.file_path),
             options,
         }
         .start();
@@ -160,6 +162,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     kind,
                     value,
                     &mut self.locals,
+                    &mut self.diagnostics,
                 );
 
                 Instruction::Null

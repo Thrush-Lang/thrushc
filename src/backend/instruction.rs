@@ -11,6 +11,7 @@ pub enum Instruction<'ctx> {
     String(String),
     Char(u8),
     Integer(DataTypes, f64),
+    Float(DataTypes, f64),
     Block {
         stmts: Vec<Instruction<'ctx>>,
     },
@@ -45,7 +46,6 @@ pub enum Instruction<'ctx> {
         kind: DataTypes,
         value: Box<Instruction<'ctx>>,
     },
-    Boolean(bool),
     Indexe {
         origin: &'ctx str,
         name: Option<&'ctx str>,
@@ -59,21 +59,19 @@ pub enum Instruction<'ctx> {
         kind: DataTypes,
         line: usize,
     },
-
     Unary {
         op: &'ctx TokenKind,
         value: Box<Instruction<'ctx>>,
         kind: DataTypes,
     },
-
     Group {
         instr: Box<Instruction<'ctx>>,
     },
-
     Free {
         name: &'ctx str,
         is_string: bool,
     },
+    Boolean(bool),
 
     Null,
 }
@@ -83,6 +81,10 @@ impl PartialEq for Instruction<'_> {
         match self {
             Instruction::Integer(_, _) => {
                 matches!(other, Instruction::Integer(_, _))
+            }
+
+            Instruction::Float(_, _) => {
+                matches!(other, Instruction::Float(_, _))
             }
 
             Instruction::String(_) => {
@@ -114,6 +116,12 @@ impl Instruction<'_> {
                 _ => unreachable!(),
             },
 
+            Instruction::Float(data_type, _) => match data_type {
+                DataTypes::F32 => DataTypes::F32,
+                DataTypes::F64 => DataTypes::F64,
+                _ => unreachable!(),
+            },
+
             Instruction::String(_) => DataTypes::String,
             Instruction::Boolean(_) => DataTypes::Bool,
             Instruction::Char(_) => DataTypes::Char,
@@ -135,6 +143,7 @@ impl Instruction<'_> {
             Instruction::Var { kind, .. } => Some(*kind),
             Instruction::Char(_) => Some(DataTypes::Char),
             Instruction::Integer(kind, _) => Some(*kind),
+            Instruction::Float(kind, _) => Some(*kind),
             _ => None,
         }
     }

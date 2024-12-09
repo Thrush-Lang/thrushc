@@ -2,7 +2,7 @@ use {
     super::super::{
         diagnostic::Diagnostic,
         error::{ThrushError, ThrushErrorKind},
-    }, core::str, inkwell::IntPredicate, std::{num::ParseFloatError, process::exit}
+    }, core::str, inkwell::{FloatPredicate, IntPredicate}, std::{num::ParseFloatError, process::exit}
 };
 
 pub struct Lexer<'a> {
@@ -95,13 +95,13 @@ impl<'a> Lexer<'a> {
             b'+' => self.make(TokenKind::Plus),
             b':' if self.char_match(b':') => self.make(TokenKind::ColonColon),
             b':' => self.make(TokenKind::Colon),
-            b'!' if self.char_match(b'=') => self.make(TokenKind::BangEqual),
+            b'!' if self.char_match(b'=') => self.make(TokenKind::BangEq),
             b'!' => self.make(TokenKind::Bang),
             b'=' if self.char_match(b'=') => self.make(TokenKind::EqEq),
             b'=' => self.make(TokenKind::Eq),
-            b'<' if self.char_match(b'=') => self.make(TokenKind::LessEqual),
+            b'<' if self.char_match(b'=') => self.make(TokenKind::LessEq),
             b'<' => self.make(TokenKind::Less),
-            b'>' if self.char_match(b'=') => self.make(TokenKind::GreaterEqual),
+            b'>' if self.char_match(b'=') => self.make(TokenKind::GreaterEq),
             b'>' => self.make(TokenKind::Greater),
             b'|' if self.char_match(b'|') => self.make(TokenKind::Or),
             b'&' if self.char_match(b'&') => self.make(TokenKind::And),
@@ -109,7 +109,7 @@ impl<'a> Lexer<'a> {
             b'\n' => self.line += 1,
             b'\'' => self.char()?,
             b'"' => self.string()?,
-            b'0'..=b'9' => self.integer()?,
+            b'0'..=b'9' => self.integer_or_float()?,
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => self.identifier()?,
             _ => {
                 return Err(ThrushError::Lex(
@@ -190,7 +190,7 @@ impl<'a> Lexer<'a> {
         Ok(())
     }
 
-    fn integer(&mut self) -> Result<(), ThrushError> {
+    fn integer_or_float(&mut self) -> Result<(), ThrushError> {
         while self.peek().is_ascii_digit()
             || self.peek() == b'_' && self.peek_next().is_ascii_digit()
             || self.peek() == b'.' && self.peek_next().is_ascii_digit()
@@ -206,13 +206,22 @@ impl<'a> Lexer<'a> {
         if num.is_err() {
             return Err(ThrushError::Parse(
                 ThrushErrorKind::ParsedNumber,
-
-                String::from("The number is too big for an integer."),
+                String::from("The number is too big for an integer or float."),
                 String::from(
                     "Did you provide a valid number with the correct format and not out of bounds?",
                 ),
                 self.line,
             ));
+        }
+
+        if kind == DataTypes::F32 || kind == DataTypes::F64 {
+            self.tokens.push(Token {
+                kind: TokenKind::Float(kind, *num.as_ref().unwrap()),
+                lexeme: None,
+                line: self.line
+            });
+
+            return Ok(());
         }
 
         self.tokens.push(Token {
@@ -323,7 +332,7 @@ impl<'a> Lexer<'a> {
                 },
                 Err(_) => Err(ThrushError::Parse(
                     ThrushErrorKind::ParsedNumber,
-                    String::from("The number is too long for an signed integer."),
+                    String::from("The number is too long for an signed integer_or_float."),
                     String::from("Did you provide a valid number with the correct format and not out of bounds?"),
                     self.line,
                 )),
@@ -367,7 +376,7 @@ impl<'a> Lexer<'a> {
             },
             Err(_) => Err(ThrushError::Parse(
                 ThrushErrorKind::ParsedNumber,
-                String::from("The number is too long for an unsigned integer."),
+                String::from("The number is too long for an unsigned integer_or_float."),
                 String::from(
                     "Did you provide a valid number with the correct format and not out of bounds?",
                 ),
@@ -463,19 +472,20 @@ pub enum TokenKind {
     Arith,        // ' % ',
     Bang,         // ' ! '
     ColonColon,   // ' :: '
-    BangEqual,    // ' != '
+    BangEq,    // ' != '
     Eq,           // ' = '
     EqEq,         // ' == '
     Greater,      // ' > '
-    GreaterEqual, // ' >= '
+    GreaterEq, // ' >= '
     Less,         // ' < '
-    LessEqual,    // ' <= '
+    LessEq,    // ' <= '
     PlusPlus,     // ' ++ '
     MinusMinus,   // ' -- '
 
     // --- Literals ---
     Identifier,
     Integer(DataTypes, f64),
+    Float(DataTypes, f64),
     DataType(DataTypes),
     String,
     Char,
@@ -528,13 +538,13 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Arith => write!(f, "%"),
             TokenKind::Bang => write!(f, "!"),
             TokenKind::ColonColon => write!(f, "::"),
-            TokenKind::BangEqual => write!(f, "!="),
+            TokenKind::BangEq => write!(f, "!="),
             TokenKind::Eq => write!(f, "="),
             TokenKind::EqEq => write!(f, "=="),
             TokenKind::Greater => write!(f, ">"),
-            TokenKind::GreaterEqual => write!(f, ">="),
+            TokenKind::GreaterEq => write!(f, ">="),
             TokenKind::Less => write!(f, "<"),
-            TokenKind::LessEqual => write!(f, "<="),
+            TokenKind::LessEq => write!(f, "<="),
             TokenKind::PlusPlus => write!(f, "++"),
             TokenKind::MinusMinus => write!(f, "--"),
             TokenKind::Identifier => write!(f, "Identifier"),
@@ -561,7 +571,8 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Const => write!(f, "const"),
             TokenKind::While => write!(f, "while"),
             TokenKind::Extends => write!(f, "extends"),
-            TokenKind::Integer(_, _) => write!(f, "integer"),
+            TokenKind::Integer(_, _) => write!(f, "integer_or_float"),
+            TokenKind::Float(_, _) => write!(f, "float"),
             TokenKind::String => write!(f, "string"),
             TokenKind::Char => write!(f, "char"),
             TokenKind::Eof => write!(f, "EOF"),
@@ -590,11 +601,24 @@ impl TokenKind {
     pub fn to_int_predicate(&self) -> IntPredicate {
         match self {
             TokenKind::EqEq => IntPredicate::EQ,
-            TokenKind::BangEqual => IntPredicate::NE,
+            TokenKind::BangEq => IntPredicate::NE,
             TokenKind::Greater => IntPredicate::SGT,
-            TokenKind::GreaterEqual => IntPredicate::SGE,
+            TokenKind::GreaterEq => IntPredicate::SGE,
             TokenKind::Less => IntPredicate::SLT,
-            TokenKind::LessEqual => IntPredicate::SLE,
+            TokenKind::LessEq => IntPredicate::SLE,
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline]
+    pub fn to_float_predicate(&self) -> FloatPredicate {
+        match self {
+            TokenKind::EqEq => FloatPredicate::OEQ,
+            TokenKind::BangEq => FloatPredicate::ONE,
+            TokenKind::Greater => FloatPredicate::OGT,
+            TokenKind::GreaterEq => FloatPredicate::OGE,
+            TokenKind::Less => FloatPredicate::OLT,
+            TokenKind::LessEq => FloatPredicate::OLE,
             _ => unreachable!(),
         }
     }
@@ -648,7 +672,7 @@ impl std::fmt::Display for DataTypes {
             DataTypes::Char => write!(f, "char"),
             DataTypes::Void => write!(f, "void"),
             DataTypes::Float => write!(f, "float"),
-            DataTypes::Integer => write!(f, "integer")
+            DataTypes::Integer => write!(f, "integer_or_float")
         }
     }
 }

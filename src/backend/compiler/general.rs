@@ -7,21 +7,9 @@ use {
         builder::Builder,
         context::Context,
         module::Module,
-        values::{BasicValueEnum, IntValue},
-        IntPredicate,
+        values::{BasicValueEnum, FloatValue, IntValue},
     },
 };
-
-const INTEGER_VALID_TYPES: [DataTypes; 8] = [
-    DataTypes::I8,
-    DataTypes::I16,
-    DataTypes::I32,
-    DataTypes::I64,
-    DataTypes::U8,
-    DataTypes::U16,
-    DataTypes::U32,
-    DataTypes::U64,
-];
 
 pub fn compile_binary_op<'ctx>(
     module: &'ctx Module,
@@ -181,25 +169,66 @@ pub fn compile_binary_op<'ctx>(
         }
 
         (
-            Instruction::Integer(left_kind, left_num),
+            Instruction::Float(left_kind, left_num),
             TokenKind::Eq
-            | TokenKind::BangEqual
+            | TokenKind::BangEq
             | TokenKind::Less
             | TokenKind::Greater
-            | TokenKind::GreaterEqual
-            | TokenKind::LessEqual,
+            | TokenKind::GreaterEq
+            | TokenKind::LessEq,
+            Instruction::Float(right_kind, right_num),
+            DataTypes::Bool,
+        ) => {
+            let mut left_num: FloatValue<'_> =
+                utils::build_const_float(context, left_kind, *left_num);
+            let mut right_num: FloatValue<'_> =
+                utils::build_const_float(context, right_kind, *right_num);
+
+            if right_num.get_type() != left_num.get_type() {
+                right_num = builder
+                    .build_float_cast(right_num, left_num.get_type(), "")
+                    .unwrap();
+            }
+
+            if left_num.get_type() != right_num.get_type() {
+                left_num = builder
+                    .build_float_cast(left_num, right_num.get_type(), "")
+                    .unwrap();
+            }
+
+            builder
+                .build_float_compare(op.to_float_predicate(), left_num, right_num, "")
+                .unwrap()
+                .into()
+        }
+
+        (
+            Instruction::Integer(left_kind, left_num),
+            TokenKind::Eq
+            | TokenKind::BangEq
+            | TokenKind::Less
+            | TokenKind::Greater
+            | TokenKind::GreaterEq
+            | TokenKind::LessEq,
             Instruction::Integer(right_kind, right_num),
             DataTypes::Bool,
         ) => {
-            if !INTEGER_VALID_TYPES.contains(left_kind) || !INTEGER_VALID_TYPES.contains(right_kind)
-            {
-                todo!()
+            let mut left_num: IntValue<'_> =
+                utils::build_const_integer(context, left_kind, *left_num as u64);
+            let mut right_num: IntValue<'_> =
+                utils::build_const_integer(context, right_kind, *right_num as u64);
+
+            if right_num.get_type() != left_num.get_type() {
+                right_num = builder
+                    .build_int_cast(right_num, left_num.get_type(), "")
+                    .unwrap();
             }
 
-            let left_num: IntValue<'_> =
-                utils::build_const_integer(context, left_kind, *left_num as u64);
-            let right_num: IntValue<'_> =
-                utils::build_const_integer(context, right_kind, *right_num as u64);
+            if left_num.get_type() != right_num.get_type() {
+                left_num = builder
+                    .build_int_cast(left_num, right_num.get_type(), "")
+                    .unwrap();
+            }
 
             builder
                 .build_int_compare(op.to_int_predicate(), left_num, right_num, "")

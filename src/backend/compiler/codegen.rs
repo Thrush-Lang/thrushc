@@ -13,7 +13,6 @@ use {
         },
         variable,
     },
-    ahash::AHashMap as HashMap,
     inkwell::{
         basic_block::BasicBlock,
         builder::Builder,
@@ -404,10 +403,9 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 args.push(reference_of_a_variable_into_basicametadatavaluenum(
                     self.builder,
                     self.context,
-                    &self.locals.blocks,
-                    self.locals.scope,
                     name,
                     kind,
+                    &mut self.locals,
                 ));
             }
 
@@ -883,21 +881,6 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
     }
 }
 
-#[inline]
-fn get_variable<'ctx>(
-    locals: &'ctx [HashMap<String, BasicValueEnum<'ctx>>],
-    scope: usize,
-    name: &str,
-) -> BasicValueEnum<'ctx> {
-    for index in (0..scope).rev() {
-        if locals[index].contains_key(name) {
-            return *locals[index].get(name).unwrap();
-        }
-    }
-
-    panic!("\nUnexpected error at `fn get_variable()`\n Report this issue at https://github.com/Thrush-Lang/thrushc")
-}
-
 fn string_into_basimetadatavaluenum<'ctx, 'a>(
     module: &'a Module<'ctx>,
     builder: &'a Builder<'ctx>,
@@ -940,12 +923,11 @@ fn integer_into_basimetadatavaluenum<'ctx>(
 fn reference_of_a_variable_into_basicametadatavaluenum<'ctx, 'a>(
     builder: &'a Builder<'ctx>,
     context: &'ctx Context,
-    locals: &'ctx [HashMap<String, BasicValueEnum<'ctx>>],
-    scope: usize,
     name: &'ctx str,
     kind: &'ctx DataTypes,
+    locals: &mut CompilerLocals<'ctx>,
 ) -> BasicMetadataValueEnum<'ctx> {
-    let variable: BasicValueEnum<'_> = get_variable(locals, scope, name);
+    let variable: BasicValueEnum<'_> = locals.find_and_get(name).unwrap();
 
     match kind {
         DataTypes::U8

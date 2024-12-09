@@ -480,7 +480,7 @@ fn compile_float_var<'ctx>(
         return;
     }
 
-    if let Instruction::Integer(kind_value, num) = value {
+    if let Instruction::Float(kind_value, num) = value {
         /*
             (!) FIX IN THE PARSER
 

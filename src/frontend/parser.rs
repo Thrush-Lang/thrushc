@@ -216,40 +216,60 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         if kind.is_some() {
             match &value {
                 Instruction::Integer(data_type, _) => {
-                    match kind.as_ref().unwrap() {
-                        DataTypes::Integer => {
-                            if !VALID_INTEGER_TYPES.contains(data_type) {
-                                return Err(ThrushError::Parse(
-                                    ThrushErrorKind::SyntaxError,
-                                    String::from("Syntax Error"),
-                                    format!(
-                                        "Variable type mismatch. Expected '{}' but found '{}'.",
-                                        kind.unwrap(),
-                                        data_type
-                                    ),
-                                    name.line,
-                                ));
-                            }
-
-                            kind = Some(*data_type);
+                    if kind.as_ref().unwrap() == &DataTypes::Integer {
+                        if !VALID_INTEGER_TYPES.contains(data_type) {
+                            return Err(ThrushError::Parse(
+                                ThrushErrorKind::SyntaxError,
+                                String::from("Syntax Error"),
+                                format!(
+                                    "Variable type mismatch. Expected '{}' but found '{}'.",
+                                    kind.unwrap(),
+                                    data_type
+                                ),
+                                name.line,
+                            ));
                         }
-                        DataTypes::Float => {
-                            if !VALID_FLOAT_TYPES.contains(data_type) {
-                                return Err(ThrushError::Parse(
-                                    ThrushErrorKind::SyntaxError,
-                                    String::from("Syntax Error"),
-                                    format!(
-                                        "Variable type mismatch. Expected '{}' but found '{}'.",
-                                        kind.unwrap(),
-                                        data_type
-                                    ),
-                                    name.line,
-                                ));
-                            }
 
-                            kind = Some(*data_type);
+                        kind = Some(*data_type);
+                    }
+
+                    if !kind.as_ref().unwrap().check(data_type) {
+                        self.consume(
+                            TokenKind::SemiColon,
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            String::from("Expected ';'."),
+                        )?;
+
+                        return Err(ThrushError::Parse(
+                            ThrushErrorKind::SyntaxError,
+                            String::from("Syntax Error"),
+                            format!(
+                                "Variable type mismatch. Expected '{}' but found '{}'",
+                                kind.unwrap(),
+                                data_type
+                            ),
+                            name.line,
+                        ));
+                    }
+                }
+
+                Instruction::Float(data_type, _) => {
+                    if kind.as_ref().unwrap() == &DataTypes::Float {
+                        if !VALID_FLOAT_TYPES.contains(data_type) {
+                            return Err(ThrushError::Parse(
+                                ThrushErrorKind::SyntaxError,
+                                String::from("Syntax Error"),
+                                format!(
+                                    "Variable type mismatch. Expected '{}' but found '{}'.",
+                                    kind.unwrap(),
+                                    data_type
+                                ),
+                                name.line,
+                            ));
                         }
-                        _ => {}
+
+                        kind = Some(*data_type);
                     }
 
                     if !kind.as_ref().unwrap().check(data_type) {
@@ -1264,7 +1284,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     fn equality(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         let mut instr: Instruction<'_> = self.comparison()?;
 
-        while self.match_token(TokenKind::BangEqual)? || self.match_token(TokenKind::EqEq)? {
+        while self.match_token(TokenKind::BangEq)? || self.match_token(TokenKind::EqEq)? {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'_> = self.comparison()?;
 
@@ -1291,9 +1311,9 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         let mut instr: Instruction<'_> = self.term()?;
 
         while self.match_token(TokenKind::Greater)?
-            || self.match_token(TokenKind::GreaterEqual)?
+            || self.match_token(TokenKind::GreaterEq)?
             || self.match_token(TokenKind::Less)?
-            || self.match_token(TokenKind::LessEqual)?
+            || self.match_token(TokenKind::LessEq)?
         {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'_> = self.term()?;
@@ -1406,6 +1426,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             TokenKind::Char => {
                 Instruction::Char(self.advance()?.lexeme.as_ref().unwrap().as_bytes()[0])
             }
+
             kind => match kind {
                 TokenKind::Integer(kind, num) => {
                     self.only_advance()?;
@@ -1419,9 +1440,35 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                         DataTypes::U16 => Instruction::Integer(DataTypes::U16, *num),
                         DataTypes::U32 => Instruction::Integer(DataTypes::U32, *num),
                         DataTypes::U64 => Instruction::Integer(DataTypes::U64, *num),
-                        DataTypes::F32 => Instruction::Integer(DataTypes::F32, *num),
-                        DataTypes::F64 => Instruction::Integer(DataTypes::F64, *num),
 
+                        _ => unreachable!(),
+                    };
+
+                    if self.match_token(TokenKind::PlusPlus)?
+                        | self.match_token(TokenKind::MinusMinus)?
+                    {
+                        type_checking::check_unary_instr(
+                            &self.previous().kind,
+                            kind,
+                            self.previous().line,
+                        )?;
+
+                        return Ok(Instruction::Unary {
+                            op: &self.previous().kind,
+                            value: Box::from(instr),
+                            kind: *kind,
+                        });
+                    }
+
+                    instr
+                }
+
+                TokenKind::Float(kind, num) => {
+                    self.only_advance()?;
+
+                    let instr: Instruction<'instr> = match kind {
+                        DataTypes::F32 => Instruction::Float(DataTypes::F32, *num),
+                        DataTypes::F64 => Instruction::Float(DataTypes::F64, *num),
                         _ => unreachable!(),
                     };
 

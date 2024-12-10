@@ -542,7 +542,9 @@ pub fn check_binary_int_with_parent_instr(
     | DataTypes::I8
     | DataTypes::I16
     | DataTypes::I32
-    | DataTypes::I64 = parent_kind
+    | DataTypes::I64
+    | DataTypes::F32
+    | DataTypes::F64 = parent_kind
     {
         if *a as u8 > *parent_kind as u8 || *b as u8 > *parent_kind as u8 {
             return Err(ThrushError::Parse(

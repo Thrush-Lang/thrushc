@@ -11,7 +11,7 @@ use {
         type_checking,
     },
     ahash::AHashMap as HashMap,
-    std::process::exit,
+    std::{mem, process::exit},
 };
 
 const VALID_INTEGER_TYPES: [DataTypes; 8] = [
@@ -102,15 +102,41 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             TokenKind::Println => Ok(self.println()?),
             TokenKind::Print => Ok(self.print()?),
             TokenKind::Fn => Ok(self.function(false)?),
-            TokenKind::LBrace => Ok(self.block()?),
+            TokenKind::LBrace => Ok(self.block(&mut [])?),
             TokenKind::Return => Ok(self.ret()?),
             TokenKind::Public => Ok(self.public()?),
-            TokenKind::Var => Ok(self.variable()?),
+            TokenKind::Var => Ok(self.variable(false)?),
+            TokenKind::For => Ok(self.for_loop()?),
             _ => Ok(self.expr()?),
         }
     }
 
-    fn variable(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+    fn for_loop(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+        self.only_advance()?;
+
+        let variable: Instruction<'instr> = self.variable(false)?;
+
+        let cond: Instruction<'instr> = self.expr()?;
+
+        let actions: Instruction<'instr> = self.expr()?;
+
+        let mut variable_clone: Instruction<'instr> = variable.clone();
+
+        if let Instruction::Var { comptime, .. } = &mut variable_clone {
+            *comptime = true;
+        }
+
+        let body: Instruction<'instr> = self.block(&mut [variable_clone])?;
+
+        Ok(Instruction::ForLoop {
+            variable: Some(Box::new(variable)),
+            cond: Some(Box::new(cond)),
+            actions: Some(Box::new(actions)),
+            block: Box::new(body),
+        })
+    }
+
+    fn variable(&mut self, comptime: bool) -> Result<Instruction<'instr>, ThrushError> {
         self.only_advance()?;
 
         let name: &'instr Token = self.consume(
@@ -201,6 +227,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 kind: kind.unwrap(),
                 value: Box::new(Instruction::Null),
                 line: name.line,
+                comptime,
             });
         }
 
@@ -463,6 +490,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 kind: value.get_data_type(),
                 value: Box::new(value),
                 line: name.line,
+                comptime,
             }
         } else {
             Instruction::Var {
@@ -470,6 +498,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 kind: kind.unwrap(),
                 value: Box::new(value),
                 line: name.line,
+                comptime,
             }
         };
 
@@ -478,12 +507,9 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             (variable.get_kind().unwrap(), false, false, 0),
         );
 
-        self.consume(
-            TokenKind::SemiColon,
-            ThrushErrorKind::SyntaxError,
-            String::from("Syntax Error"),
-            String::from("Expected ';'."),
-        )?;
+        if self.match_token(TokenKind::SemiColon)? {
+            self.only_advance()?;
+        }
 
         Ok(variable)
     }
@@ -556,12 +582,19 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         Ok(Instruction::Return(Box::new(value)))
     }
 
-    fn block(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+    fn block(
+        &mut self,
+        with_instrs: &mut [Instruction<'instr>],
+    ) -> Result<Instruction<'instr>, ThrushError> {
         self.only_advance()?;
 
         self.begin_scope();
 
         let mut stmts: Vec<Instruction> = Vec::new();
+
+        for instr in with_instrs.iter_mut() {
+            stmts.push(mem::take(instr));
+        }
 
         while !self.match_token(TokenKind::RBrace)? {
             stmts.push(self.parse()?)
@@ -649,7 +682,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 self.has_entry_point = true;
 
                 return Ok(Instruction::EntryPoint {
-                    body: Box::new(self.block()?),
+                    body: Box::new(self.block(&mut [])?),
                 });
             } else {
                 return Err(ThrushError::Parse(
@@ -740,7 +773,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             _ => None,
         };
 
-        let body: Box<Instruction> = Box::new(self.block()?);
+        let body: Box<Instruction> = Box::new(self.block(&mut [])?);
 
         if let Some(return_type) = &return_kind {
             if self.ret.is_none() {
@@ -1029,9 +1062,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             }
 
             let expr: Instruction<'_> = match self.expr()? {
-                Instruction::String(mut str) => {
-                    str.push('\n');
-
+                Instruction::String(str) => {
                     if args.len() > 1 {
                         types.push(DataTypes::String);
                     }
@@ -1225,6 +1256,10 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 }
             });
         });
+
+        if self.peek().kind == TokenKind::SemiColon {
+            self.only_advance()?;
+        }
 
         Ok(instr)
     }
@@ -1495,7 +1530,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     self.only_advance()?;
 
                     let var: (DataTypes, bool) =
-                        self.find_variable(self.previous().lexeme.as_ref().unwrap())?;
+                        self.find_and_get_variable(self.previous().lexeme.as_ref().unwrap())?;
 
                     if self.peek().kind == TokenKind::LeftBracket {
                         let name: &str = self.previous().lexeme.as_ref().unwrap();
@@ -1555,20 +1590,17 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
                         let expr: Instruction<'instr> = self.expr()?;
 
-                        self.consume(
-                            TokenKind::SemiColon,
-                            ThrushErrorKind::SyntaxError,
-                            String::from("Syntax Error"),
-                            String::from("Expected ';'."),
-                        )?;
-
-                        if expr.get_data_type() != var.0 {
+                        if expr.get_data_type() != var.0
+                            && VALID_INTEGER_TYPES.contains(&var.0)
+                            && expr.get_data_type() != DataTypes::Integer
+                            && expr.get_data_type() != DataTypes::Float
+                        {
                             return Err(ThrushError::Parse(
                                 ThrushErrorKind::SyntaxError,
                                 String::from("Syntax Error"),
                                 format!(
                                     "Variable type mismatch. Expected '{}' but found '{}'.",
-                                    kind,
+                                    var.0,
                                     expr.get_data_type()
                                 ),
                                 self.previous().line,
@@ -1611,11 +1643,17 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             self.previous().line,
                         )?;
 
-                        return Ok(Instruction::Unary {
+                        let expr: Instruction<'_> = Instruction::Unary {
                             op: &self.previous().kind,
                             value: Box::from(refvar),
                             kind: DataTypes::Integer,
-                        });
+                        };
+
+                        if self.peek().kind == TokenKind::SemiColon {
+                            self.only_advance()?;
+                        }
+
+                        return Ok(expr);
                     }
 
                     refvar
@@ -1666,7 +1704,10 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     }
 
     #[inline]
-    fn find_variable(&mut self, name: &'instr str) -> Result<(DataTypes, bool), ThrushError> {
+    fn find_and_get_variable(
+        &mut self,
+        name: &'instr str,
+    ) -> Result<(DataTypes, bool), ThrushError> {
         for scope in self.locals.iter_mut().rev() {
             if scope.contains_key(name) {
                 // DataTypes, bool <- (is_null), bool <- (is_freeded), usize <- (number of references)

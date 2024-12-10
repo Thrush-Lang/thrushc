@@ -332,7 +332,7 @@ impl<'a> Lexer<'a> {
                 },
                 Err(_) => Err(ThrushError::Parse(
                     ThrushErrorKind::ParsedNumber,
-                    String::from("The number is too long for an signed integer_or_float."),
+                    String::from("The number is too long for an signed integer or float."),
                     String::from("Did you provide a valid number with the correct format and not out of bounds?"),
                     self.line,
                 )),
@@ -571,7 +571,7 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Const => write!(f, "const"),
             TokenKind::While => write!(f, "while"),
             TokenKind::Extends => write!(f, "extends"),
-            TokenKind::Integer(_, _) => write!(f, "integer_or_float"),
+            TokenKind::Integer(_, _) => write!(f, "integer"),
             TokenKind::Float(_, _) => write!(f, "float"),
             TokenKind::String => write!(f, "string"),
             TokenKind::Char => write!(f, "char"),
@@ -672,7 +672,7 @@ impl std::fmt::Display for DataTypes {
             DataTypes::Char => write!(f, "char"),
             DataTypes::Void => write!(f, "void"),
             DataTypes::Float => write!(f, "float"),
-            DataTypes::Integer => write!(f, "integer_or_float")
+            DataTypes::Integer => write!(f, "integer")
         }
     }
 }
@@ -733,5 +733,17 @@ impl DataTypes {
                 ) | (DataTypes::F64, DataTypes::F32)
                     | (DataTypes::F32, DataTypes::F64)
             )
+    }
+
+    pub fn as_llvm_identifier(&self) -> &str {
+        match self {
+            DataTypes::U8 | DataTypes::I8 => "i8",
+            DataTypes::U16 | DataTypes::I16 => "i16",
+            DataTypes::U32 | DataTypes::I32 => "i32",
+            DataTypes::U64 | DataTypes::I64 => "i64",
+            DataTypes::F32 => "f32",
+            DataTypes::F64 => "f64",
+            _ => unreachable!()
+        }
     }
 }

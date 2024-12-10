@@ -17,7 +17,7 @@ use {
         context::Context,
         module::Module,
         values::{
-            BasicValueEnum, FunctionValue, InstructionValue, IntValue, PointerValue, StructValue,
+            BasicValueEnum, FloatValue, FunctionValue, InstructionValue, IntValue, PointerValue,
         },
         AddressSpace,
     },
@@ -30,7 +30,7 @@ pub fn compile<'ctx>(
     function: &FunctionValue<'ctx>,
     name: &str,
     kind: &DataTypes,
-    value: &Instruction<'ctx>,
+    value: &'ctx Instruction<'ctx>,
     locals: &mut CompilerLocals<'ctx>,
     diagnostics: &mut Diagnostic,
 ) {
@@ -101,7 +101,16 @@ pub fn compile<'ctx>(
             );
         }
         DataTypes::F32 | DataTypes::F64 => {
-            compile_float_var(builder, context, value, kind, name, default_ptr, locals);
+            compile_float_var(
+                module,
+                builder,
+                context,
+                value,
+                kind,
+                name,
+                default_ptr,
+                locals,
+            );
         }
         DataTypes::String => {
             compile_string_var(module, builder, context, name, value, default_ptr, locals)
@@ -122,7 +131,7 @@ pub fn compile_mut<'ctx>(
     locals: &mut CompilerLocals<'ctx>,
     name: &str,
     kind: &DataTypes,
-    value: &Instruction<'ctx>,
+    value: &'ctx Instruction<'ctx>,
 ) {
     let variable: BasicValueEnum<'ctx> = locals.find_and_get(name).unwrap();
 
@@ -145,6 +154,19 @@ pub fn compile_mut<'ctx>(
 
                 locals.insert(name.to_string(), variable);
             }
+
+            if let Instruction::Binary {
+                left,
+                op,
+                right,
+                kind,
+                ..
+            } = value
+            {
+                general::compile_binary_op(module, builder, context, left, op, right, kind, locals);
+
+                locals.insert(name.to_string(), variable);
+            }
         }
 
         DataTypes::F32 | DataTypes::F64 => {
@@ -155,6 +177,19 @@ pub fn compile_mut<'ctx>(
                         utils::build_const_float(context, kind, *value),
                     )
                     .unwrap();
+
+                locals.insert(name.to_string(), variable);
+            }
+
+            if let Instruction::Binary {
+                left,
+                op,
+                right,
+                kind,
+                ..
+            } = value
+            {
+                general::compile_binary_op(module, builder, context, left, op, right, kind, locals);
 
                 locals.insert(name.to_string(), variable);
             }
@@ -306,7 +341,7 @@ fn compile_integer_var<'ctx>(
     function: &FunctionValue<'ctx>,
     builder: &Builder<'ctx>,
     context: &'ctx Context,
-    value: &Instruction<'ctx>,
+    value: &'ctx Instruction<'ctx>,
     kind: &DataTypes,
     name: &str,
     default_ptr: PointerValue<'ctx>,
@@ -325,7 +360,7 @@ fn compile_integer_var<'ctx>(
         return;
     }
 
-    if let Instruction::Integer(kind, num) = value {
+    if let Instruction::Integer(_, num) = value {
         if let DataTypes::I8
         | DataTypes::I16
         | DataTypes::I32
@@ -393,12 +428,23 @@ fn compile_integer_var<'ctx>(
         ..
     } = value
     {
-        let result: StructValue<'_> =
-            general::compile_binary_op(module, builder, context, left, op, right, kind)
-                .into_struct_value();
+        let result: BasicValueEnum<'_> =
+            general::compile_binary_op(module, builder, context, left, op, right, kind, locals);
+
+        if result.is_int_value() {
+            let store: InstructionValue<'_> = builder
+                .build_store(default_ptr, result.into_int_value())
+                .unwrap();
+
+            store.set_alignment(4).unwrap();
+
+            locals.insert(name.to_string(), default_ptr.into());
+
+            return;
+        }
 
         let overflowed: IntValue<'_> = builder
-            .build_extract_value(result, 1, "")
+            .build_extract_value(result.into_struct_value(), 1, "")
             .unwrap()
             .into_int_value();
 
@@ -466,7 +512,7 @@ Details:
         builder.position_at_end(false_block);
 
         let result: IntValue<'_> = builder
-            .build_extract_value(result, 0, "")
+            .build_extract_value(result.into_struct_value(), 0, "")
             .unwrap()
             .into_int_value();
 
@@ -477,9 +523,10 @@ Details:
 }
 
 fn compile_float_var<'ctx>(
+    module: &Module<'ctx>,
     builder: &Builder<'ctx>,
     context: &'ctx Context,
-    value: &Instruction<'ctx>,
+    value: &'ctx Instruction<'ctx>,
     kind: &DataTypes,
     name: &str,
     default_ptr: PointerValue<'ctx>,
@@ -537,6 +584,21 @@ fn compile_float_var<'ctx>(
 
         locals.insert(name.to_string(), default_ptr.into());
     }
+
+    if let Instruction::Binary {
+        left, op, right, ..
+    } = value
+    {
+        let result: FloatValue<'_> =
+            general::compile_binary_op(module, builder, context, left, op, right, kind, locals)
+                .into_float_value();
+
+        let store: InstructionValue<'_> = builder.build_store(default_ptr, result).unwrap();
+
+        store.set_alignment(4).unwrap();
+
+        locals.insert(name.to_string(), default_ptr.into());
+    }
 }
 
 fn compile_boolean_var<'ctx>(
@@ -544,7 +606,7 @@ fn compile_boolean_var<'ctx>(
     builder: &Builder<'ctx>,
     context: &'ctx Context,
     name: &str,
-    value: &Instruction,
+    value: &'ctx Instruction,
     locals: &mut CompilerLocals<'ctx>,
 ) {
     match value {
@@ -593,7 +655,7 @@ fn compile_boolean_var<'ctx>(
             ..
         } => {
             let result =
-                general::compile_binary_op(module, builder, context, left, op, right, kind)
+                general::compile_binary_op(module, builder, context, left, op, right, kind, locals)
                     .into_int_value();
 
             let default_ptr: PointerValue<'ctx> =

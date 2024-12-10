@@ -5,6 +5,7 @@ use {
             instruction::Instruction,
             natives_apis::{debug::DebugAPI, vector::VectorAPI},
         },
+        general,
         locals::CompilerLocals,
         options::CompilerOptions,
         utils::{
@@ -117,6 +118,52 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 Instruction::Null
             }
 
+            Instruction::ForLoop {
+                variable,
+                cond,
+                actions,
+                block,
+            } => {
+                self.codegen(variable.as_ref().unwrap());
+
+                let start_block: BasicBlock<'ctx> =
+                    self.context.append_basic_block(self.function.unwrap(), "");
+
+                self.builder
+                    .build_unconditional_branch(start_block)
+                    .unwrap();
+
+                self.builder.position_at_end(start_block);
+
+                let cond: IntValue<'ctx> = self
+                    .codegen(cond.as_ref().unwrap())
+                    .as_basic_value()
+                    .into_int_value();
+
+                let then_block: BasicBlock<'ctx> =
+                    self.context.append_basic_block(self.function.unwrap(), "");
+
+                let exit_block: BasicBlock<'ctx> =
+                    self.context.append_basic_block(self.function.unwrap(), "");
+
+                self.builder
+                    .build_conditional_branch(cond, then_block, exit_block)
+                    .unwrap();
+
+                self.builder.position_at_end(then_block);
+
+                self.codegen(actions.as_ref().unwrap());
+                self.codegen(block.as_ref());
+
+                self.builder
+                    .build_unconditional_branch(start_block)
+                    .unwrap();
+
+                self.builder.position_at_end(exit_block);
+
+                Instruction::Null
+            }
+
             Instruction::Function {
                 name,
                 params,
@@ -151,8 +198,16 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             }
 
             Instruction::Var {
-                name, kind, value, ..
+                name,
+                kind,
+                value,
+                comptime,
+                ..
             } => {
+                if *comptime {
+                    return Instruction::Null;
+                }
+
                 variable::compile(
                     self.module,
                     self.builder,
@@ -208,6 +263,37 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 );
 
                 Instruction::Null
+            }
+
+            Instruction::Binary {
+                op,
+                left,
+                right,
+                kind,
+                ..
+            } => Instruction::BasicValueEnum(general::compile_binary_op(
+                self.module,
+                self.builder,
+                self.context,
+                left,
+                op,
+                right,
+                kind,
+                &self.locals,
+            )),
+
+            Instruction::Unary { op, value, kind } => {
+                Instruction::BasicValueEnum(general::compile_unary_op(
+                    self.module,
+                    self.builder,
+                    self.context,
+                    op,
+                    value,
+                    kind,
+                    &self.locals,
+                    &self.function.unwrap(),
+                    &mut self.diagnostics,
+                ))
             }
 
             Instruction::EntryPoint { body } => {
@@ -285,7 +371,10 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 Instruction::Null
             }
 
-            _ => todo!(),
+            e => {
+                println!("{:?}", e);
+                todo!()
+            }
         }
     }
 

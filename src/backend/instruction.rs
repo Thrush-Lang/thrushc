@@ -3,13 +3,19 @@ use {
     inkwell::values::BasicValueEnum,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum Instruction<'ctx> {
     BasicValueEnum(BasicValueEnum<'ctx>),
     Println(Vec<Instruction<'ctx>>),
     Print(Vec<Instruction<'ctx>>),
     String(String),
     Char(u8),
+    ForLoop {
+        variable: Option<Box<Instruction<'ctx>>>,
+        cond: Option<Box<Instruction<'ctx>>>,
+        actions: Option<Box<Instruction<'ctx>>>,
+        block: Box<Instruction<'ctx>>,
+    },
     Integer(DataTypes, f64),
     Float(DataTypes, f64),
     Block {
@@ -35,6 +41,7 @@ pub enum Instruction<'ctx> {
         kind: DataTypes,
         value: Box<Instruction<'ctx>>,
         line: usize,
+        comptime: bool,
     },
     RefVar {
         name: &'ctx str,
@@ -73,6 +80,7 @@ pub enum Instruction<'ctx> {
     },
     Boolean(bool),
 
+    #[default]
     Null,
 }
 
@@ -96,7 +104,7 @@ impl PartialEq for Instruction<'_> {
     }
 }
 
-impl Instruction<'_> {
+impl<'ctx> Instruction<'ctx> {
     pub fn get_data_type(&self) -> DataTypes {
         match self {
             Instruction::Integer(data_type, _) => match data_type {
@@ -145,6 +153,13 @@ impl Instruction<'_> {
             Instruction::Integer(kind, _) => Some(*kind),
             Instruction::Float(kind, _) => Some(*kind),
             _ => None,
+        }
+    }
+
+    pub fn as_basic_value(&self) -> &BasicValueEnum<'ctx> {
+        match self {
+            Instruction::BasicValueEnum(value) => value,
+            _ => unreachable!(),
         }
     }
 }

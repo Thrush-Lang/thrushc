@@ -8,9 +8,9 @@ This compiler compile target to **LLVM IR** and coming soon to anothers backend 
 
 ## Compiler Dependencies
 
-- **Clang** && **LLVM** 17.0.6 in the future **Thrush Toolchain** located in `%HOME%/.throium/llvm/` or `%APPDATA%/.thorium/llvm/` 
+- **Clang** && **LLVM** 17.0.6 in the future **Thrush Toolchain**, located in `%HOME%/thrushlang/backends/llvm`
 
-## Compiler Requirements for build it
+## External Requirements for build the Compiler
 
 - **Clang** && **LLVM** 17.0.6 (Linux Binaries with statically linked libs)
 

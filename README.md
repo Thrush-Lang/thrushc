@@ -6,6 +6,12 @@
 
 This compiler compile target to **LLVM IR** and coming soon to anothers backend infraestructures; This compile for native **Optimized Machine Code** with object files or executables.
 
-## Compiler Requirements
+## Compiler Dependencies
 
-- **Clang** && **LLVM** 18.1.7 (Linux Binaries)
+- **Clang** && **LLVM** 17.0.6 in the future **Thrush Toolchain** located in `%HOME%/.throium/llvm/` or `%APPDATA%/.thorium/llvm/` 
+
+## Compiler Requirements for build it
+
+- **Clang** && **LLVM** 17.0.6 (Linux Binaries with statically linked libs)
+
+

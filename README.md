@@ -12,6 +12,6 @@ This compiler compile target to **LLVM IR** and coming soon to anothers backend 
 
 ## External Requirements for build the Compiler
 
-- **Clang** && **LLVM** 17.0.2 (Linux Binaries with statically linked libs)
+- **Clang** && **LLVM** 17.0.2 (Linux Binaries with statically linked libraries)
 
 

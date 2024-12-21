@@ -144,7 +144,7 @@ impl Diagnostic {
 }
 
 #[inline]
-pub fn render_panic_message(subject: &str) -> String {
+pub fn create_panic_message(subject: &str) -> String {
     format!(
         "{} {} {}",
         style("PANIC").bold().bright_red(),

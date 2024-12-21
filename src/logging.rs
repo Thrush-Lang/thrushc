@@ -24,7 +24,7 @@ impl LogType {
 pub fn log(ltype: LogType, msg: &str) {
     if ltype == LogType::ERROR {
         io::stderr()
-            .write_all(format!("  \n{} {}\n\n", ltype.to_styled(), style(msg).bold()).as_bytes())
+            .write_all(format!("  {} {}\n  ", ltype.to_styled(), style(msg).bold()).as_bytes())
             .unwrap();
 
         return;

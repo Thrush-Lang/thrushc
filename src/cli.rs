@@ -2,27 +2,31 @@ use {
     super::{
         backend::compiler::options::{CompilerOptions, Linking, Opt},
         constants::TARGETS,
-        BACKEND_COMPILER, NAME,
+        LLVM_BACKEND_COMPILER, NAME,
     },
     inkwell::targets::{CodeModel, RelocMode, TargetMachine, TargetTriple},
     std::{path::PathBuf, process},
     stylic::{style, Color, Stylize},
 };
 
-pub struct CLIParser {
+pub struct Cli {
     pub options: CompilerOptions,
     args: Vec<String>,
 }
 
-impl CLIParser {
-    pub fn new(args: Vec<String>) -> Self {
-        Self {
+impl Cli {
+    pub fn parse(args: Vec<String>) -> Cli {
+        let mut args_parsed: Cli = Self {
             options: CompilerOptions::default(),
             args,
-        }
+        };
+
+        args_parsed._parse();
+
+        args_parsed
     }
 
-    pub fn parse(&mut self) {
+    fn _parse(&mut self) {
         self.args.remove(0);
 
         if self.args.is_empty() {
@@ -61,117 +65,6 @@ impl CLIParser {
                 println!("v{}", env!("CARGO_PKG_VERSION"));
             }
 
-            "native" => {
-                *index += 1;
-
-                if *index >= self.args.len() {
-                    self.report_error(
-                        "Missing native api for thrushc native ---> [native api] <--- [command] command.",
-                    );
-                }
-
-                let native_api: &str = &self.args[self.extract_relative_index(*index)];
-
-                if native_api != "vector" && native_api != "debug" {
-                    self.report_error(&format!(
-                        "Unknown native API: {}",
-                        self.args[self.extract_relative_index(*index)]
-                    ));
-                }
-
-                *index += 1;
-
-                if *index > self.args.len() {
-                    self.report_error(
-                        "Missing subcommand for thrushc native [native api] ---> [subcommand] <--- command.",
-                    );
-                }
-
-                match self.args[self.extract_relative_index(*index)].as_str() {
-                    "restore" => {
-                        self.options.restore_natives_apis = true;
-                        self.options.library = true;
-
-                        if native_api == "vector" {
-                            self.options.restore_vector_api = true;
-                        } else if native_api == "debug" {
-                            self.options.restore_debug_api = true;
-                        }
-
-                        *index += 1;
-                    }
-
-                    _ => {
-                        self.report_error(&format!(
-                            "Unknown subcommand: {}",
-                            self.args[self.extract_relative_index(*index)]
-                        ));
-                    }
-                }
-            }
-
-            "--backend" | "-backend" => {
-                *index += 1;
-
-                if *index > self.args.len() {
-                    self.report_error(
-                        "Missing argument for backend flag. Did you mean --backend \"path\"?",
-                    );
-                }
-
-                let path: PathBuf = PathBuf::from(&self.args[self.extract_relative_index(*index)]);
-
-                if !path.exists() {
-                    self.report_error(&format!(
-                        "The path {} don't exists.",
-                        self.args[self.extract_relative_index(*index)]
-                    ));
-                } else if !path.is_dir() {
-                    self.report_error(&format!(
-                        "The path {} is not a directory.",
-                        self.args[self.extract_relative_index(*index)]
-                    ));
-                } else if !path.ends_with("bin") {
-                    self.report_error(&format!(
-                        "The path to LLVM Toolchain \"{}\" don't ends with 'bin' folder.",
-                        self.args[self.extract_relative_index(*index)]
-                    ));
-                } else if !path.join("clang-18").exists() {
-                    self.report_error(&format!(
-                        "The path to LLVM Toolchain \"{}\" don't contains 'clang-18'.",
-                        self.args[self.extract_relative_index(*index)]
-                    ));
-                } else if !path.join("opt").exists() {
-                    self.report_error(&format!(
-                        "The path to LLVM Toolchain \"{}\" don't contains LLVM Optimizer (opt).",
-                        self.args[self.extract_relative_index(*index)]
-                    ));
-                } else if !path.join("lld").exists() {
-                    self.report_error(&format!(
-                        "The path to LLVM Toolchain \"{}\" don't contains LLVM Linker (lld).",
-                        self.args[self.extract_relative_index(*index)]
-                    ));
-                } else if !path.join("llc").exists() {
-                    self.report_error(&format!(
-                        "The path to LLVM Toolchain \"{}\" don't contains LLVM Static Compiler (llc).",
-                        self.args[self.extract_relative_index(*index)]
-                    ));
-                } else if !path.join("llvm-config").exists() {
-                    self.report_error(&format!(
-                        "The path to LLVM Toolchain \"{}\" don't contains LLVM Configurator (llvm-config).",
-                        self.args[self.extract_relative_index(*index)]
-                    ));
-                }
-
-                BACKEND_COMPILER.lock().unwrap().clear();
-                BACKEND_COMPILER
-                    .lock()
-                    .unwrap()
-                    .push_str(&self.args[self.extract_relative_index(*index)]);
-
-                *index += 1;
-            }
-
             "-o" | "--output" => {
                 *index += 2;
 
@@ -180,6 +73,12 @@ impl CLIParser {
                 }
 
                 self.options.output = self.args[self.extract_relative_index(*index)].to_string();
+            }
+
+            "--delete-built-in-apis-after" | "-delete-built-in-apis-after" => {
+                *index += 1;
+
+                self.options.delete_built_in_apis_after = true;
             }
 
             "-opt" | "--optimization" => {
@@ -332,7 +231,7 @@ impl CLIParser {
 
                 if *index > self.args.len() {
                     self.report_error(&format!(
-                        "Missing Native API specification for \"{}\".",
+                        "Missing built-in API specification for \"{}\".",
                         arg
                     ));
                 }
@@ -348,7 +247,7 @@ impl CLIParser {
                     }
                     _ => {
                         self.report_error(&format!(
-                            "Unknown Native API name: \"{}\".",
+                            "Unknown built-in API name: \"{}\".",
                             self.args[self.extract_relative_index(*index)]
                         ));
                     }
@@ -370,7 +269,7 @@ impl CLIParser {
                 } else if file.extension().is_none() {
                     self.report_error(&format!("\"{}\" does not have extension.", path));
                 } else if file.extension().unwrap() != "th" {
-                    self.report_error(&format!("\"{}\" is not a Thrush Lang file.", path));
+                    self.report_error(&format!("\"{}\" is not a Thrush file.", path));
                 } else if file.file_name().is_none() {
                     self.report_error(&format!("\"{}\" does not have a name.", path));
                 }
@@ -387,20 +286,24 @@ impl CLIParser {
 
                 self.options.file_path = path.to_string();
 
+                if LLVM_BACKEND_COMPILER.is_none() {
+                    self.report_error("LLVM Compiler Toolchain is corrupted or deleted from Thrush Toolchain, follow the below instructions.");
+                }
+
                 NAME.lock().unwrap().clear();
                 NAME.lock()
                     .unwrap()
                     .push_str(file.file_name().unwrap().to_str().unwrap());
             }
 
-            "--backend-args" | "-backend-args" => {
+            "--args" | "-args" => {
                 *index += 1;
 
                 if *index > self.args.len() {
                     self.report_error(&format!("Missing argument for {}", arg));
                 }
 
-                self.options.extra_args =
+                self.options.another_args =
                     self.args[self.extract_relative_index(*index)].to_string();
 
                 *index += 1;
@@ -480,24 +383,7 @@ impl CLIParser {
             style("Print the native target of this machine.").bold()
         );
 
-        println!(
-            "{} ({}) {}",
-            style("•").bold(),
-            style("native [vector] [restore]")
-                .bold()
-                .fg(Color::Rgb(141, 141, 142)),
-            style("Restore a Core Native API of Thrush Compiler.").bold()
-        );
-
         println!("{}", style("\nCompiler Flags:\n").bold());
-
-        println!(
-            "{} ({} | {}) {}",
-            style("•").bold(),
-            style("--backend").bold().fg(Color::Rgb(141, 141, 142)),
-            style("-backend").bold().fg(Color::Rgb(141, 141, 142)),
-            style("Specific the path to the backend compiler to use it (Clang && LLVM).").bold()
-        );
 
         println!(
             "{} ({} | {}) {}",
@@ -545,6 +431,18 @@ impl CLIParser {
             style("--include").bold().fg(Color::Rgb(141, 141, 142)),
             style("-include").bold().fg(Color::Rgb(141, 141, 142)),
             style("Include a Native API Code in the IR.").bold()
+        );
+
+        println!(
+            "{} ({} | {}) {}",
+            style("•").bold(),
+            style("--delete-built-in-apis-after")
+                .bold()
+                .fg(Color::Rgb(141, 141, 142)),
+            style("-delete-built-in-apis-after")
+                .bold()
+                .fg(Color::Rgb(141, 141, 142)),
+            style("Delete Compiler built-in API after the Compilation.").bold()
         );
 
         println!(
@@ -607,12 +505,8 @@ impl CLIParser {
         println!(
             "{} ({} | {}) {}",
             style("•").bold(),
-            style("--backend-args [str]")
-                .bold()
-                .fg(Color::Rgb(141, 141, 142)),
-            style("-backend-args [reloc-mode]")
-                .bold()
-                .fg(Color::Rgb(141, 141, 142)),
+            style("--args [str]").bold().fg(Color::Rgb(141, 141, 142)),
+            style("-args [str]").bold().fg(Color::Rgb(141, 141, 142)),
             style("Pass more arguments to the Backend Compiler.").bold()
         );
 

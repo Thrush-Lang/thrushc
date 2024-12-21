@@ -2,8 +2,8 @@ use {
     super::{
         super::{
             super::{diagnostic::Diagnostic, frontend::lexer::DataTypes},
+            apis::{debug::DebugAPI, vector::VectorAPI},
             instruction::Instruction,
-            natives_apis::{debug::DebugAPI, vector::VectorAPI},
         },
         general,
         locals::CompilerLocals,

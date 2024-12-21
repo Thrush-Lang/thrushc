@@ -8,11 +8,15 @@ authors = ["DevCheckOG [https://github.com/DevCheckOG]"]
 [dependencies]
 stylic = "*"
 ahash = "*"
-llvm-sys = { version = "180.0.0", features = ["force-static"] }
+lazy_static = "*"
+regex = "*"
 inkwell = { version = "0.5.0", features = [
-    "llvm18-0",
-    "llvm18-0-force-static",
-] }
+    "llvm17-0",
+    "llvm17-0-force-static"
+]}
+
+[build-dependencies]
+llvm-sys = { version = "170.2.0", path = "dependencies/llvm-sys.rs-v170.2.0", features = ["force-static"]}
 
 [profile.dev]
 incremental = true

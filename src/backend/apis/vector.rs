@@ -3,10 +3,13 @@ use inkwell::{
     builder::Builder,
     context::Context,
     module::{Linkage, Module},
+    targets::{Target, TargetMachine},
     types::{FunctionType, IntType, StructType},
     values::{FunctionValue, IntValue, PointerValue},
     AddressSpace, IntPredicate,
 };
+
+use crate::backend::{builder::FileBuilder, compiler::options::CompilerOptions};
 
 pub struct VectorAPI<'a, 'ctx> {
     module: &'a Module<'ctx>,
@@ -1642,4 +1645,44 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
         DEFINITION FUNCTIONS (END)
 
     */
+}
+
+pub fn append_vector_api(options: &mut CompilerOptions) {
+    let vector_api_context: Context = Context::create();
+    let vector_api_builder: Builder<'_> = vector_api_context.create_builder();
+    let vector_api_module: Module<'_> = vector_api_context.create_module("vector.th");
+
+    vector_api_module.set_triple(&options.target_triple);
+
+    let machine: TargetMachine = Target::from_triple(&options.target_triple)
+        .unwrap()
+        .create_target_machine(
+            &options.target_triple,
+            "",
+            "",
+            options.optimization.to_llvm_opt(),
+            options.reloc_mode,
+            options.code_model,
+        )
+        .unwrap();
+
+    vector_api_module.set_data_layout(&machine.get_target_data().get_data_layout());
+
+    VectorAPI::include(&vector_api_module, &vector_api_builder, &vector_api_context);
+
+    if options.emit_llvm {
+        vector_api_module.print_to_file("vector.ll").unwrap();
+        return;
+    }
+
+    let previous_library: bool = options.library;
+    let previous_executable: bool = options.executable;
+
+    options.library = true;
+    options.executable = false;
+
+    FileBuilder::new(options, &vector_api_module, "vector.ll", "vector.o").build();
+
+    options.library = previous_library;
+    options.executable = previous_executable;
 }

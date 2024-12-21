@@ -653,7 +653,7 @@ Details:
         {}
 
 {} \n\0",
-                            diagnostic::render_panic_message("Integer / Float Overflow"),
+                            diagnostic::create_panic_message("Integer / Float Overflow"),
                             NAME.lock().unwrap(),
                             line,
                             kind,

@@ -3,9 +3,12 @@ use inkwell::{
     builder::Builder,
     context::Context,
     module::{Linkage, Module},
+    targets::{Target, TargetMachine},
     values::{FunctionValue, PointerValue},
     AddressSpace,
 };
+
+use crate::backend::{builder::FileBuilder, compiler::options::CompilerOptions};
 
 pub struct DebugAPI<'a, 'ctx> {
     module: &'a Module<'ctx>,
@@ -108,4 +111,44 @@ impl<'a, 'ctx> DebugAPI<'a, 'ctx> {
             Some(Linkage::External),
         );
     }
+}
+
+pub fn append_debug_api(options: &mut CompilerOptions) {
+    let debug_api_context: Context = Context::create();
+    let debug_api_builder: Builder<'_> = debug_api_context.create_builder();
+    let debug_api_module: Module<'_> = debug_api_context.create_module("debug.th");
+
+    debug_api_module.set_triple(&options.target_triple);
+
+    let machine: TargetMachine = Target::from_triple(&options.target_triple)
+        .unwrap()
+        .create_target_machine(
+            &options.target_triple,
+            "",
+            "",
+            options.optimization.to_llvm_opt(),
+            options.reloc_mode,
+            options.code_model,
+        )
+        .unwrap();
+
+    debug_api_module.set_data_layout(&machine.get_target_data().get_data_layout());
+
+    DebugAPI::include(&debug_api_module, &debug_api_builder, &debug_api_context);
+
+    if options.emit_llvm {
+        debug_api_module.print_to_file("debug.ll").unwrap();
+        return;
+    }
+
+    let previous_library: bool = options.library;
+    let previous_executable: bool = options.executable;
+
+    options.library = true;
+    options.executable = false;
+
+    FileBuilder::new(options, &debug_api_module, "debug.ll", "debug.o").build();
+
+    options.library = previous_library;
+    options.executable = previous_executable;
 }

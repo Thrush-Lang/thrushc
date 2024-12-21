@@ -32,13 +32,11 @@ pub struct CompilerOptions {
     pub is_main: bool,
     pub include_vector_api: bool,
     pub include_debug_api: bool,
-    pub restore_natives_apis: bool,
-    pub restore_vector_api: bool,
-    pub restore_debug_api: bool,
+    pub delete_built_in_apis_after: bool,
     pub reloc_mode: RelocMode,
     pub code_model: CodeModel,
     pub file_path: String,
-    pub extra_args: String,
+    pub another_args: String,
 }
 
 impl Default for CompilerOptions {
@@ -55,18 +53,17 @@ impl Default for CompilerOptions {
             is_main: false,
             include_vector_api: false,
             include_debug_api: false,
-            restore_natives_apis: false,
-            restore_vector_api: false,
-            restore_debug_api: false,
+            delete_built_in_apis_after: false,
             reloc_mode: RelocMode::Default,
             code_model: CodeModel::Default,
             file_path: String::new(),
-            extra_args: String::new(),
+            another_args: String::new(),
         }
     }
 }
 
 impl Opt {
+    #[inline]
     pub fn to_str(&self, single_slash: bool, double_slash: bool) -> &str {
         match self {
             Opt::None if !single_slash && !double_slash => "O0",
@@ -84,6 +81,27 @@ impl Opt {
             _ if single_slash => "-O0",
             _ if double_slash => "--O0",
             _ => "O0",
+        }
+    }
+
+    #[inline]
+    pub fn to_string(&self, single_slash: bool, double_slash: bool) -> String {
+        match self {
+            Opt::None if !single_slash && !double_slash => String::from("O0"),
+            Opt::Low if !single_slash && !double_slash => String::from("O1"),
+            Opt::Mid if !single_slash && !double_slash => String::from("O2"),
+            Opt::Mcqueen if !single_slash && !double_slash => String::from("O3"),
+            Opt::None if single_slash => String::from("-O0"),
+            Opt::Low if single_slash => String::from("-O1"),
+            Opt::Mid if single_slash => String::from("-O2"),
+            Opt::Mcqueen if single_slash => String::from("-O3"),
+            Opt::None if double_slash => String::from("-O0"),
+            Opt::Low if double_slash => String::from("-O1"),
+            Opt::Mid if double_slash => String::from("-O2"),
+            Opt::Mcqueen if double_slash => String::from("-O3"),
+            _ if single_slash => String::from("-O0"),
+            _ if double_slash => String::from("--O0"),
+            _ => String::from("O0"),
         }
     }
 

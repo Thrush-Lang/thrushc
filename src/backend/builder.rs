@@ -1,36 +1,46 @@
 use {
     super::{
-        super::{logging, BACKEND_COMPILER, NAME},
+        super::{logging, LLVM_BACKEND_COMPILER},
         compiler::options::CompilerOptions,
     },
     inkwell::module::Module,
-    std::{env, fs, path::PathBuf, process::Command},
+    regex::Regex,
+    std::{fs, process::Command},
 };
 
 pub struct FileBuilder<'a, 'ctx> {
     module: &'a Module<'ctx>,
     options: &'a CompilerOptions,
-    arguments: Vec<&'a str>,
-    file: &'a str,
+    arguments: Vec<String>,
+    from: &'a str,
+    output: &'a str,
+    args_regex: Regex,
 }
 
 impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
-    pub fn new(options: &'a CompilerOptions, module: &'a Module<'ctx>, file: &'a str) -> Self {
+    pub fn new(
+        options: &'a CompilerOptions,
+        module: &'a Module<'ctx>,
+        from: &'a str,
+        output: &'a str,
+    ) -> Self {
         Self {
             options,
             module,
             arguments: Vec::new(),
-            file,
+            from,
+            output,
+            args_regex: Regex::new(r"!\((.*?)\)").unwrap(),
         }
     }
 
     pub fn build(mut self) {
         if self.options.emit_llvm {
-            self.module.print_to_file(self.file).unwrap();
+            self.module.print_to_file(self.from).unwrap();
             return;
         }
 
-        self.module.print_to_file(self.file).unwrap();
+        self.module.print_to_file(self.from).unwrap();
 
         if self.options.emit_asm {
             self.emit_asm();
@@ -45,14 +55,12 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
             self.compile_to_library();
         }
 
-        if PathBuf::from(self.file).exists() {
-            fs::remove_file(self.file).unwrap();
-        }
+        let _ = fs::remove_file(self.from);
     }
 
     fn optimization(&self, opt_level: &str) {
         self.handle_error(
-            Command::new(PathBuf::from(BACKEND_COMPILER.lock().unwrap().as_str()).join("opt"))
+            Command::new(LLVM_BACKEND_COMPILER.as_ref().unwrap().join("opt"))
                 .arg(format!("-p={}", opt_level))
                 .arg("-p=globalopt")
                 .arg("-p=globaldce")
@@ -62,127 +70,87 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
                 .arg("-p=strip")
                 .arg("-p=mem2reg")
                 .arg("-p=memcpyopt")
-                .arg(format!("{}.ll", &NAME.lock().unwrap()))
+                .arg(self.from)
                 .arg("-o")
-                .arg(format!("{}.ll", &NAME.lock().unwrap())),
+                .arg(self.from),
         );
     }
 
     fn emit_asm(&mut self) {
-        self.arguments.extend(
-            [
-                self.options.optimization.to_str(true, false),
-                "--asm-verbose",
-                "--filetype=asm",
-                self.file,
-            ]
-            .iter(),
-        );
+        self.arguments.extend([
+            self.options.optimization.to_string(true, false),
+            "--asm-verbose".to_string(),
+            "--filetype=asm".to_string(),
+            self.from.to_string(),
+        ]);
 
-        self.options
-            .extra_args
-            .split_ascii_whitespace()
-            .for_each(|arg| {
-                self.arguments.insert(0, arg.trim());
-            });
+        self.parse_and_build_args();
 
         self.handle_error(
-            Command::new(PathBuf::from(BACKEND_COMPILER.lock().unwrap().as_str()).join("llc"))
-                .args(&self.arguments),
+            Command::new(LLVM_BACKEND_COMPILER.as_ref().unwrap().join("llc")).args(&self.arguments),
         );
     }
 
     fn compile_to_executable(&mut self) {
-        let home: String = match env::consts::OS {
-            "windows" => env::var("APPDATA").unwrap(),
-            "linux" => env::var("HOME").unwrap(),
-            _ => {
-                logging::log(logging::LogType::ERROR, "Compilation from unsupported OS.");
-                return;
-            }
-        };
-
-        let home: PathBuf = PathBuf::from(&home);
-
-        if !home.exists() {
-            logging::log(
-                logging::LogType::ERROR,
-                "The home of your system don't exists.",
-            );
-            return;
-        } else if !home.join(".thrushc").exists() {
-            logging::log(
-                    logging::LogType::ERROR,
-                    "The home folder for thrush lang don't exists. Use the command 'throium compiler restore' to restore it.",
-                );
-            return;
-        } else if !home.join(".thrushc/natives/").exists() {
-            logging::log(
-                    logging::LogType::ERROR,
-                    "The folder of thrushc with the the native apis don't exists. Use the command 'throium natives restore' to restore it.",
-                );
-            return;
-        } else if !home.join(".thrushc/natives/vector.o").exists()
-            && !self.options.restore_natives_apis
-        {
-            logging::log(
-                    logging::LogType::ERROR,
-                    "The file with the Vector Native API don't exists. Use the command 'throium natives restore' to restore it.",
-                );
-            return;
-        } else if !home.join(".thrushc/natives/debug.o").exists()
-            && !self.options.restore_natives_apis
-        {
-            logging::log(
-                    logging::LogType::ERROR,
-                    "The file with the Debug Native API don't exists. Use the command 'throium natives restore' to restore it.",
-                );
-            return;
-        }
-
-        let mut default_args: Vec<&'a str> = Vec::from([
-            "-opaque-pointers",
-            self.options.linking.to_str(),
-            "-ffast-math",
-            self.file,
+        let mut default_args: Vec<String> = Vec::from([
+            "-opaque-pointers".to_string(),
+            self.options.linking.to_str().to_string(),
+            "-ffast-math".to_string(),
+            self.from.to_string(),
         ]);
 
-        self.options.extra_args.split(";").for_each(|arg| {
-            default_args.push(arg.trim());
-        });
+        self.parse_and_build_args();
 
-        default_args.extend(["-o", &self.options.output]);
+        default_args.extend(["-o".to_string(), self.output.to_string()]);
 
-        self.arguments.extend(default_args.iter());
+        self.arguments.extend(default_args);
 
         self.handle_error(
-            Command::new(PathBuf::from(BACKEND_COMPILER.lock().unwrap().as_str()).join("clang-18"))
+            Command::new(LLVM_BACKEND_COMPILER.as_ref().unwrap().join("clang-17"))
                 .args(&self.arguments),
         );
     }
 
     fn compile_to_library(&mut self) {
-        self.arguments.extend(
-            [
-                "-opaque-pointers",
-                self.options.linking.to_str(),
-                "-ffast-math",
-                "-c",
-                self.file,
-            ]
-            .iter(),
-        );
+        self.arguments.extend([
+            "-opaque-pointers".to_string(),
+            self.options.linking.to_str().to_string(),
+            "-ffast-math".to_string(),
+            "-c".to_string(),
+            self.from.to_string(),
+        ]);
 
-        self.options.extra_args.split(";").for_each(|arg| {
-            self.arguments.push(arg.trim());
-        });
+        self.parse_and_build_args();
 
-        self.arguments.extend(["-o", &self.options.output]);
+        self.arguments
+            .extend(["-o".to_string(), self.output.to_string()]);
 
         self.handle_error(
-            Command::new(PathBuf::from(BACKEND_COMPILER.lock().unwrap().as_str()).join("clang-18"))
+            Command::new(LLVM_BACKEND_COMPILER.as_ref().unwrap().join("clang-17"))
                 .args(&self.arguments),
         );
+    }
+
+    fn parse_and_build_args(&mut self) {
+        let module_name: &str = self.module.get_name().to_str().unwrap();
+
+        let extra_args = self.options.another_args.split(";").filter_map(|arg| {
+            if let Some(cap) = self.args_regex.captures(arg) {
+                if let Some(matched) = cap.get(1) {
+                    let files: Vec<&str> = matched.as_str().split(',').map(str::trim).collect();
+
+                    if files.contains(&module_name) {
+                        return None;
+                    }
+
+                    return Some(arg.replace(&format!("!({})", matched.as_str()), ""));
+                }
+            }
+
+            Some(arg.to_string())
+        });
+
+        self.arguments.extend(extra_args);
     }
 
     #[inline]

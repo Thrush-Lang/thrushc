@@ -8,12 +8,12 @@ mod logging;
 
 use {
     backend::{
+        apis::{debug, vector},
         builder::FileBuilder,
         compiler::Compiler,
         instruction::Instruction,
-        natives_apis::{debug::DebugAPI, vector::VectorAPI},
     },
-    cli::CLIParser,
+    cli::Cli,
     frontend::{
         lexer::{Lexer, Token},
         parser::Parser,
@@ -25,88 +25,144 @@ use {
         targets::{InitializationConfig, Target, TargetMachine},
         OptimizationLevel,
     },
-    std::{env, fs::read_to_string, sync::Mutex, time::Instant},
+    lazy_static::lazy_static,
+    std::{
+        env,
+        fs::{self, read_to_string},
+        path::PathBuf,
+        process,
+        sync::Mutex,
+        time::Instant,
+    },
     stylic::{style, Color, Stylize},
 };
 
+lazy_static! {
+    static ref HOME: Option<PathBuf> = {
+        match env::consts::OS {
+            "windows" => Some(PathBuf::from(env::var("APPDATA").unwrap())),
+            "linux" => Some(PathBuf::from(env::var("HOME").unwrap())),
+            _ => None,
+        }
+    };
+    static ref LLVM_BACKEND_COMPILER: Option<PathBuf> = {
+        if HOME.is_none() {
+            return None;
+        }
+
+        if !HOME.as_ref().unwrap().join("thrushlang").exists()
+            || !HOME.as_ref().unwrap().join("thrushlang/backends/").exists()
+            || !HOME
+                .as_ref()
+                .unwrap()
+                .join("thrushlang/backends/llvm")
+                .exists()
+            || !HOME
+                .as_ref()
+                .unwrap()
+                .join("thrushlang/backends/llvm/backend")
+                .exists()
+            || !HOME
+                .as_ref()
+                .unwrap()
+                .join("thrushlang/backends/llvm/backend/bin")
+                .exists()
+        {
+            logging::log(
+                logging::LogType::ERROR,
+                &format!("LLVM Toolchain was corrupted from Thrush Toolchain, re-install the entire toolchain via \"thorium install {}\".", env::consts::OS),
+            );
+
+            return None;
+        }
+
+        if !HOME
+            .as_ref()
+            .unwrap()
+            .join("thrushlang/backends/llvm/backend/bin/clang-17")
+            .exists()
+        {
+            logging::log(
+                logging::LogType::ERROR,
+                &format!("Clang-17 don't exists in Thrush Toolchain, re-install the entire toolchain via \"thorium install {}\".", env::consts::OS),
+            );
+
+            return None;
+        } else if !HOME
+            .as_ref()
+            .unwrap()
+            .join("thrushlang/backends/llvm/backend/bin/opt")
+            .exists()
+        {
+            logging::log(
+                logging::LogType::ERROR,
+                &format!("LLVM Optimizator don't exists in Thrush Toolchain, re-install the entire toolchain via \"thorium install {}\".", env::consts::OS),
+            );
+
+            return None;
+        } else if !HOME
+            .as_ref()
+            .unwrap()
+            .join("thrushlang/backends/llvm/backend/bin/llc")
+            .exists()
+        {
+            logging::log(
+                logging::LogType::ERROR,
+                &format!("LLVM Static Compiler don't exists in Thrush Toolchain, re-install the entire toolchain via \"thorium install {}\".", env::consts::OS),
+            );
+
+            return None;
+        } else if !HOME
+            .as_ref()
+            .unwrap()
+            .join("thrushlang/backends/llvm/backend/bin/llvm-config")
+            .exists()
+        {
+            logging::log(
+                logging::LogType::ERROR,
+                &format!("LLVM Configurator don't exists in Thrush Toolchain, re-install the entire toolchain via \"thorium install {}\".", env::consts::OS),
+            );
+
+            return None;
+        }
+
+        Some(
+            HOME.as_ref()
+                .unwrap()
+                .join("thrushlang/backends/llvm/backend/bin/"),
+        )
+    };
+}
+
 pub static NAME: Mutex<String> = Mutex::new(String::new());
-pub static BACKEND_COMPILER: Mutex<String> = Mutex::new(String::new());
 
 fn main() {
-    Target::initialize_native(&InitializationConfig::default()).unwrap();
-
-    let mut cli: CLIParser = CLIParser::new(env::args().collect());
-    cli.parse();
-
-    if BACKEND_COMPILER.lock().unwrap().is_empty() {
+    if !["linux", "windows"].contains(&env::consts::OS) {
         logging::log(
             logging::LogType::ERROR,
-            "The Backend Compiler is not set. Use the flag `thrushc --backend \"PATH\"` to set it.",
+            "Compilation from Unsopported Operating System. Only Linux and Windows are supported.",
         );
 
-        return;
+        process::exit(1);
     }
 
-    if cli.options.restore_natives_apis {
-        let context: Context = Context::create();
-        let builder: Builder<'_> = context.create_builder();
+    Target::initialize_native(&InitializationConfig::default()).unwrap();
 
-        cli.options.output = if cli.options.restore_vector_api {
-            "vector.o".to_string()
-        } else if cli.options.restore_debug_api {
-            "debug.o".to_string()
-        } else {
-            "native.o".to_string()
-        };
-
-        let module: Module<'_> = context.create_module(&cli.options.output);
-
-        module.set_triple(&cli.options.target_triple);
-
-        let opt: OptimizationLevel = cli.options.optimization.to_llvm_opt();
-
-        let machine: TargetMachine = Target::from_triple(&cli.options.target_triple)
-            .unwrap()
-            .create_target_machine(
-                &cli.options.target_triple,
-                "",
-                "",
-                opt,
-                cli.options.reloc_mode,
-                cli.options.code_model,
-            )
-            .unwrap();
-
-        module.set_data_layout(&machine.get_target_data().get_data_layout());
-
-        if cli.options.restore_vector_api {
-            VectorAPI::include(&module, &builder, &context);
-        } else if cli.options.restore_debug_api {
-            DebugAPI::include(&module, &builder, &context);
-        }
-
-        if cli.options.emit_llvm {
-            module
-                .print_to_file(format!("{}.ll", cli.options.output))
-                .unwrap();
-            return;
-        }
-
-        FileBuilder::new(
-            &cli.options,
-            &module,
-            &format!("{}.ll", &NAME.lock().unwrap()),
-        )
-        .build();
-
-        return;
-    }
+    let mut cli: Cli = Cli::parse(env::args().collect());
 
     println!(
         "{} {}",
         style("Compiling").bold().fg(Color::Rgb(141, 141, 142)),
         cli.options.file_path
     );
+
+    if !cli.options.include_vector_api {
+        vector::append_vector_api(&mut cli.options);
+    }
+
+    if !cli.options.include_debug_api {
+        debug::append_debug_api(&mut cli.options);
+    }
 
     let content: String = read_to_string(&cli.options.file_path).unwrap();
 
@@ -122,7 +178,7 @@ fn main() {
 
     let start_time: Instant = Instant::now();
 
-    println!("{:?}", instructions);
+    // println!("{:?}", instructions);
 
     module.set_triple(&cli.options.target_triple);
 
@@ -148,11 +204,17 @@ fn main() {
         &cli.options,
         &module,
         &format!("{}.ll", &NAME.lock().unwrap()),
+        &cli.options.output,
     )
     .build();
 
+    if cli.options.delete_built_in_apis_after {
+        let _ = fs::remove_file("vector.o");
+        let _ = fs::remove_file("debug.o");
+    }
+
     println!(
-        "{} {} {}",
+        "\r{} {} {}",
         style("Finished").bold().fg(Color::Rgb(141, 141, 142)),
         cli.options.file_path,
         style(&format!(

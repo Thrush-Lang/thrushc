@@ -35,7 +35,7 @@ pub struct Parser<'instr, 'a> {
     errors: Vec<ThrushError>,
     tokens: &'instr [Token],
     options: &'a CompilerOptions,
-    function: u16,
+    in_function: bool,
     ret: Option<DataTypes>,
     current: usize,
     globals: HashMap<&'instr str, DataTypes>,
@@ -55,7 +55,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             options,
             current: 0,
             ret: None,
-            function: 0,
+            in_function: false,
             globals: HashMap::new(),
             locals: vec![HashMap::new()],
             scope: 0,
@@ -107,18 +107,36 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             TokenKind::Public => Ok(self.public()?),
             TokenKind::Var => Ok(self.variable(false)?),
             TokenKind::For => Ok(self.for_loop()?),
-            _ => Ok(self.expr()?),
+            _ => Ok(self.expression()?),
         }
     }
 
     fn for_loop(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         self.only_advance()?;
 
+        let start_line: usize = self.previous().line;
+
         let variable: Instruction<'instr> = self.variable(false)?;
 
-        let cond: Instruction<'instr> = self.expr()?;
+        let cond: Instruction<'instr> = self.expression()?;
 
-        let actions: Instruction<'instr> = self.expr()?;
+        self.consume(
+            TokenKind::SemiColon,
+            ThrushErrorKind::SyntaxError,
+            String::from("Syntax Error"),
+            String::from("Expected ';'."),
+            start_line,
+        )?;
+
+        let actions: Instruction<'instr> = self.expression()?;
+
+        self.consume(
+            TokenKind::SemiColon,
+            ThrushErrorKind::SyntaxError,
+            String::from("Syntax Error"),
+            String::from("Expected ';'."),
+            start_line,
+        )?;
 
         let mut variable_clone: Instruction<'instr> = variable.clone();
 
@@ -144,6 +162,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             ThrushErrorKind::SyntaxError,
             String::from("Expected variable name"),
             String::from("Expected var (name)."),
+            self.previous().line,
         )?;
 
         if self.peek().kind == TokenKind::SemiColon {
@@ -161,6 +180,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 ThrushErrorKind::SyntaxError,
                 String::from("Expected variable type indicator"),
                 String::from("Expected `var name --> : <-- type = value;`."),
+                name.line,
             )?;
         }
 
@@ -215,6 +235,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 ThrushErrorKind::SyntaxError,
                 String::from("Syntax Error"),
                 String::from("Expected ';'."),
+                name.line,
             )?;
 
             self.define_local(
@@ -236,6 +257,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             ThrushErrorKind::SyntaxError,
             String::from("Syntax Error"),
             String::from("Expected '=' for the variable definition."),
+            name.line,
         )?;
 
         let mut value: Instruction<'instr> = self.parse()?;
@@ -266,6 +288,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from("Expected ';'."),
+                            name.line,
                         )?;
 
                         return Err(ThrushError::Parse(
@@ -305,6 +328,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from("Expected ';'."),
+                            name.line,
                         )?;
 
                         return Err(ThrushError::Parse(
@@ -327,6 +351,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from("Expected ';'."),
+                            name.line,
                         )?;
 
                         return Err(ThrushError::Parse(
@@ -349,6 +374,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from("Expected ';'."),
+                            name.line,
                         )?;
 
                         return Err(ThrushError::Parse(
@@ -371,6 +397,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from("Expected ';'."),
+                            name.line,
                         )?;
 
                         return Err(ThrushError::Parse(
@@ -395,6 +422,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from("Expected ';'."),
+                            name.line,
                         )?;
 
                         return Err(ThrushError::Parse(
@@ -434,6 +462,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from("Expected ';'."),
+                            name.line,
                         )?;
 
                         return Err(ThrushError::Parse(
@@ -484,7 +513,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             }
         }
 
-        let variable: Instruction<'_> = if kind.as_ref().is_none() {
+        let var: Instruction<'_> = if kind.as_ref().is_none() {
             Instruction::Var {
                 name: name.lexeme.as_ref().unwrap(),
                 kind: value.get_data_type(),
@@ -504,14 +533,18 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
         self.define_local(
             name.lexeme.as_ref().unwrap(),
-            (variable.get_kind().unwrap(), false, false, 0),
+            (var.get_kind().unwrap(), false, false, 0),
         );
 
-        if self.match_token(TokenKind::SemiColon)? {
-            self.only_advance()?;
-        }
+        self.consume(
+            TokenKind::SemiColon,
+            ThrushErrorKind::SyntaxError,
+            String::from("Syntax Error"),
+            String::from("Expected ';'."),
+            name.line,
+        )?;
 
-        Ok(variable)
+        Ok(var)
     }
 
     fn public(&mut self) -> Result<Instruction<'instr>, ThrushError> {
@@ -526,7 +559,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     fn ret(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         self.only_advance()?;
 
-        if self.function == 0 {
+        if !self.in_function {
             return Err(ThrushError::Parse(
                 ThrushErrorKind::SyntaxError,
                 String::from("Syntax Error"),
@@ -541,6 +574,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 ThrushErrorKind::SyntaxError,
                 String::from("Syntax Error"),
                 String::from("Expected ';'."),
+                self.previous().line,
             )?;
 
             return Ok(Instruction::Return(Box::new(Instruction::Null)));
@@ -548,35 +582,14 @@ impl<'instr, 'a> Parser<'instr, 'a> {
 
         let value: Instruction<'instr> = self.parse()?;
 
-        match &value {
-            Instruction::Integer(kind, _) => match kind {
-                DataTypes::U8 => self.ret = Some(DataTypes::U8),
-                DataTypes::U16 => self.ret = Some(DataTypes::U16),
-                DataTypes::U32 => self.ret = Some(DataTypes::U32),
-                DataTypes::U64 => self.ret = Some(DataTypes::U64),
-
-                DataTypes::I8 => self.ret = Some(DataTypes::I8),
-                DataTypes::I16 => self.ret = Some(DataTypes::I16),
-                DataTypes::I32 => self.ret = Some(DataTypes::I32),
-                DataTypes::I64 => self.ret = Some(DataTypes::I64),
-
-                DataTypes::F32 => self.ret = Some(DataTypes::F32),
-                DataTypes::F64 => self.ret = Some(DataTypes::F64),
-
-                _ => unreachable!(),
-            },
-
-            Instruction::String(_) => self.ret = Some(DataTypes::String),
-            Instruction::Boolean(_) => self.ret = Some(DataTypes::Bool),
-
-            _ => unreachable!(),
-        }
+        self.ret = Some(value.get_data_type());
 
         self.consume(
             TokenKind::SemiColon,
             ThrushErrorKind::SyntaxError,
             String::from("Syntax Error"),
             String::from("Expected ';'."),
+            self.previous().line,
         )?;
 
         Ok(Instruction::Return(Box::new(value)))
@@ -636,13 +649,14 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             ));
         }
 
-        self.begin_function();
+        self.in_function = true;
 
         let name: &'instr Token = self.consume(
             TokenKind::Identifier,
             ThrushErrorKind::SyntaxError,
             String::from("Expected function name"),
             String::from("Expected fn < name >."),
+            self.previous().line,
         )?;
 
         if name.lexeme.as_ref().unwrap() == "main" && self.options.is_main {
@@ -660,6 +674,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 ThrushErrorKind::SyntaxError,
                 String::from("Syntax Error"),
                 String::from("Expected '('."),
+                name.line,
             )?;
 
             self.consume(
@@ -667,6 +682,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 ThrushErrorKind::SyntaxError,
                 String::from("Syntax Error"),
                 String::from("Expected ')'."),
+                name.line,
             )?;
 
             if self.peek().kind != TokenKind::LBrace {
@@ -699,6 +715,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             ThrushErrorKind::SyntaxError,
             String::from("Syntax Error"),
             String::from("Expected '('."),
+            name.line,
         )?;
 
         let mut params: Vec<Instruction> = Vec::with_capacity(8);
@@ -762,6 +779,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 ThrushErrorKind::SyntaxError,
                 String::from("Syntax Error"),
                 String::from("Missing return type. Expected ':' followed by return type."),
+                name.line,
             )?;
         }
 
@@ -798,7 +816,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             }
         }
 
-        self.end_function();
+        self.in_function = false;
 
         match &return_kind {
             Some(kind) => {
@@ -822,11 +840,12 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     fn print(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         self.only_advance()?;
 
-        self.consume(
+        let start: &Token = self.consume(
             TokenKind::LParen,
             ThrushErrorKind::SyntaxError,
             String::from("Syntax Error"),
             String::from("Expected '('."),
+            self.previous().line,
         )?;
 
         let mut types: Vec<DataTypes> = Vec::with_capacity(24);
@@ -846,7 +865,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 ));
             }
 
-            let expr: Instruction<'instr> = self.expr()?;
+            let expr: Instruction<'instr> = self.expression()?;
 
             if !args.is_empty() {
                 types.push(expr.get_data_type());
@@ -869,6 +888,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     ThrushErrorKind::SyntaxError,
                     String::from("Syntax Error"),
                     String::from("Expected ';'."),
+                    start.line,
                 )?;
 
                 return Err(ThrushError::Parse(
@@ -877,7 +897,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     String::from(
                         "Expected at least 2 arguments for 'println' call. Like 'print(`%d`, 2);'",
                     ),
-                    self.previous().line,
+                    start.line,
                 ));
             } else if types.len() != args.iter().skip(1).collect::<Vec<_>>().len() {
                 self.consume(
@@ -885,6 +905,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     ThrushErrorKind::SyntaxError,
                     String::from("Syntax Error"),
                     String::from("Expected ';'."),
+                    start.line,
                 )?;
 
                 return Err(ThrushError::Parse(
@@ -913,6 +934,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     ThrushErrorKind::SyntaxError,
                     String::from("Syntax Error"),
                     String::from("Expected ';'."),
+                    start.line,
                 )?;
 
                 return Err(ThrushError::Parse(
@@ -931,6 +953,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from("Expected ';'."),
+                            start.line,
                         )?;
 
                         return Err(ThrushError::Parse(
@@ -947,6 +970,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from("Expected ';'."),
+                            start.line,
                         )?;
 
                         return Err(ThrushError::Parse(
@@ -965,6 +989,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from("Expected ';'."),
+                            start.line,
                         )?;
 
                         return Err(ThrushError::Parse(
@@ -1011,6 +1036,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             ThrushErrorKind::SyntaxError,
             String::from("Syntax Error"),
             String::from("Expected ';'."),
+            start.line,
         )?;
 
         args.iter().try_for_each(|arg| match arg {
@@ -1037,11 +1063,12 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     fn println(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         self.only_advance()?;
 
-        self.consume(
+        let start: &Token = self.consume(
             TokenKind::LParen,
             ThrushErrorKind::SyntaxError,
             String::from("Syntax Error"),
             String::from("Expected '('."),
+            self.previous().line,
         )?;
 
         let mut types: Vec<DataTypes> = Vec::with_capacity(24);
@@ -1061,7 +1088,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 ));
             }
 
-            let expr: Instruction<'_> = match self.expr()? {
+            let expr: Instruction<'_> = match self.expression()? {
                 Instruction::String(str) => {
                     if args.len() > 1 {
                         types.push(DataTypes::String);
@@ -1094,6 +1121,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     ThrushErrorKind::SyntaxError,
                     String::from("Syntax Error"),
                     String::from("Expected ';'."),
+                    start.line,
                 )?;
 
                 return Err(ThrushError::Parse(
@@ -1111,6 +1139,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     ThrushErrorKind::SyntaxError,
                     String::from("Syntax Error"),
                     String::from("Expected ';'."),
+                    start.line,
                 )?;
 
                 return Err(ThrushError::Parse(
@@ -1139,6 +1168,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     ThrushErrorKind::SyntaxError,
                     String::from("Syntax Error"),
                     String::from("Expected ';'."),
+                    start.line,
                 )?;
 
                 return Err(ThrushError::Parse(
@@ -1157,6 +1187,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from("Expected ';'."),
+                            start.line,
                         )?;
 
                         return Err(ThrushError::Parse(
@@ -1173,6 +1204,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from("Expected ';'."),
+                            start.line,
                         )?;
 
                         return Err(ThrushError::Parse(
@@ -1191,6 +1223,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from("Expected ';'."),
+                            start.line,
                         )?;
 
                         return Err(ThrushError::Parse(
@@ -1237,13 +1270,10 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             ThrushErrorKind::SyntaxError,
             String::from("Syntax Error"),
             String::from("Expected ';'."),
+            start.line,
         )?;
 
         Ok(Instruction::Println(args))
-    }
-
-    fn expr(&mut self) -> Result<Instruction<'instr>, ThrushError> {
-        self.expression()
     }
 
     fn expression(&mut self) -> Result<Instruction<'instr>, ThrushError> {
@@ -1256,10 +1286,6 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 }
             });
         });
-
-        if self.peek().kind == TokenKind::SemiColon {
-            self.only_advance()?;
-        }
 
         Ok(instr)
     }
@@ -1439,6 +1465,8 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     fn primary(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         let primary: Instruction = match &self.peek().kind {
             TokenKind::LParen => {
+                let start_line: usize = self.peek().line;
+
                 self.only_advance()?;
 
                 let instr: Instruction<'instr> = self.expression()?;
@@ -1448,6 +1476,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                     ThrushErrorKind::SyntaxError,
                     String::from("Syntax Error"),
                     String::from("Expected ')'."),
+                    start_line,
                 )?;
 
                 return Ok(Instruction::Group {
@@ -1527,6 +1556,8 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                 }
 
                 TokenKind::Identifier => {
+                    let start_line: usize = self.peek().line;
+
                     self.only_advance()?;
 
                     let var: (DataTypes, bool) =
@@ -1540,6 +1571,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from("Expected '['."),
+                            start_line,
                         )?;
 
                         let expr: Instruction<'instr> = self.primary()?;
@@ -1549,6 +1581,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             ThrushErrorKind::SyntaxError,
                             String::from("Syntax Error"),
                             String::from("Expected ']'."),
+                            start_line,
                         )?;
 
                         if var.1 {
@@ -1588,7 +1621,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                         let name: &str = self.previous().lexeme.as_ref().unwrap();
                         self.only_advance()?;
 
-                        let expr: Instruction<'instr> = self.expr()?;
+                        let expr: Instruction<'instr> = self.expression()?;
 
                         if expr.get_data_type() != var.0
                             && VALID_INTEGER_TYPES.contains(&var.0)
@@ -1649,10 +1682,6 @@ impl<'instr, 'a> Parser<'instr, 'a> {
                             kind: DataTypes::Integer,
                         };
 
-                        if self.peek().kind == TokenKind::SemiColon {
-                            self.only_advance()?;
-                        }
-
                         return Ok(expr);
                     }
 
@@ -1690,17 +1719,13 @@ impl<'instr, 'a> Parser<'instr, 'a> {
         error_kind: ThrushErrorKind,
         error_title: String,
         help: String,
+        line: usize,
     ) -> Result<&'instr Token, ThrushError> {
         if self.peek().kind == kind {
             return self.advance();
         }
 
-        Err(ThrushError::Parse(
-            error_kind,
-            error_title,
-            help,
-            self.peek().line,
-        ))
+        Err(ThrushError::Parse(error_kind, error_title, help, line))
     }
 
     #[inline]
@@ -1753,16 +1778,6 @@ impl<'instr, 'a> Parser<'instr, 'a> {
     fn end_scope(&mut self) {
         self.scope -= 1;
         self.locals.pop();
-    }
-
-    #[inline]
-    fn begin_function(&mut self) {
-        self.function += 1;
-    }
-
-    #[inline]
-    fn end_function(&mut self) {
-        self.function -= 1;
     }
 
     fn match_token(&mut self, kind: TokenKind) -> Result<bool, ThrushError> {

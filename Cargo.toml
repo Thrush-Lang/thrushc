@@ -6,17 +6,17 @@ edition = "2021"
 authors = ["DevCheckOG [https://github.com/DevCheckOG]"]
 
 [dependencies]
-stylic = "*"
-ahash = "*"
-lazy_static = "*"
-regex = "*"
+stylic = "0.2.3"
+ahash = "0.8.11"
+lazy_static = "1.5.0"
+regex = "1.11.1"
 inkwell = { version = "0.5.0", features = [
     "llvm17-0",
     "llvm17-0-force-static"
 ]}
 
 [build-dependencies]
-llvm-sys = { version = "170.2.0", path = "dependencies/llvm-sys.rs-v170.2.0", features = ["force-static"]}
+llvm-sys = { version = "170.2.0", path = "dependencies/llvm-sys-v170.2.0", features = ["force-static"]}
 
 [profile.dev]
 incremental = true

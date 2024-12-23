@@ -1681,7 +1681,7 @@ pub fn append_vector_api(options: &mut CompilerOptions) {
     options.library = true;
     options.executable = false;
 
-    FileBuilder::new(options, &vector_api_module, "vector.ll", "vector.o").build();
+    FileBuilder::new(options, &vector_api_module, "vector.bc", "vector.o").build();
 
     options.library = previous_library;
     options.executable = previous_executable;

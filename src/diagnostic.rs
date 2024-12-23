@@ -7,7 +7,7 @@ use {
         fs::File,
         io::{BufRead, BufReader},
     },
-    stylic::{style, Color, Stylize},
+    stylic::{style, Stylize},
 };
 
 #[derive(Debug)]
@@ -103,7 +103,7 @@ impl Diagnostic {
         };
 
         self.buffer.push_str("  ");
-        self.drawer.push_str(&format!("{} | ", line));
+        self.drawer.push_str(&format!("{} | ^ ", line));
         self.buffer.push_str(&format!("{}\n", content));
 
         println!("|\n|");

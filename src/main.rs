@@ -174,7 +174,7 @@ fn main() {
 
     let context: Context = Context::create();
     let builder: Builder<'_> = context.create_builder();
-    let module: Module<'_> = context.create_module(&cli.options.output);
+    let module: Module<'_> = context.create_module(&NAME.lock().unwrap());
 
     let start_time: Instant = Instant::now();
 

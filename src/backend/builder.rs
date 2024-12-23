@@ -5,7 +5,7 @@ use {
     },
     inkwell::module::Module,
     regex::Regex,
-    std::{fs, process::Command},
+    std::{fs, path::Path, process::Command},
 };
 
 pub struct FileBuilder<'a, 'ctx> {
@@ -40,7 +40,7 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
             return;
         }
 
-        self.module.print_to_file(self.from).unwrap();
+        self.module.write_bitcode_to_path(Path::new(self.from));
 
         if self.options.emit_asm {
             self.emit_asm();
@@ -66,10 +66,15 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
                 .arg("-p=globaldce")
                 .arg("-p=dce")
                 .arg("-p=instcombine")
+                .arg("-p=agressive-instcombine")
+                .arg("-p=loop-deletion")
+                .arg("-p=loop-simplify")
                 .arg("-p=strip-dead-prototypes")
+                .arg("-p=strip-dead-debug-info")
                 .arg("-p=strip")
                 .arg("-p=mem2reg")
                 .arg("-p=memcpyopt")
+                .arg("-p=inline")
                 .arg(self.from)
                 .arg("-o")
                 .arg(self.from),
@@ -78,6 +83,7 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
 
     fn emit_asm(&mut self) {
         self.arguments.extend([
+            "-v".to_string(),
             self.options.optimization.to_string(true, false),
             "--asm-verbose".to_string(),
             "--filetype=asm".to_string(),
@@ -92,7 +98,8 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
     }
 
     fn compile_to_executable(&mut self) {
-        let mut default_args: Vec<String> = Vec::from([
+        self.arguments.extend([
+            "-v".to_string(),
             "-opaque-pointers".to_string(),
             self.options.linking.to_str().to_string(),
             "-ffast-math".to_string(),
@@ -101,9 +108,8 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
 
         self.parse_and_build_args();
 
-        default_args.extend(["-o".to_string(), self.output.to_string()]);
-
-        self.arguments.extend(default_args);
+        self.arguments
+            .extend(["-o".to_string(), self.output.to_string()]);
 
         self.handle_error(
             Command::new(LLVM_BACKEND_COMPILER.as_ref().unwrap().join("clang-17"))
@@ -113,6 +119,7 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
 
     fn compile_to_library(&mut self) {
         self.arguments.extend([
+            "-v".to_string(),
             "-opaque-pointers".to_string(),
             self.options.linking.to_str().to_string(),
             "-ffast-math".to_string(),

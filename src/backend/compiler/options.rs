@@ -14,8 +14,8 @@ pub enum Opt {
 
 #[derive(Default, Debug, PartialEq)]
 pub enum Linking {
-    #[default]
     Static,
+    #[default]
     Dynamic,
 }
 

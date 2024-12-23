@@ -147,7 +147,7 @@ pub fn append_debug_api(options: &mut CompilerOptions) {
     options.library = true;
     options.executable = false;
 
-    FileBuilder::new(options, &debug_api_module, "debug.ll", "debug.o").build();
+    FileBuilder::new(options, &debug_api_module, "debug.bc", "debug.o").build();
 
     options.library = previous_library;
     options.executable = previous_executable;

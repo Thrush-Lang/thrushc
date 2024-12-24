@@ -10,6 +10,7 @@ use {
     codegen::Codegen,
     inkwell::{builder::Builder, context::Context, module::Module},
     options::CompilerOptions,
+    options::ThrushFile,
 };
 
 pub struct Compiler;
@@ -22,7 +23,8 @@ impl<'a, 'ctx> Compiler {
         context: &'ctx Context,
         options: &'a CompilerOptions,
         instructions: &'ctx [Instruction<'ctx>],
+        file: &ThrushFile,
     ) {
-        Codegen::gen(module, builder, context, options, instructions);
+        Codegen::gen(module, builder, context, options, instructions, file);
     }
 }

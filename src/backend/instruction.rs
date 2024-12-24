@@ -107,29 +107,8 @@ impl PartialEq for Instruction<'_> {
 impl<'ctx> Instruction<'ctx> {
     pub fn get_data_type(&self) -> DataTypes {
         match self {
-            Instruction::Integer(data_type, _) => match data_type {
-                DataTypes::U8 => DataTypes::U8,
-                DataTypes::U16 => DataTypes::U16,
-                DataTypes::U32 => DataTypes::U32,
-                DataTypes::U64 => DataTypes::U64,
-
-                DataTypes::I8 => DataTypes::I8,
-                DataTypes::I16 => DataTypes::I16,
-                DataTypes::I32 => DataTypes::I32,
-                DataTypes::I64 => DataTypes::I64,
-
-                DataTypes::F32 => DataTypes::F32,
-                DataTypes::F64 => DataTypes::F64,
-
-                _ => unreachable!(),
-            },
-
-            Instruction::Float(data_type, _) => match data_type {
-                DataTypes::F32 => DataTypes::F32,
-                DataTypes::F64 => DataTypes::F64,
-                _ => unreachable!(),
-            },
-
+            Instruction::Integer(data_type, _) => *data_type,
+            Instruction::Float(data_type, _) => *data_type,
             Instruction::String(_) => DataTypes::String,
             Instruction::Boolean(_) => DataTypes::Bool,
             Instruction::Char(_) => DataTypes::Char,

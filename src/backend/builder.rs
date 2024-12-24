@@ -1,67 +1,91 @@
+#![allow(clippy::upper_case_acronyms)]
+
 use {
     super::{
         super::{logging, LLVM_BACKEND_COMPILER},
         compiler::options::CompilerOptions,
     },
-    inkwell::module::Module,
-    regex::Regex,
-    std::{fs, path::Path, process::Command},
+    std::{path::PathBuf, process::Command},
 };
 
-pub struct FileBuilder<'a, 'ctx> {
-    module: &'a Module<'ctx>,
+pub struct Clang<'a> {
+    files: &'a [PathBuf],
     options: &'a CompilerOptions,
-    arguments: Vec<String>,
-    from: &'a str,
-    output: &'a str,
-    args_regex: Regex,
 }
 
-impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
-    pub fn new(
-        options: &'a CompilerOptions,
-        module: &'a Module<'ctx>,
-        from: &'a str,
-        output: &'a str,
-    ) -> Self {
-        Self {
-            options,
-            module,
-            arguments: Vec::new(),
-            from,
-            output,
-            args_regex: Regex::new(r"!\((.*?)\)").unwrap(),
-        }
+impl<'a> Clang<'a> {
+    pub fn new(files: &'a [PathBuf], options: &'a CompilerOptions) -> Self {
+        Self { files, options }
     }
 
-    pub fn build(mut self) {
-        if self.options.emit_llvm {
-            self.module.print_to_file(self.from).unwrap();
-            return;
-        }
-
-        self.module.write_bitcode_to_path(Path::new(self.from));
-
-        if self.options.emit_asm {
-            self.emit_asm();
-            return;
-        }
-
-        self.optimization(self.options.optimization.to_str(false, false));
+    pub fn compile(&self) {
+        let mut clang_command: Command = Command::new(LLVM_BACKEND_COMPILER.join("clang-17"));
 
         if self.options.executable {
-            self.compile_to_executable();
-        } else if self.options.library {
-            self.compile_to_library();
+            clang_command.args([
+                "-v",
+                "-opaque-pointers",
+                self.options.linking.to_str(),
+                self.options.optimization.to_str(true, false),
+            ]);
+        } else {
+            let library_variant: &str = if self.options.library {
+                "-c"
+            } else {
+                "--emit-static-lib"
+            };
+
+            clang_command.args([
+                "-v",
+                "-opaque-pointers",
+                self.options.linking.to_str(),
+                self.options.optimization.to_str(true, false),
+                library_variant,
+            ]);
         }
 
-        let _ = fs::remove_file(self.from);
+        clang_command.args(self.files);
+
+        clang_command.args(&self.options.args);
+
+        clang_command.args(["-o", &self.options.output]);
+
+        handle_command(&mut clang_command);
+    }
+}
+
+pub struct LLC<'a> {
+    files: &'a [PathBuf],
+    options: &'a CompilerOptions,
+}
+
+impl<'a> LLC<'a> {
+    pub fn new(files: &'a [PathBuf], options: &'a CompilerOptions) -> Self {
+        Self { files, options }
     }
 
-    fn optimization(&self, opt_level: &str) {
-        self.handle_error(
-            Command::new(LLVM_BACKEND_COMPILER.as_ref().unwrap().join("opt"))
-                .arg(format!("-p={}", opt_level))
+    pub fn compile(&self) {
+        let mut llc_command: Command = Command::new(LLVM_BACKEND_COMPILER.join("llc"));
+
+        llc_command.args([
+            self.options.optimization.to_str(true, false),
+            "--asm-verbose",
+            "--filetype=asm",
+        ]);
+
+        llc_command.args(self.files);
+
+        handle_command(&mut llc_command);
+    }
+}
+
+pub struct LLVMOpt;
+
+impl LLVMOpt {
+    pub fn optimize(path: &str, opt: &str, opt_lto: &str) {
+        handle_command(
+            Command::new(LLVM_BACKEND_COMPILER.join("opt"))
+                .arg(format!("-p={}", opt))
                 .arg("-p=globalopt")
                 .arg("-p=globaldce")
                 .arg("-p=dce")
@@ -75,100 +99,31 @@ impl<'a, 'ctx> FileBuilder<'a, 'ctx> {
                 .arg("-p=mem2reg")
                 .arg("-p=memcpyopt")
                 .arg("-p=inline")
-                .arg(self.from)
+                .arg("-p=loop-simplifycfg")
+                .arg("-p=instsimplify")
+                .arg("-p=loop-instsimplify")
+                .arg("-p=simplifycfg")
+                .arg(path)
                 .arg("-o")
-                .arg(self.from),
+                .arg(path),
+        );
+
+        handle_command(
+            Command::new(LLVM_BACKEND_COMPILER.join("llvm-lto"))
+                .arg(opt_lto)
+                .arg(path),
         );
     }
+}
 
-    fn emit_asm(&mut self) {
-        self.arguments.extend([
-            "-v".to_string(),
-            self.options.optimization.to_string(true, false),
-            "--asm-verbose".to_string(),
-            "--filetype=asm".to_string(),
-            self.from.to_string(),
-        ]);
-
-        self.parse_and_build_args();
-
-        self.handle_error(
-            Command::new(LLVM_BACKEND_COMPILER.as_ref().unwrap().join("llc")).args(&self.arguments),
-        );
-    }
-
-    fn compile_to_executable(&mut self) {
-        self.arguments.extend([
-            "-v".to_string(),
-            "-opaque-pointers".to_string(),
-            self.options.linking.to_str().to_string(),
-            "-ffast-math".to_string(),
-            self.from.to_string(),
-        ]);
-
-        self.parse_and_build_args();
-
-        self.arguments
-            .extend(["-o".to_string(), self.output.to_string()]);
-
-        self.handle_error(
-            Command::new(LLVM_BACKEND_COMPILER.as_ref().unwrap().join("clang-17"))
-                .args(&self.arguments),
-        );
-    }
-
-    fn compile_to_library(&mut self) {
-        self.arguments.extend([
-            "-v".to_string(),
-            "-opaque-pointers".to_string(),
-            self.options.linking.to_str().to_string(),
-            "-ffast-math".to_string(),
-            "-c".to_string(),
-            self.from.to_string(),
-        ]);
-
-        self.parse_and_build_args();
-
-        self.arguments
-            .extend(["-o".to_string(), self.output.to_string()]);
-
-        self.handle_error(
-            Command::new(LLVM_BACKEND_COMPILER.as_ref().unwrap().join("clang-17"))
-                .args(&self.arguments),
-        );
-    }
-
-    fn parse_and_build_args(&mut self) {
-        let module_name: &str = self.module.get_name().to_str().unwrap();
-
-        let extra_args = self.options.another_args.split(";").filter_map(|arg| {
-            if let Some(cap) = self.args_regex.captures(arg) {
-                if let Some(matched) = cap.get(1) {
-                    let files: Vec<&str> = matched.as_str().split(',').map(str::trim).collect();
-
-                    if files.contains(&module_name) {
-                        return None;
-                    }
-
-                    return Some(arg.replace(&format!("!({})", matched.as_str()), ""));
-                }
-            }
-
-            Some(arg.to_string())
-        });
-
-        self.arguments.extend(extra_args);
-    }
-
-    #[inline]
-    fn handle_error(&self, command: &mut Command) {
-        if let Ok(child) = command.output() {
-            if !child.status.success() {
-                logging::log(
-                    logging::LogType::ERROR,
-                    &String::from_utf8_lossy(&child.stderr).replace("\n", ""),
-                );
-            }
+#[inline]
+fn handle_command(command: &mut Command) {
+    if let Ok(child) = command.output() {
+        if !child.status.success() {
+            logging::log(
+                logging::LogType::ERROR,
+                &String::from_utf8_lossy(&child.stderr).replace("\n", ""),
+            );
         }
     }
 }

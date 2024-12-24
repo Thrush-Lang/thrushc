@@ -9,7 +9,7 @@ mod logging;
 use {
     backend::{
         apis::{debug, vector},
-        builder::FileBuilder,
+        builder::{Clang, LLVMOpt, LLC},
         compiler::Compiler,
         instruction::Instruction,
     },
@@ -29,9 +29,8 @@ use {
     std::{
         env,
         fs::{self, read_to_string},
-        path::PathBuf,
+        path::{Path, PathBuf},
         process,
-        sync::Mutex,
         time::Instant,
     },
     stylic::{style, Color, Stylize},
@@ -45,9 +44,14 @@ lazy_static! {
             _ => None,
         }
     };
-    static ref LLVM_BACKEND_COMPILER: Option<PathBuf> = {
+    static ref LLVM_BACKEND_COMPILER: PathBuf = {
         if HOME.is_none() {
-            return None;
+            logging::log(
+                logging::LogType::ERROR,
+                &format!("LLVM Toolchain was corrupted from Thrush Toolchain, re-install the entire toolchain via \"thorium install {}\".", env::consts::OS),
+            );
+
+            process::exit(1);
         }
 
         if !HOME.as_ref().unwrap().join("thrushlang").exists()
@@ -73,7 +77,7 @@ lazy_static! {
                 &format!("LLVM Toolchain was corrupted from Thrush Toolchain, re-install the entire toolchain via \"thorium install {}\".", env::consts::OS),
             );
 
-            return None;
+            process::exit(1);
         }
 
         if !HOME
@@ -87,7 +91,7 @@ lazy_static! {
                 &format!("Clang-17 don't exists in Thrush Toolchain, re-install the entire toolchain via \"thorium install {}\".", env::consts::OS),
             );
 
-            return None;
+            process::exit(1);
         } else if !HOME
             .as_ref()
             .unwrap()
@@ -99,7 +103,7 @@ lazy_static! {
                 &format!("LLVM Optimizator don't exists in Thrush Toolchain, re-install the entire toolchain via \"thorium install {}\".", env::consts::OS),
             );
 
-            return None;
+            process::exit(1);
         } else if !HOME
             .as_ref()
             .unwrap()
@@ -111,7 +115,7 @@ lazy_static! {
                 &format!("LLVM Static Compiler don't exists in Thrush Toolchain, re-install the entire toolchain via \"thorium install {}\".", env::consts::OS),
             );
 
-            return None;
+            process::exit(1);
         } else if !HOME
             .as_ref()
             .unwrap()
@@ -123,18 +127,14 @@ lazy_static! {
                 &format!("LLVM Configurator don't exists in Thrush Toolchain, re-install the entire toolchain via \"thorium install {}\".", env::consts::OS),
             );
 
-            return None;
+            process::exit(1);
         }
 
-        Some(
-            HOME.as_ref()
-                .unwrap()
-                .join("thrushlang/backends/llvm/backend/bin/"),
-        )
+        HOME.as_ref()
+            .unwrap()
+            .join("thrushlang/backends/llvm/backend/bin/")
     };
 }
-
-pub static NAME: Mutex<String> = Mutex::new(String::new());
 
 fn main() {
     if !["linux", "windows"].contains(&env::consts::OS) {
@@ -146,77 +146,142 @@ fn main() {
         process::exit(1);
     }
 
-    Target::initialize_native(&InitializationConfig::default()).unwrap();
+    Target::initialize_all(&InitializationConfig::default());
 
     let mut cli: Cli = Cli::parse(env::args().collect());
 
-    println!(
-        "{} {}",
-        style("Compiling").bold().fg(Color::Rgb(141, 141, 142)),
-        cli.options.file_path
-    );
-
-    if !cli.options.include_vector_api {
-        vector::append_vector_api(&mut cli.options);
+    if !cli.options.include_vector_api && !PathBuf::from("output/dist/vector.o").exists() {
+        vector::compile_vector_api(&mut cli.options);
     }
 
-    if !cli.options.include_debug_api {
-        debug::append_debug_api(&mut cli.options);
+    if !cli.options.include_debug_api && !PathBuf::from("output/dist/debug.o").exists() {
+        debug::compile_debug_api(&mut cli.options);
     }
 
-    let content: String = read_to_string(&cli.options.file_path).unwrap();
+    cli.options.sort();
 
-    let mut lexer: Lexer = Lexer::new(content.as_bytes(), &cli.options.file_path);
-    let tokens: &[Token] = lexer.lex();
-
-    let mut parser: Parser = Parser::new(&cli.options, tokens);
-    let instructions: &[Instruction] = parser.start();
-
-    let context: Context = Context::create();
-    let builder: Builder<'_> = context.create_builder();
-    let module: Module<'_> = context.create_module(&NAME.lock().unwrap());
+    cli.options.args.extend([
+        "output/dist/vector.o".to_string(),
+        "output/dist/debug.o".to_string(),
+    ]);
 
     let start_time: Instant = Instant::now();
 
-    // println!("{:?}", instructions);
+    let mut compiled: Vec<PathBuf> = Vec::new();
 
-    module.set_triple(&cli.options.target_triple);
+    for file in cli.options.files.iter() {
+        println!(
+            "{} {}",
+            style("Compiling").bold().fg(Color::Rgb(141, 141, 142)),
+            &file.path.to_string_lossy()
+        );
 
-    let opt: OptimizationLevel = cli.options.optimization.to_llvm_opt();
+        let content: String = read_to_string(&file.path).unwrap();
 
-    let machine: TargetMachine = Target::from_triple(&cli.options.target_triple)
-        .unwrap()
-        .create_target_machine(
-            &cli.options.target_triple,
-            "",
-            "",
-            opt,
-            cli.options.reloc_mode,
-            cli.options.code_model,
-        )
-        .unwrap();
+        let mut lexer: Lexer = Lexer::new(content.as_bytes(), file);
+        let tokens: &[Token] = lexer.lex();
 
-    module.set_data_layout(&machine.get_target_data().get_data_layout());
+        let mut parser: Parser = Parser::new(tokens, file);
+        let instructions: &[Instruction] = parser.start();
 
-    Compiler::compile(&module, &builder, &context, &cli.options, instructions);
+        let context: Context = Context::create();
+        let builder: Builder<'_> = context.create_builder();
+        let module: Module<'_> = context.create_module(&file.name);
 
-    FileBuilder::new(
-        &cli.options,
-        &module,
-        &format!("{}.ll", &NAME.lock().unwrap()),
-        &cli.options.output,
-    )
-    .build();
+        // println!("{:?}", instructions);
 
-    if cli.options.delete_built_in_apis_after {
-        let _ = fs::remove_file("vector.o");
-        let _ = fs::remove_file("debug.o");
+        module.set_triple(&cli.options.target_triple);
+
+        let opt: OptimizationLevel = cli.options.optimization.to_llvm_opt();
+
+        let machine: TargetMachine = Target::from_triple(&cli.options.target_triple)
+            .unwrap()
+            .create_target_machine(
+                &cli.options.target_triple,
+                "",
+                "",
+                opt,
+                cli.options.reloc_mode,
+                cli.options.code_model,
+            )
+            .unwrap();
+
+        module.set_data_layout(&machine.get_target_data().get_data_layout());
+
+        Compiler::compile(
+            &module,
+            &builder,
+            &context,
+            &cli.options,
+            instructions,
+            file,
+        );
+
+        if cli.options.emit_llvm {
+            if !Path::new("output/llvm/").exists() {
+                let _ = fs::create_dir_all("output/llvm/");
+            }
+
+            let _ = module.print_to_file(format!("output/llvm/{}.ll", &file.name));
+            continue;
+        }
+
+        if cli.options.emit_asm {
+            if !Path::new("output/asm/").exists() {
+                let _ = fs::create_dir_all("output/asm/");
+            }
+
+            let _ = module.print_to_file(format!("output/asm/{}.ll", &file.name));
+
+            LLC::new(
+                &[PathBuf::from(format!("output/asm/{}.ll", &file.name))],
+                &cli.options,
+            )
+            .compile();
+
+            let _ = fs::remove_file(format!("output/asm/{}.ll", &file.name));
+
+            continue;
+        }
+
+        if !Path::new("output/dist/").exists() {
+            let _ = fs::create_dir_all("output/dist/");
+        }
+
+        let compiled_path: &str = &format!("output/dist/{}.bc", &file.name);
+
+        module.write_bitcode_to_path(Path::new(compiled_path));
+
+        LLVMOpt::optimize(
+            compiled_path,
+            cli.options.optimization.to_str(false, false),
+            cli.options.optimization.to_str(true, false),
+        );
+
+        compiled.push(PathBuf::from(format!("output/dist/{}.bc", &file.name)));
     }
 
+    if cli.options.executable {
+        compiled.sort_by_key(|path| *path != PathBuf::from("output/dist/main.th.bc"));
+        Clang::new(&compiled, &cli.options).compile();
+    } else {
+        Clang::new(&compiled, &cli.options).compile();
+    }
+
+    let _ = fs::copy(
+        &cli.options.output,
+        format!("output/dist/{}", cli.options.output),
+    );
+
+    let _ = fs::remove_file(&cli.options.output);
+
+    compiled.iter().for_each(|path| {
+        let _ = fs::remove_file(path);
+    });
+
     println!(
-        "\r{} {} {}",
+        "\r{} {}",
         style("Finished").bold().fg(Color::Rgb(141, 141, 142)),
-        cli.options.file_path,
         style(&format!(
             "{}.{}s",
             start_time.elapsed().as_secs(),
@@ -225,4 +290,9 @@ fn main() {
         .bold()
         .fg(Color::Rgb(141, 141, 142))
     );
+
+    if cli.options.delete_built_in_apis_after {
+        let _ = fs::remove_file("output/dist/vector.o");
+        let _ = fs::remove_file("output/dist/debug.o");
+    }
 }

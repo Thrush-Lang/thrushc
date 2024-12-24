@@ -8,6 +8,7 @@ use {
         general,
         locals::CompilerLocals,
         options::CompilerOptions,
+        options::ThrushFile,
         utils::{
             build_const_float, build_const_integer, build_int_array_type_from_size,
             datatype_float_to_type, datatype_int_to_type, datatype_to_fn_type,
@@ -38,6 +39,7 @@ pub struct Codegen<'a, 'ctx> {
     locals: CompilerLocals<'ctx>,
     diagnostics: Diagnostic,
     options: &'a CompilerOptions,
+    file: &'a ThrushFile,
 }
 
 impl<'a, 'ctx> Codegen<'a, 'ctx> {
@@ -47,6 +49,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
         context: &'ctx Context,
         options: &'a CompilerOptions,
         instructions: &'ctx [Instruction<'ctx>],
+        file: &'a ThrushFile,
     ) {
         Self {
             module,
@@ -56,8 +59,9 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             current: 0,
             function: None,
             locals: CompilerLocals::new(),
-            diagnostics: Diagnostic::new(&options.file_path),
+            diagnostics: Diagnostic::new(file),
             options,
+            file,
         }
         .start();
     }
@@ -218,6 +222,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     value,
                     &mut self.locals,
                     &mut self.diagnostics,
+                    self.file,
                 );
 
                 Instruction::Null
@@ -260,6 +265,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     name,
                     kind,
                     value,
+                    self.file,
                 );
 
                 Instruction::Null
@@ -280,6 +286,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 right,
                 kind,
                 &self.locals,
+                self.file,
             )),
 
             Instruction::Unary { op, value, kind } => {
@@ -293,6 +300,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     &self.locals,
                     &self.function.unwrap(),
                     &mut self.diagnostics,
+                    self.file,
                 ))
             }
 

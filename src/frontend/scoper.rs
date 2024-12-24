@@ -1,6 +1,6 @@
 use {
     super::super::{
-        backend::instruction::Instruction,
+        backend::{compiler::options::ThrushFile, instruction::Instruction},
         diagnostic::Diagnostic,
         error::{ThrushError, ThrushErrorKind},
     },
@@ -20,11 +20,11 @@ struct ThrushBlock<'ctx> {
 }
 
 impl<'ctx> ThrushScoper<'ctx> {
-    pub fn new(file_path: &str) -> Self {
+    pub fn new(file: &ThrushFile) -> Self {
         Self {
             blocks: Vec::new(),
             errors: Vec::new(),
-            diagnostic: Diagnostic::new(file_path),
+            diagnostic: Diagnostic::new(file),
         }
     }
 

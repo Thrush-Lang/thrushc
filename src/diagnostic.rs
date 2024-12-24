@@ -1,8 +1,6 @@
 use {
-    super::{
-        error::{ThrushError, ThrushErrorKind},
-        NAME,
-    },
+    super::backend::compiler::options::ThrushFile,
+    super::error::{ThrushError, ThrushErrorKind},
     std::{
         fs::File,
         io::{BufRead, BufReader},
@@ -12,14 +10,15 @@ use {
 
 #[derive(Debug)]
 pub struct Diagnostic {
+    pub file_name: String,
     buffer: String,
     drawer: String,
     lines: Vec<String>,
 }
 
 impl Diagnostic {
-    pub fn new(path: &str) -> Self {
-        let file: File = File::open(path).unwrap();
+    pub fn new(thrush_file: &ThrushFile) -> Self {
+        let file: File = File::open(&thrush_file.path).unwrap();
         let lines: Vec<String> = BufReader::new(file)
             .lines()
             .map(|line| line.unwrap().to_string())
@@ -29,6 +28,7 @@ impl Diagnostic {
             buffer: String::new(),
             drawer: String::new(),
             lines,
+            file_name: thrush_file.name.clone(),
         }
     }
 
@@ -131,7 +131,7 @@ impl Diagnostic {
     fn print_header(&mut self, line: usize, title: &str) {
         println!(
             "\n{} {}\n",
-            format_args!("{}", style(NAME.lock().unwrap()).bold().bright_red()),
+            format_args!("{}", style(&self.file_name).bold().bright_red()),
             line
         );
 

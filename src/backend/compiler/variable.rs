@@ -5,10 +5,10 @@ use {
         super::super::{
             diagnostic::{self, Diagnostic},
             frontend::lexer::DataTypes,
-            NAME,
         },
         general,
         locals::CompilerLocals,
+        options::ThrushFile,
         utils, Instruction,
     },
     inkwell::{
@@ -33,6 +33,7 @@ pub fn compile<'ctx>(
     value: &'ctx Instruction<'ctx>,
     locals: &mut CompilerLocals<'ctx>,
     diagnostics: &mut Diagnostic,
+    file: &ThrushFile,
 ) {
     let default_ptr: PointerValue<'_> = match kind {
         DataTypes::I8 => {
@@ -98,6 +99,7 @@ pub fn compile<'ctx>(
                 default_ptr,
                 locals,
                 diagnostics,
+                file,
             );
         }
         DataTypes::F32 | DataTypes::F64 => {
@@ -110,12 +112,13 @@ pub fn compile<'ctx>(
                 name,
                 default_ptr,
                 locals,
+                file,
             );
         }
         DataTypes::String => {
             compile_string_var(module, builder, context, name, value, default_ptr, locals)
         }
-        DataTypes::Bool => compile_boolean_var(module, builder, context, name, value, locals),
+        DataTypes::Bool => compile_boolean_var(module, builder, context, name, value, locals, file),
         DataTypes::Char => {
             compile_char_var(module, builder, context, name, value, default_ptr, locals)
         }
@@ -132,6 +135,7 @@ pub fn compile_mut<'ctx>(
     name: &str,
     kind: &DataTypes,
     value: &'ctx Instruction<'ctx>,
+    file: &ThrushFile,
 ) {
     let variable: BasicValueEnum<'ctx> = locals.find_and_get(name).unwrap();
 
@@ -163,7 +167,9 @@ pub fn compile_mut<'ctx>(
                 ..
             } = value
             {
-                general::compile_binary_op(module, builder, context, left, op, right, kind, locals);
+                general::compile_binary_op(
+                    module, builder, context, left, op, right, kind, locals, file,
+                );
 
                 locals.insert(name.to_string(), variable);
             }
@@ -189,7 +195,9 @@ pub fn compile_mut<'ctx>(
                 ..
             } = value
             {
-                general::compile_binary_op(module, builder, context, left, op, right, kind, locals);
+                general::compile_binary_op(
+                    module, builder, context, left, op, right, kind, locals, file,
+                );
 
                 locals.insert(name.to_string(), variable);
             }
@@ -347,6 +355,7 @@ fn compile_integer_var<'ctx>(
     default_ptr: PointerValue<'ctx>,
     locals: &mut CompilerLocals<'ctx>,
     diagnostics: &mut Diagnostic,
+    file: &ThrushFile,
 ) {
     if let Instruction::Null = value {
         let store: InstructionValue<'_> = builder
@@ -428,8 +437,9 @@ fn compile_integer_var<'ctx>(
         ..
     } = value
     {
-        let result: BasicValueEnum<'_> =
-            general::compile_binary_op(module, builder, context, left, op, right, kind, locals);
+        let result: BasicValueEnum<'_> = general::compile_binary_op(
+            module, builder, context, left, op, right, kind, locals, file,
+        );
 
         if result.is_int_value() {
             let store: InstructionValue<'_> = builder
@@ -486,8 +496,8 @@ Details:
         {}
 
 {} \n\0",
+                            file.path.to_string_lossy(),
                             diagnostic::create_panic_message("Integer / Float Overflow"),
-                            NAME.lock().unwrap(),
                             line,
                             left.get_data_type(),
                             op,
@@ -531,6 +541,7 @@ fn compile_float_var<'ctx>(
     name: &str,
     default_ptr: PointerValue<'ctx>,
     locals: &mut CompilerLocals<'ctx>,
+    file: &ThrushFile,
 ) {
     if let Instruction::Null = value {
         let store: InstructionValue<'_> = builder
@@ -589,9 +600,10 @@ fn compile_float_var<'ctx>(
         left, op, right, ..
     } = value
     {
-        let result: FloatValue<'_> =
-            general::compile_binary_op(module, builder, context, left, op, right, kind, locals)
-                .into_float_value();
+        let result: FloatValue<'_> = general::compile_binary_op(
+            module, builder, context, left, op, right, kind, locals, file,
+        )
+        .into_float_value();
 
         let store: InstructionValue<'_> = builder.build_store(default_ptr, result).unwrap();
 
@@ -608,6 +620,7 @@ fn compile_boolean_var<'ctx>(
     name: &str,
     value: &'ctx Instruction,
     locals: &mut CompilerLocals<'ctx>,
+    file: &ThrushFile,
 ) {
     match value {
         Instruction::Null => {
@@ -654,9 +667,10 @@ fn compile_boolean_var<'ctx>(
             kind,
             ..
         } => {
-            let result =
-                general::compile_binary_op(module, builder, context, left, op, right, kind, locals)
-                    .into_int_value();
+            let result = general::compile_binary_op(
+                module, builder, context, left, op, right, kind, locals, file,
+            )
+            .into_int_value();
 
             let default_ptr: PointerValue<'ctx> =
                 builder.build_alloca(context.bool_type(), "").unwrap();

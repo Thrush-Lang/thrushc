@@ -1,3 +1,8 @@
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
 use inkwell::{
     basic_block::BasicBlock,
     builder::Builder,
@@ -8,7 +13,10 @@ use inkwell::{
     AddressSpace,
 };
 
-use crate::backend::{builder::FileBuilder, compiler::options::CompilerOptions};
+use super::super::super::backend::{
+    builder::{Clang, LLC},
+    compiler::options::CompilerOptions,
+};
 
 pub struct DebugAPI<'a, 'ctx> {
     module: &'a Module<'ctx>,
@@ -113,7 +121,7 @@ impl<'a, 'ctx> DebugAPI<'a, 'ctx> {
     }
 }
 
-pub fn append_debug_api(options: &mut CompilerOptions) {
+pub fn compile_debug_api(options: &mut CompilerOptions) {
     let debug_api_context: Context = Context::create();
     let debug_api_builder: Builder<'_> = debug_api_context.create_builder();
     let debug_api_module: Module<'_> = debug_api_context.create_module("debug.th");
@@ -137,18 +145,61 @@ pub fn append_debug_api(options: &mut CompilerOptions) {
     DebugAPI::include(&debug_api_module, &debug_api_builder, &debug_api_context);
 
     if options.emit_llvm {
-        debug_api_module.print_to_file("debug.ll").unwrap();
+        if !Path::new("output/llvm/").exists() {
+            let _ = fs::create_dir_all("output/llvm/");
+        }
+
+        debug_api_module
+            .print_to_file("output/llvm/debug.ll")
+            .unwrap();
+
         return;
     }
 
+    if options.emit_asm {
+        if !Path::new("output/asm/").exists() {
+            let _ = fs::create_dir_all("output/asm/");
+        }
+
+        debug_api_module
+            .print_to_file("output/asm/debug.ll")
+            .unwrap();
+
+        LLC::new(&[PathBuf::from("output/asm/debug.ll")], options).compile();
+
+        let _ = fs::remove_file("output/asm/debug.ll");
+
+        return;
+    }
+
+    if !Path::new("output/dist/").exists() {
+        let _ = fs::create_dir_all("output/dist/");
+    }
+
+    debug_api_module
+        .print_to_file("output/dist/debug.ll")
+        .unwrap();
+
     let previous_library: bool = options.library;
     let previous_executable: bool = options.executable;
+    let previous_static_library: bool = options.static_library;
+    let previous_output: String = options.output.clone();
 
     options.library = true;
+    options.static_library = false;
     options.executable = false;
+    options.output = String::from("debug.o");
 
-    FileBuilder::new(options, &debug_api_module, "debug.bc", "debug.o").build();
+    Clang::new(&[PathBuf::from("output/dist/debug.ll")], options).compile();
 
     options.library = previous_library;
     options.executable = previous_executable;
+    options.static_library = previous_static_library;
+    options.output = previous_output;
+
+    let _ = fs::remove_file("output/dist/debug.ll");
+
+    let _ = fs::copy("debug.o", "output/dist/debug.o");
+
+    let _ = fs::remove_file("debug.o");
 }

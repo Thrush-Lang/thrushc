@@ -1,8 +1,7 @@
 use {
     super::{
-        backend::compiler::options::{CompilerOptions, Linking, Opt},
+        backend::compiler::options::{CompilerOptions, Linking, Opt, ThrushFile},
         constants::TARGETS,
-        LLVM_BACKEND_COMPILER, NAME,
     },
     inkwell::targets::{CodeModel, RelocMode, TargetMachine, TargetTriple},
     std::{path::PathBuf, process},
@@ -75,7 +74,7 @@ impl Cli {
                 self.options.output = self.args[self.extract_relative_index(*index)].to_string();
             }
 
-            "--delete-built-in-apis-after" | "-delete-built-in-apis-after" => {
+            "--delete-built-in-apis" | "-delete-built-in-apis" => {
                 *index += 1;
 
                 self.options.delete_built_in_apis_after = true;
@@ -100,7 +99,7 @@ impl Cli {
                 *index += 1;
             }
 
-            "-emit-only-llvm" | "--emit-only-llvm" => {
+            "--emit-only-llvm" | "-emit-only-llvm" => {
                 *index += 1;
 
                 if self.options.emit_asm {
@@ -113,7 +112,7 @@ impl Cli {
                 self.options.emit_llvm = true;
             }
 
-            "-emit-only-asm" | "--emit-only-asm" => {
+            "--emit-only-asm" | "-emit-only-asm" => {
                 *index += 1;
 
                 if self.options.emit_asm {
@@ -126,7 +125,7 @@ impl Cli {
                 self.options.emit_asm = true;
             }
 
-            "--library" | "-library" => {
+            "--library" | "-lib" => {
                 *index += 1;
 
                 if self.options.executable {
@@ -139,7 +138,20 @@ impl Cli {
                 self.options.library = true;
             }
 
-            "-target" | "--target" => {
+            "--static-library" | "-slib" => {
+                *index += 1;
+
+                if self.options.executable || self.options.library {
+                    self.report_error(&format!(
+                        "You can't use \"{}\" and \"{}\" together.",
+                        "--executable || --library", "--static-library"
+                    ));
+                }
+
+                self.options.static_library = true;
+            }
+
+            "--target" | "-t" => {
                 *index += 1;
 
                 if *index > self.args.len() {
@@ -161,30 +173,14 @@ impl Cli {
                 }
             }
 
-            "--static" | "-static" => {
+            "--static" | "-s" => {
                 *index += 1;
-
-                if self.options.linking == Linking::Dynamic {
-                    self.report_error(&format!(
-                        "Can't use linking \"{}\" with \"{}\" linking.",
-                        arg,
-                        self.options.linking.to_str()
-                    ));
-                }
 
                 self.options.linking = Linking::Static;
             }
 
-            "--dynamic" | "-dynamic" => {
+            "--dynamic" | "-d" => {
                 *index += 1;
-
-                if self.options.linking == Linking::Static {
-                    self.report_error(&format!(
-                        "Can't use linking \"{}\" with \"{}\" linking.",
-                        arg,
-                        self.options.linking.to_str()
-                    ));
-                }
 
                 self.options.linking = Linking::Dynamic;
             }
@@ -278,39 +274,29 @@ impl Cli {
                     file = file.canonicalize().unwrap();
                 }
 
-                if file.file_name().unwrap() == "main.th" {
-                    self.options.is_main = true;
+                if self
+                    .options
+                    .files
+                    .iter()
+                    .filter(|file| file.is_main)
+                    .count()
+                    > 1
+                {
+                    self.report_error("Compile two or more \"main.th\" file don't allowed.");
                 }
 
-                self.options.output = file.file_name().unwrap().to_string_lossy().to_string();
+                let is_main: bool = file.file_name().unwrap().to_string_lossy().trim() == "main.th";
 
-                self.options.file_path = path.to_string();
-
-                if LLVM_BACKEND_COMPILER.is_none() {
-                    self.report_error("LLVM Compiler Toolchain is corrupted or deleted from Thrush Toolchain, follow the below instructions.");
-                }
-
-                NAME.lock().unwrap().clear();
-                NAME.lock()
-                    .unwrap()
-                    .push_str(file.file_name().unwrap().to_str().unwrap());
+                self.options.files.push(ThrushFile::new(
+                    file.file_name().unwrap().to_string_lossy().to_string(),
+                    file,
+                    is_main,
+                ));
             }
 
-            "--args" | "-args" => {
+            arg => {
+                self.options.args.push(arg.to_string());
                 *index += 1;
-
-                if *index > self.args.len() {
-                    self.report_error(&format!("Missing argument for {}", arg));
-                }
-
-                self.options.another_args =
-                    self.args[self.extract_relative_index(*index)].to_string();
-
-                *index += 1;
-            }
-
-            _ => {
-                self.help();
             }
         }
     }
@@ -351,10 +337,11 @@ impl Cli {
         println!("{}", style("Available Commands:\n").bold());
 
         println!(
-            "{} ({} | {}) {}",
+            "{} ({} | {} | {}) {}",
             style("•").bold(),
             style("help").bold().fg(Color::Rgb(141, 141, 142)),
             style("-h").bold().fg(Color::Rgb(141, 141, 142)),
+            style("--help").bold().fg(Color::Rgb(141, 141, 142)),
             style("Show help message.").bold()
         );
 
@@ -368,10 +355,9 @@ impl Cli {
         );
 
         println!(
-            "{} ({} | {}) {}",
+            "{} ({}) {}",
             style("•").bold(),
             style("targets").bold().fg(Color::Rgb(141, 141, 142)),
-            style("-t").bold().fg(Color::Rgb(141, 141, 142)),
             style("Print the list of supported targets machines.").bold()
         );
 
@@ -383,14 +369,14 @@ impl Cli {
             style("Print the native target of this machine.").bold()
         );
 
-        println!("{}", style("\nCompiler Flags:\n").bold());
+        println!("{}", style("\nAvailable Flags:\n").bold());
 
         println!(
             "{} ({} | {}) {}",
             style("•").bold(),
             style("--output [str]").bold().fg(Color::Rgb(141, 141, 142)),
-            style("-output [str]").bold().fg(Color::Rgb(141, 141, 142)),
-            style("Name of the executable or object file.").bold()
+            style("-o [str]").bold().fg(Color::Rgb(141, 141, 142)),
+            style("Output file format.").bold()
         );
 
         println!(
@@ -428,6 +414,16 @@ impl Cli {
         println!(
             "{} ({} | {}) {}",
             style("•").bold(),
+            style("--emit-only-asm")
+                .bold()
+                .fg(Color::Rgb(141, 141, 142)),
+            style("-emit-only-asm").bold().fg(Color::Rgb(141, 141, 142)),
+            style("Compile the code only to Assembler Code.").bold()
+        );
+
+        println!(
+            "{} ({} | {}) {}",
+            style("•").bold(),
             style("--include").bold().fg(Color::Rgb(141, 141, 142)),
             style("-include").bold().fg(Color::Rgb(141, 141, 142)),
             style("Include a Native API Code in the IR.").bold()
@@ -436,13 +432,13 @@ impl Cli {
         println!(
             "{} ({} | {}) {}",
             style("•").bold(),
-            style("--delete-built-in-apis-after")
+            style("--delete-built-in-apis")
                 .bold()
                 .fg(Color::Rgb(141, 141, 142)),
-            style("-delete-built-in-apis-after")
+            style("-delete-built-in-apis")
                 .bold()
                 .fg(Color::Rgb(141, 141, 142)),
-            style("Delete Compiler built-in API after the Compilation.").bold()
+            style("Delete Compiler built-in API'S after the Compilation.").bold()
         );
 
         println!(
@@ -457,7 +453,7 @@ impl Cli {
             "{} ({} | {}) {}",
             style("•").bold(),
             style("--dynamic").bold().fg(Color::Rgb(141, 141, 142)),
-            style("-s").bold().fg(Color::Rgb(141, 141, 142)),
+            style("-d").bold().fg(Color::Rgb(141, 141, 142)),
             style("Link the executable dynamically.").bold()
         );
 
@@ -473,8 +469,18 @@ impl Cli {
             "{} ({} | {}) {}",
             style("•").bold(),
             style("--library").bold().fg(Color::Rgb(141, 141, 142)),
-            style("-library").bold().fg(Color::Rgb(141, 141, 142)),
-            style("Compile to an object file.").bold()
+            style("-lib").bold().fg(Color::Rgb(141, 141, 142)),
+            style("Compile to an object file ('*.o').").bold()
+        );
+
+        println!(
+            "{} ({} | {}) {}",
+            style("•").bold(),
+            style("--static-library")
+                .bold()
+                .fg(Color::Rgb(141, 141, 142)),
+            style("-slib").bold().fg(Color::Rgb(141, 141, 142)),
+            style("Compile to an static library ('*.a').").bold()
         );
 
         println!(
@@ -510,6 +516,6 @@ impl Cli {
             style("Pass more arguments to the Backend Compiler.").bold()
         );
 
-        process::exit(0);
+        process::exit(1);
     }
 }

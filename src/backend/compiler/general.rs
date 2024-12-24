@@ -5,9 +5,9 @@ use {
         super::super::{
             diagnostic::{self, Diagnostic},
             frontend::lexer::{DataTypes, TokenKind},
-            NAME,
         },
         locals::CompilerLocals,
+        options::ThrushFile,
         utils, Instruction,
     },
     inkwell::{
@@ -31,6 +31,7 @@ pub fn compile_binary_op<'ctx>(
     right: &'ctx Instruction<'ctx>,
     kind: &DataTypes,
     locals: &CompilerLocals<'ctx>,
+    _file: &ThrushFile,
 ) -> BasicValueEnum<'ctx> {
     match (left, op, right, kind) {
         (
@@ -358,8 +359,9 @@ pub fn compile_binary_op<'ctx>(
             Instruction::Boolean(value),
             DataTypes::Bool,
         ) => {
-            let left: BasicValueEnum<'_> =
-                compile_binary_op(module, builder, context, left, op, right, kind, locals);
+            let left: BasicValueEnum<'_> = compile_binary_op(
+                module, builder, context, left, op, right, kind, locals, _file,
+            );
 
             let mut right: BasicValueEnum<'_> = if *value {
                 context.bool_type().const_int(1, false).into()
@@ -413,8 +415,9 @@ pub fn compile_binary_op<'ctx>(
             },
             DataTypes::Bool,
         ) => {
-            let left: BasicValueEnum<'_> =
-                compile_binary_op(module, builder, context, left, op, right, kind, locals);
+            let left: BasicValueEnum<'_> = compile_binary_op(
+                module, builder, context, left, op, right, kind, locals, _file,
+            );
 
             let mut right: BasicValueEnum<'_> = if *value {
                 context.bool_type().const_int(1, false).into()
@@ -550,6 +553,7 @@ pub fn compile_unary_op<'ctx>(
     locals: &CompilerLocals<'ctx>,
     function: &FunctionValue<'ctx>,
     diagnostics: &mut Diagnostic,
+    file: &ThrushFile,
 ) -> BasicValueEnum<'ctx> {
     match (op, value, kind) {
         (TokenKind::PlusPlus, Instruction::RefVar { name, kind, line }, _) => {
@@ -654,7 +658,7 @@ Details:
 
 {} \n\0",
                             diagnostic::create_panic_message("Integer / Float Overflow"),
-                            NAME.lock().unwrap(),
+                            file.path.to_string_lossy(),
                             line,
                             kind,
                             TokenKind::Plus,

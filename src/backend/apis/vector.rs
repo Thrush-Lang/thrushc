@@ -1,3 +1,8 @@
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
 use inkwell::{
     basic_block::BasicBlock,
     builder::Builder,
@@ -9,7 +14,10 @@ use inkwell::{
     AddressSpace, IntPredicate,
 };
 
-use crate::backend::{builder::FileBuilder, compiler::options::CompilerOptions};
+use super::super::super::backend::{
+    builder::{Clang, LLC},
+    compiler::options::CompilerOptions,
+};
 
 pub struct VectorAPI<'a, 'ctx> {
     module: &'a Module<'ctx>,
@@ -1647,7 +1655,7 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
     */
 }
 
-pub fn append_vector_api(options: &mut CompilerOptions) {
+pub fn compile_vector_api(options: &mut CompilerOptions) {
     let vector_api_context: Context = Context::create();
     let vector_api_builder: Builder<'_> = vector_api_context.create_builder();
     let vector_api_module: Module<'_> = vector_api_context.create_module("vector.th");
@@ -1671,18 +1679,61 @@ pub fn append_vector_api(options: &mut CompilerOptions) {
     VectorAPI::include(&vector_api_module, &vector_api_builder, &vector_api_context);
 
     if options.emit_llvm {
-        vector_api_module.print_to_file("vector.ll").unwrap();
+        if !Path::new("output/llvm/").exists() {
+            let _ = fs::create_dir_all("output/llvm/");
+        }
+
+        vector_api_module
+            .print_to_file("output/llvm/vector.ll")
+            .unwrap();
+
         return;
     }
 
+    if options.emit_asm {
+        if !Path::new("output/asm/").exists() {
+            let _ = fs::create_dir_all("output/asm/");
+        }
+
+        vector_api_module
+            .print_to_file("output/asm/vector.ll")
+            .unwrap();
+
+        LLC::new(&[PathBuf::from("output/asm/vector.ll")], options).compile();
+
+        let _ = fs::remove_file("output/asm/vector.ll");
+
+        return;
+    }
+
+    if !Path::new("output/dist/").exists() {
+        let _ = fs::create_dir_all("output/dist/");
+    }
+
+    vector_api_module
+        .print_to_file("output/dist/vector.ll")
+        .unwrap();
+
     let previous_library: bool = options.library;
     let previous_executable: bool = options.executable;
+    let previous_static_library: bool = options.static_library;
+    let previous_output: String = options.output.clone();
 
     options.library = true;
     options.executable = false;
+    options.static_library = false;
+    options.output = String::from("vector.o");
 
-    FileBuilder::new(options, &vector_api_module, "vector.bc", "vector.o").build();
+    Clang::new(&[PathBuf::from("output/dist/vector.ll")], options).compile();
 
     options.library = previous_library;
     options.executable = previous_executable;
+    options.static_library = previous_static_library;
+    options.output = previous_output;
+
+    let _ = fs::remove_file("output/dist/vector.ll");
+
+    let _ = fs::copy("vector.o", "output/dist/vector.o");
+
+    let _ = fs::remove_file("vector.o");
 }

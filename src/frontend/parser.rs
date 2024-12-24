@@ -1,7 +1,10 @@
 use {
     super::{
         super::{
-            backend::{compiler::options::CompilerOptions, instruction::Instruction},
+            backend::{
+                compiler::options::{CompilerOptions, ThrushFile},
+                instruction::Instruction,
+            },
             diagnostic::Diagnostic,
             error::{ThrushError, ThrushErrorKind},
             logging,
@@ -11,7 +14,7 @@ use {
         type_checking,
     },
     ahash::AHashMap as HashMap,
-    std::{mem, process::exit},
+    std::{mem, path::PathBuf, process::exit},
 };
 
 const VALID_INTEGER_TYPES: [DataTypes; 8] = [
@@ -30,11 +33,10 @@ const STANDARD_FORMATS: [&str; 5] = ["%s", "%d", "%c", "%ld", "%f"];
 
 type ParserLocals<'instr> = Vec<HashMap<&'instr str, (DataTypes, bool, bool, usize)>>;
 
-pub struct Parser<'instr, 'a> {
+pub struct Parser<'instr> {
     stmts: Vec<Instruction<'instr>>,
     errors: Vec<ThrushError>,
     tokens: &'instr [Token],
-    options: &'a CompilerOptions,
     in_function: bool,
     ret: Option<DataTypes>,
     current: usize,
@@ -44,24 +46,25 @@ pub struct Parser<'instr, 'a> {
     scoper: ThrushScoper<'instr>,
     diagnostic: Diagnostic,
     has_entry_point: bool,
+    is_main: bool,
 }
 
-impl<'instr, 'a> Parser<'instr, 'a> {
-    pub fn new(options: &'a CompilerOptions, tokens: &'instr [Token]) -> Self {
+impl<'instr> Parser<'instr> {
+    pub fn new(tokens: &'instr [Token], file: &ThrushFile) -> Self {
         Self {
             stmts: Vec::new(),
             errors: Vec::new(),
             tokens,
-            options,
             current: 0,
             ret: None,
             in_function: false,
             globals: HashMap::new(),
             locals: vec![HashMap::new()],
             scope: 0,
-            scoper: ThrushScoper::new(&options.file_path),
-            diagnostic: Diagnostic::new(&options.file_path),
+            scoper: ThrushScoper::new(file),
+            diagnostic: Diagnostic::new(file),
             has_entry_point: false,
+            is_main: file.is_main,
         }
     }
 
@@ -83,7 +86,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             });
 
             exit(1);
-        } else if self.options.is_main && !self.has_entry_point {
+        } else if self.is_main && !self.has_entry_point {
             logging::log(
                 logging::LogType::ERROR,
                 "Missing entrypoint \"fn main() {}\" in main.th file.",
@@ -659,7 +662,7 @@ impl<'instr, 'a> Parser<'instr, 'a> {
             self.previous().line,
         )?;
 
-        if name.lexeme.as_ref().unwrap() == "main" && self.options.is_main {
+        if name.lexeme.as_ref().unwrap() == "main" && self.is_main {
             if self.has_entry_point {
                 return Err(ThrushError::Parse(
                     ThrushErrorKind::SyntaxError,

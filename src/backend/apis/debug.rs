@@ -176,30 +176,32 @@ pub fn compile_debug_api(options: &mut CompilerOptions) {
         let _ = fs::create_dir_all("output/dist/");
     }
 
-    debug_api_module
-        .print_to_file("output/dist/debug.ll")
-        .unwrap();
+    if !PathBuf::from("output/dist/debug.o").exists() {
+        debug_api_module
+            .print_to_file("output/dist/debug.ll")
+            .unwrap();
 
-    let previous_library: bool = options.library;
-    let previous_executable: bool = options.executable;
-    let previous_static_library: bool = options.static_library;
-    let previous_output: String = options.output.clone();
+        let previous_library: bool = options.library;
+        let previous_executable: bool = options.executable;
+        let previous_static_library: bool = options.static_library;
+        let previous_output: String = options.output.clone();
 
-    options.library = true;
-    options.static_library = false;
-    options.executable = false;
-    options.output = String::from("debug.o");
+        options.library = true;
+        options.static_library = false;
+        options.executable = false;
+        options.output = String::from("debug.o");
 
-    Clang::new(&[PathBuf::from("output/dist/debug.ll")], options).compile();
+        Clang::new(&[PathBuf::from("output/dist/debug.ll")], options).compile();
 
-    options.library = previous_library;
-    options.executable = previous_executable;
-    options.static_library = previous_static_library;
-    options.output = previous_output;
+        options.library = previous_library;
+        options.executable = previous_executable;
+        options.static_library = previous_static_library;
+        options.output = previous_output;
 
-    let _ = fs::remove_file("output/dist/debug.ll");
+        let _ = fs::remove_file("output/dist/debug.ll");
 
-    let _ = fs::copy("debug.o", "output/dist/debug.o");
+        let _ = fs::copy("debug.o", "output/dist/debug.o");
 
-    let _ = fs::remove_file("debug.o");
+        let _ = fs::remove_file("debug.o");
+    }
 }

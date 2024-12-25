@@ -3,7 +3,7 @@ use {
         diagnostic::Diagnostic,
         error::{ThrushError, ThrushErrorKind},
         backend::compiler::options::ThrushFile,
-    }, core::str, inkwell::{FloatPredicate, IntPredicate}, std::{num::ParseFloatError, path::PathBuf, process::exit}
+    }, core::str, inkwell::{FloatPredicate, IntPredicate}, std::{num::ParseFloatError, process::exit}
 };
 
 pub struct Lexer<'a> {

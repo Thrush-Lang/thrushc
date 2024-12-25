@@ -336,6 +336,132 @@ Details:
                         .unwrap();
                 });
             }
+
+            if let Instruction::RefVar {
+                name: refvar_name,
+                kind: refvar_kind,
+                ..
+            } = value
+            {
+                if *refvar_kind == DataTypes::String && *kind == DataTypes::String {
+                    let var: PointerValue<'_> = locals
+                        .find_and_get(refvar_name)
+                        .unwrap()
+                        .into_pointer_value();
+
+                    let new_size: IntValue<'_> = builder
+                        .build_call(module.get_function("Vec.size").unwrap(), &[var.into()], "")
+                        .unwrap()
+                        .try_as_basic_value()
+                        .unwrap_left()
+                        .into_int_value();
+
+                    let alloca_idx: PointerValue<'ctx> =
+                        builder.build_alloca(context.i64_type(), "").unwrap();
+
+                    builder
+                        .build_store(alloca_idx, context.i64_type().const_zero())
+                        .unwrap();
+
+                    builder
+                        .build_call(
+                            module.get_function("Vec.realloc").unwrap(),
+                            &[
+                                variable.into_pointer_value().into(),
+                                new_size.into(),
+                                context.bool_type().const_zero().into(),
+                            ],
+                            "",
+                        )
+                        .unwrap();
+
+                    let start_block: BasicBlock<'_> = context.append_basic_block(*function, "");
+
+                    builder.build_unconditional_branch(start_block).unwrap();
+
+                    builder.position_at_end(start_block);
+
+                    let get_idx: IntValue<'_> = builder
+                        .build_load(context.i64_type(), alloca_idx, "")
+                        .unwrap()
+                        .into_int_value();
+
+                    let cmp: IntValue<'_> = builder
+                        .build_int_compare(inkwell::IntPredicate::UGT, get_idx, new_size, "")
+                        .unwrap();
+
+                    let then_block: BasicBlock<'_> = context.append_basic_block(*function, "");
+                    let else_block: BasicBlock<'_> = context.append_basic_block(*function, "");
+
+                    builder
+                        .build_conditional_branch(cmp, then_block, else_block)
+                        .unwrap();
+
+                    builder.position_at_end(else_block);
+
+                    let get_idx: IntValue<'_> = builder
+                        .build_load(context.i64_type(), alloca_idx, "")
+                        .unwrap()
+                        .into_int_value();
+
+                    let char: IntValue<'_> = builder
+                        .build_call(
+                            module.get_function("Vec.get_i8").unwrap(),
+                            &[var.into(), get_idx.into()],
+                            "",
+                        )
+                        .unwrap()
+                        .try_as_basic_value()
+                        .unwrap_left()
+                        .into_int_value();
+
+                    let get_data: PointerValue<'ctx> = builder
+                        .build_struct_gep(
+                            context.struct_type(
+                                &[
+                                    context.i64_type().into(),                        // size
+                                    context.i64_type().into(),                        // capacity
+                                    context.i64_type().into(), // element_size
+                                    context.ptr_type(AddressSpace::default()).into(), // data
+                                    context.i8_type().into(),  // type
+                                ],
+                                false,
+                            ),
+                            variable.into_pointer_value(),
+                            3,
+                            "",
+                        )
+                        .unwrap();
+
+                    let data: PointerValue<'_> = builder
+                        .build_load(get_data.get_type(), get_data, "")
+                        .unwrap()
+                        .into_pointer_value();
+
+                    let get_space: PointerValue<'ctx> = unsafe {
+                        builder
+                            .build_in_bounds_gep(context.i8_type(), data, &[get_idx], "")
+                            .unwrap()
+                    };
+
+                    builder.build_store(get_space, char).unwrap();
+
+                    let get_idx: IntValue<'_> = builder
+                        .build_load(context.i64_type(), alloca_idx, "")
+                        .unwrap()
+                        .into_int_value();
+
+                    let new_idx: IntValue<'_> = builder
+                        .build_int_add(get_idx, context.i64_type().const_int(1, false), "")
+                        .unwrap();
+
+                    builder.build_store(alloca_idx, new_idx).unwrap();
+
+                    builder.build_unconditional_branch(start_block).unwrap();
+
+                    builder.position_at_end(then_block);
+                }
+            }
         }
 
         _ => unreachable!(),
@@ -418,7 +544,7 @@ fn compile_string_var<'ctx>(
 
         let new_string: PointerValue<'_> = builder
             .build_call(
-                module.get_function("String.clone").unwrap(),
+                module.get_function("Vec.clone").unwrap(),
                 &[variable.into_pointer_value().into()],
                 "",
             )
@@ -856,7 +982,7 @@ fn compile_char_var<'ctx>(
 
             let char: IntValue<'_> = builder
                 .build_call(
-                    module.get_function("Vec.get").unwrap(),
+                    module.get_function("Vec.get_i8").unwrap(),
                     &[
                         variable.into_pointer_value().into(),
                         context.i64_type().const_int(*index, false).into(),
@@ -872,6 +998,8 @@ fn compile_char_var<'ctx>(
                 builder.build_alloca(context.i8_type(), "").unwrap();
 
             builder.build_store(new_default_char, char).unwrap();
+
+            locals.insert(name.to_string(), new_default_char.into());
         }
 
         _ => todo!(),

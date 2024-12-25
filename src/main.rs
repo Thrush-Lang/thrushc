@@ -150,11 +150,11 @@ fn main() {
 
     let mut cli: Cli = Cli::parse(env::args().collect());
 
-    if !cli.options.include_vector_api && !PathBuf::from("output/dist/vector.o").exists() {
+    if !cli.options.include_vector_api {
         vector::compile_vector_api(&mut cli.options);
     }
 
-    if !cli.options.include_debug_api && !PathBuf::from("output/dist/debug.o").exists() {
+    if !cli.options.include_debug_api {
         debug::compile_debug_api(&mut cli.options);
     }
 

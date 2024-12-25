@@ -296,7 +296,7 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
 
             self.builder.position_at_end(get_block);
 
-            let data: PointerValue<'ctx> = self
+            let get_data: PointerValue<'ctx> = self
                 .builder
                 .build_struct_gep(
                     self.vector_type,
@@ -306,7 +306,14 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
                 )
                 .unwrap();
 
-            let index: IntValue<'_> = get.get_nth_param(1).unwrap().into_int_value();
+            let data: PointerValue<'_> = self
+                .builder
+                .build_load(get_data.get_type(), get_data, "")
+                .unwrap()
+                .into_pointer_value();
+
+            let index: IntValue<'_> = get.get_last_param().unwrap().into_int_value();
+
             let size = self
                 .builder
                 .build_call(
@@ -333,25 +340,9 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
 
             self.builder.position_at_end(block_then);
 
-            unsafe {
-                let last_index: IntValue<'ctx> = self
-                    .builder
-                    .build_int_sub(size, self.context.i64_type().const_int(1, false), "")
-                    .unwrap();
-
-                let value: PointerValue<'ctx> = self
-                    .builder
-                    .build_gep(get_type, data, &[last_index], "")
-                    .unwrap();
-
-                let char: IntValue<'_> = self
-                    .builder
-                    .build_load(get_type, value, "")
-                    .unwrap()
-                    .into_int_value();
-
-                self.builder.build_return(Some(&char)).unwrap();
-            }
+            self.builder
+                .build_return(Some(&get_type.const_int(0, false)))
+                .unwrap();
 
             self.builder.position_at_end(block_else);
 
@@ -1294,23 +1285,23 @@ impl<'a, 'ctx> VectorAPI<'a, 'ctx> {
 
         self.builder.position_at_end(block_clone);
 
-        let malloc_clone: PointerValue<'ctx> =
+        let vec_clone: PointerValue<'ctx> =
             self.builder.build_malloc(self.vector_type, "").unwrap();
 
         self.builder
             .build_call(
                 self.module.get_function("llvm.memcpy.p0.p0.i64").unwrap(),
                 &[
-                    malloc_clone.into(),
+                    vec_clone.into(),
                     clone.get_first_param().unwrap().into_pointer_value().into(),
-                    self.context.i64_type().const_int(1, false).into(),
+                    self.vector_type.size_of().unwrap().into(),
                     self.context.bool_type().const_zero().into(),
                 ],
                 "",
             )
             .unwrap();
 
-        self.builder.build_return(Some(&malloc_clone)).unwrap();
+        self.builder.build_return(Some(&vec_clone)).unwrap();
     }
 
     fn set(&mut self) {
@@ -1710,30 +1701,32 @@ pub fn compile_vector_api(options: &mut CompilerOptions) {
         let _ = fs::create_dir_all("output/dist/");
     }
 
-    vector_api_module
-        .print_to_file("output/dist/vector.ll")
-        .unwrap();
+    if !PathBuf::from("output/dist/vector.o").exists() {
+        vector_api_module
+            .print_to_file("output/dist/vector.ll")
+            .unwrap();
 
-    let previous_library: bool = options.library;
-    let previous_executable: bool = options.executable;
-    let previous_static_library: bool = options.static_library;
-    let previous_output: String = options.output.clone();
+        let previous_library: bool = options.library;
+        let previous_executable: bool = options.executable;
+        let previous_static_library: bool = options.static_library;
+        let previous_output: String = options.output.clone();
 
-    options.library = true;
-    options.executable = false;
-    options.static_library = false;
-    options.output = String::from("vector.o");
+        options.library = true;
+        options.executable = false;
+        options.static_library = false;
+        options.output = String::from("vector.o");
 
-    Clang::new(&[PathBuf::from("output/dist/vector.ll")], options).compile();
+        Clang::new(&[PathBuf::from("output/dist/vector.ll")], options).compile();
 
-    options.library = previous_library;
-    options.executable = previous_executable;
-    options.static_library = previous_static_library;
-    options.output = previous_output;
+        options.library = previous_library;
+        options.executable = previous_executable;
+        options.static_library = previous_static_library;
+        options.output = previous_output;
 
-    let _ = fs::remove_file("output/dist/vector.ll");
+        let _ = fs::remove_file("output/dist/vector.ll");
 
-    let _ = fs::copy("vector.o", "output/dist/vector.o");
+        let _ = fs::copy("vector.o", "output/dist/vector.o");
 
-    let _ = fs::remove_file("vector.o");
+        let _ = fs::remove_file("vector.o");
+    }
 }

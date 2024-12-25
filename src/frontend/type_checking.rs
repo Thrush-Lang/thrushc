@@ -40,7 +40,7 @@ fn check_binary_instr_add(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
 
         _ => Err(ThrushError::Parse(
             ThrushErrorKind::SyntaxError,
-            String::from("Syntax Error"),
+            String::from("Type Checking"),
             format!(
                 "Arithmatic addition ({} + {}) is impossible. Check your operands and types.",
                 a, b
@@ -80,7 +80,7 @@ fn check_binary_instr_sub(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
 
     Err(ThrushError::Parse(
         ThrushErrorKind::SyntaxError,
-        String::from("Syntax Error"),
+        String::from("Type Checking"),
         format!(
             "Arithmatic subtraction ({} - {}) is impossible. Check your operands and types.",
             a, b
@@ -119,7 +119,7 @@ fn check_binary_instr_div(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
 
     Err(ThrushError::Parse(
         ThrushErrorKind::SyntaxError,
-        String::from("Syntax Error"),
+        String::from("Type Checking"),
         format!(
             "Arithmatic division ({} / {}) is impossible. Check your operands and types.",
             a, b
@@ -158,7 +158,7 @@ fn check_binary_instr_mul(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
 
     Err(ThrushError::Parse(
         ThrushErrorKind::SyntaxError,
-        String::from("Syntax Error"),
+        String::from("Type Checking"),
         format!(
             "Arithmatic multiplication ({} * {}) is impossible. Check your operands and types.",
             a, b
@@ -203,7 +203,7 @@ fn check_binary_instr_eqeq(a: &DataTypes, b: &DataTypes, line: usize) -> Result<
 
     Err(ThrushError::Parse(
         ThrushErrorKind::SyntaxError,
-        String::from("Syntax Error"),
+        String::from("Type Checking"),
         format!(
             "Logical operation ({} == {}) is impossible. Check your operands and types.",
             a, b
@@ -248,7 +248,7 @@ fn check_binary_instr_bangeq(a: &DataTypes, b: &DataTypes, line: usize) -> Resul
 
     Err(ThrushError::Parse(
         ThrushErrorKind::SyntaxError,
-        String::from("Syntax Error"),
+        String::from("Type Checking"),
         format!(
             "Logical operation ({} != {}) is impossible. Check your operands and types.",
             a, b
@@ -291,7 +291,7 @@ fn check_binary_instr_greater(
 
     Err(ThrushError::Parse(
         ThrushErrorKind::SyntaxError,
-        String::from("Syntax Error"),
+        String::from("Type Checking"),
         format!(
             "Logical operation ({} > {}) is impossible. Check your operands and types.",
             a, b
@@ -334,7 +334,7 @@ fn check_binary_instr_greatereq(
 
     Err(ThrushError::Parse(
         ThrushErrorKind::SyntaxError,
-        String::from("Syntax Error"),
+        String::from("Type Checking"),
         format!(
             "Logical operation ({} >= {}) is impossible. Check your operands and types.",
             a, b
@@ -373,7 +373,7 @@ fn check_binary_instr_less(a: &DataTypes, b: &DataTypes, line: usize) -> Result<
 
     Err(ThrushError::Parse(
         ThrushErrorKind::SyntaxError,
-        String::from("Syntax Error"),
+        String::from("Type Checking"),
         format!(
             "Logical operation ({} < {}) is impossible. Check your operands and types.",
             a, b
@@ -412,7 +412,7 @@ fn check_binary_instr_lesseq(a: &DataTypes, b: &DataTypes, line: usize) -> Resul
 
     Err(ThrushError::Parse(
         ThrushErrorKind::SyntaxError,
-        String::from("Syntax Error"),
+        String::from("Type Checking"),
         format!(
             "Logical operation ({} <= {}) is impossible. Check your operands and types.",
             a, b
@@ -453,7 +453,7 @@ fn check_binary_instr_and(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
 
     Err(ThrushError::Parse(
         ThrushErrorKind::SyntaxError,
-        String::from("Syntax Error"),
+        String::from("Type Checking"),
         format!(
             "Logical operation ({} && {}) is impossible. Check your operands and types.",
             a, b
@@ -494,7 +494,7 @@ fn check_binary_instr_or(a: &DataTypes, b: &DataTypes, line: usize) -> Result<()
 
     Err(ThrushError::Parse(
         ThrushErrorKind::SyntaxError,
-        String::from("Syntax Error"),
+        String::from("Type Checking"),
         format!(
             "Logical operation ({} || {}) is impossible. Check your operands and types.",
             a, b
@@ -549,7 +549,7 @@ pub fn check_binary_int_with_parent_instr(
         if *a as u8 > *parent_kind as u8 || *b as u8 > *parent_kind as u8 {
             return Err(ThrushError::Parse(
                 ThrushErrorKind::SyntaxError,
-                String::from("Syntax Error"),
+                String::from("Type Checking"),
                 format!(
                     "Arithmetic operation {} = ({} {} {}) is impossible. Check your operands and types.",
                     parent_kind, a, op, b
@@ -588,7 +588,7 @@ fn check_unary_instr_negate(a: &DataTypes, line: usize) -> Result<(), ThrushErro
 
     Err(ThrushError::Parse(
         ThrushErrorKind::SyntaxError,
-        String::from("Syntax Error"),
+        String::from("Type Checking"),
         format!(
             "Negative operation (-{}) is impossible. Check your operand and type.",
             a
@@ -616,7 +616,7 @@ fn check_unary_instr_minusminus(a: &DataTypes, line: usize) -> Result<(), Thrush
 
     Err(ThrushError::Parse(
         ThrushErrorKind::SyntaxError,
-        String::from("Syntax Error"),
+        String::from("Type Checking"),
         format!(
             "Substractive operation (--{} or {}--) is impossible. Check your operand and type.",
             a, a
@@ -644,7 +644,7 @@ fn check_unary_instr_plusplus(a: &DataTypes, line: usize) -> Result<(), ThrushEr
 
     Err(ThrushError::Parse(
         ThrushErrorKind::SyntaxError,
-        String::from("Syntax Error"),
+        String::from("Type Checking"),
         format!(
             "Additive operation (++{} or {}++) is impossible. Check your operand and type.",
             a, a
@@ -661,7 +661,7 @@ fn check_unary_instr_bang(a: &DataTypes, line: usize) -> Result<(), ThrushError>
 
     Err(ThrushError::Parse(
         ThrushErrorKind::SyntaxError,
-        String::from("Syntax Error"),
+        String::from("Type Checking"),
         format!(
             "Logical operation (!{}) is impossible. Check your operand and type.",
             a
@@ -679,4 +679,22 @@ pub fn check_unary_instr(op: &TokenKind, a: &DataTypes, line: usize) -> Result<(
         TokenKind::Bang => check_unary_instr_bang(a, line),
         _ => Ok(()),
     }
+}
+
+#[inline]
+pub fn check_type(kind: &DataTypes, target: &DataTypes, line: usize) -> Result<(), ThrushError> {
+    if kind != target
+        && (*target as u8) > (*kind as u8)
+        && kind != &DataTypes::Char
+        && target != &DataTypes::String
+    {
+        return Err(ThrushError::Parse(
+            ThrushErrorKind::SyntaxError,
+            String::from("Type Mismatch"),
+            format!("Type mismatch. Expected '{}' but found '{}'.", kind, target),
+            line,
+        ));
+    }
+
+    Ok(())
 }

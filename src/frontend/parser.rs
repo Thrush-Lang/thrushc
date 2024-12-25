@@ -276,25 +276,10 @@ impl<'instr> Parser<'instr> {
                         kind = Some(*data_type);
                     }
 
-                    if !kind.as_ref().unwrap().check(data_type) {
-                        self.consume(
-                            TokenKind::SemiColon,
-                            ThrushErrorKind::SyntaxError,
-                            String::from("Syntax Error"),
-                            String::from("Expected ';'."),
-                            name.line,
-                        )?;
-
-                        self.errors.push(ThrushError::Parse(
-                            ThrushErrorKind::SyntaxError,
-                            String::from("Syntax Error"),
-                            format!(
-                                "Variable type mismatch. Expected '{}' but found '{}'",
-                                kind.unwrap(),
-                                data_type
-                            ),
-                            name.line,
-                        ));
+                    if let Err(e) =
+                        type_checking::check_type(kind.as_ref().unwrap(), data_type, name.line)
+                    {
+                        self.errors.push(e);
                     }
                 }
 
@@ -316,71 +301,30 @@ impl<'instr> Parser<'instr> {
                         kind = Some(*data_type);
                     }
 
-                    if !kind.as_ref().unwrap().check(data_type) {
-                        self.consume(
-                            TokenKind::SemiColon,
-                            ThrushErrorKind::SyntaxError,
-                            String::from("Syntax Error"),
-                            String::from("Expected ';'."),
-                            name.line,
-                        )?;
-
-                        self.errors.push(ThrushError::Parse(
-                            ThrushErrorKind::SyntaxError,
-                            String::from("Syntax Error"),
-                            format!(
-                                "Variable type mismatch. Expected '{}' but found '{}'",
-                                kind.unwrap(),
-                                data_type
-                            ),
-                            name.line,
-                        ));
+                    if let Err(e) =
+                        type_checking::check_type(kind.as_ref().unwrap(), data_type, name.line)
+                    {
+                        self.errors.push(e);
                     }
                 }
 
                 Instruction::String(_) => {
-                    if kind.as_ref().unwrap() != &DataTypes::String {
-                        self.consume(
-                            TokenKind::SemiColon,
-                            ThrushErrorKind::SyntaxError,
-                            String::from("Syntax Error"),
-                            String::from("Expected ';'."),
-                            name.line,
-                        )?;
-
-                        self.errors.push(ThrushError::Parse(
-                            ThrushErrorKind::SyntaxError,
-                            String::from("Syntax Error"),
-                            format!(
-                                "Variable type mismatch. Expected '{}' but found '{}'.",
-                                kind.as_ref().unwrap(),
-                                DataTypes::String
-                            ),
-                            name.line,
-                        ));
+                    if let Err(e) = type_checking::check_type(
+                        kind.as_ref().unwrap(),
+                        &DataTypes::String,
+                        name.line,
+                    ) {
+                        self.errors.push(e);
                     }
                 }
 
                 Instruction::Boolean(_) => {
-                    if kind.as_ref().unwrap() != &DataTypes::Bool {
-                        self.consume(
-                            TokenKind::SemiColon,
-                            ThrushErrorKind::SyntaxError,
-                            String::from("Syntax Error"),
-                            String::from("Expected ';'."),
-                            name.line,
-                        )?;
-
-                        self.errors.push(ThrushError::Parse(
-                            ThrushErrorKind::SyntaxError,
-                            String::from("Syntax Error"),
-                            format!(
-                                "Variable type mismatch. Expected '{}' but found '{}'.",
-                                kind.as_ref().unwrap(),
-                                DataTypes::String
-                            ),
-                            name.line,
-                        ));
+                    if let Err(e) = type_checking::check_type(
+                        kind.as_ref().unwrap(),
+                        &DataTypes::Bool,
+                        name.line,
+                    ) {
+                        self.errors.push(e);
                     }
                 }
 
@@ -396,7 +340,7 @@ impl<'instr> Parser<'instr> {
 
                         self.errors.push(ThrushError::Parse(
                             ThrushErrorKind::SyntaxError,
-                            String::from("Syntax Error"),
+                            String::from("Type Mismatch"),
                             format!(
                                 "Variable type mismatch. Expected '{}' but found '{}'.",
                                 kind.as_ref().unwrap(),
@@ -408,7 +352,9 @@ impl<'instr> Parser<'instr> {
                 }
 
                 Instruction::RefVar {
-                    kind: refvar_kind, ..
+                    name: refvar_name,
+                    kind: refvar_kind,
+                    ..
                 } => {
                     if !kind.as_ref().unwrap().check(refvar_kind) {
                         self.consume(
@@ -421,7 +367,7 @@ impl<'instr> Parser<'instr> {
 
                         self.errors.push(ThrushError::Parse(
                             ThrushErrorKind::SyntaxError,
-                            String::from("Syntax Error"),
+                            String::from("Type Mismatch"),
                             format!(
                                 "Variable type mismatch. Expected '{}' but found '{}'.",
                                 kind.as_ref().unwrap(),
@@ -434,13 +380,17 @@ impl<'instr> Parser<'instr> {
                     {
                         self.errors.push(ThrushError::Parse(
                             ThrushErrorKind::SyntaxError,
-                            String::from("Syntax Error"),
+                            String::from("Unreacheable Cast"),
                             format!(
                                 "Variable type cannot be cast into correct type. Use original type `{}` instead.",
                                 refvar_kind,
                             ),
                             name.line,
                         ));
+                    }
+
+                    if let DataTypes::String = refvar_kind {
+                        self.set_var_as_freeded(refvar_name);
                     }
                 }
 
@@ -1776,6 +1726,22 @@ impl<'instr> Parser<'instr> {
             format!("The variable `{}` is not defined in this scope.", name),
             self.previous().line,
         ))
+    }
+
+    #[inline]
+    fn set_var_as_freeded(&mut self, name: &'instr str) {
+        for scope in self.locals.iter_mut().rev() {
+            if scope.contains_key(name) {
+                // DataTypes, bool <- (is_null), bool <- (is_freeded), usize <- (number of references)
+                let mut var: (DataTypes, bool, bool, usize) = *scope.get(name).unwrap();
+
+                var.2 = true;
+
+                scope.insert(name, var);
+
+                return;
+            }
+        }
     }
 
     #[inline]

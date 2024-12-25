@@ -136,6 +136,8 @@ pub fn compile_mut<'ctx>(
     kind: &DataTypes,
     value: &'ctx Instruction<'ctx>,
     file: &ThrushFile,
+    function: &FunctionValue<'ctx>,
+    diagnostics: &mut Diagnostic,
 ) {
     let variable: BasicValueEnum<'ctx> = locals.find_and_get(name).unwrap();
 
@@ -164,14 +166,99 @@ pub fn compile_mut<'ctx>(
                 op,
                 right,
                 kind,
+                line,
                 ..
             } = value
             {
-                general::compile_binary_op(
+                let result: BasicValueEnum<'_> = general::compile_binary_op(
                     module, builder, context, left, op, right, kind, locals, file,
                 );
 
-                locals.insert(name.to_string(), variable);
+                if result.is_struct_value() {
+                    let overflowed: IntValue<'_> = builder
+                        .build_extract_value(result.into_struct_value(), 1, "")
+                        .unwrap()
+                        .into_int_value();
+
+                    let true_block: BasicBlock<'_> = context.append_basic_block(*function, "");
+                    let false_block: BasicBlock<'_> = context.append_basic_block(*function, "");
+
+                    builder
+                        .build_conditional_branch(overflowed, true_block, false_block)
+                        .unwrap();
+
+                    builder.position_at_end(true_block);
+
+                    builder
+                        .build_call(
+                            module.get_function("panic").unwrap(),
+                            &[
+                                module
+                                    .get_global("stderr")
+                                    .unwrap()
+                                    .as_pointer_value()
+                                    .into(),
+                                utils::build_string_constant(module, builder, context, "%s\0")
+                                    .into(),
+                                utils::build_string_constant(
+                                    module,
+                                    builder,
+                                    context,
+                                    &format!(
+                            "{}
+
+Details:
+
+    ● File: {}
+    ● Line: {}
+    ● Instruction: {} {} {}
+    ● Operation: {}
+
+    Code:
+
+        {}
+
+{} \n\0",
+                            diagnostic::create_panic_message("Integer / Float Overflow"),
+                            file.path.to_string_lossy(),
+                            line,
+                            left.get_data_type(),
+                            op,
+                            right.get_data_type(),
+                            op,
+                            diagnostics.draw_only_line(*line),
+                            diagnostic::create_help_message(
+                                "Check that the limit of a primitive type has not been overflowed."
+                            )
+                        ),
+                                )
+                                .into(),
+                            ],
+                            "",
+                        )
+                        .unwrap();
+
+                    diagnostics.clear();
+
+                    builder.build_unreachable().unwrap();
+
+                    builder.position_at_end(false_block);
+
+                    let result: IntValue<'_> = builder
+                        .build_extract_value(result.into_struct_value(), 0, "")
+                        .unwrap()
+                        .into_int_value();
+
+                    builder
+                        .build_store(variable.into_pointer_value(), result)
+                        .unwrap();
+
+                    locals.insert(name.to_string(), variable);
+
+                    return;
+                }
+
+                locals.insert(name.to_string(), result);
             }
         }
 
@@ -395,12 +482,12 @@ fn compile_integer_var<'ctx>(
     }
 
     if let Instruction::RefVar {
-        name,
+        name: refvar_name,
         kind: kind_refvar,
         ..
     } = value
     {
-        let variable: BasicValueEnum<'_> = locals.find_and_get(name).unwrap();
+        let variable: BasicValueEnum<'_> = locals.find_and_get(refvar_name).unwrap();
 
         let load: BasicValueEnum<'_> = builder
             .build_load(
@@ -496,8 +583,8 @@ Details:
         {}
 
 {} \n\0",
-                            file.path.to_string_lossy(),
                             diagnostic::create_panic_message("Integer / Float Overflow"),
+                            file.path.to_string_lossy(),
                             line,
                             left.get_data_type(),
                             op,
@@ -576,12 +663,12 @@ fn compile_float_var<'ctx>(
     }
 
     if let Instruction::RefVar {
-        name,
+        name: name_refvar,
         kind: kind_refvar,
         ..
     } = value
     {
-        let variable: BasicValueEnum<'ctx> = locals.find_and_get(name).unwrap();
+        let variable: BasicValueEnum<'ctx> = locals.find_and_get(name_refvar).unwrap();
 
         let load: BasicValueEnum<'ctx> = builder
             .build_load(
@@ -591,7 +678,7 @@ fn compile_float_var<'ctx>(
             )
             .unwrap();
 
-        utils::float_autocast(kind, kind_refvar, builder, context, default_ptr, load);
+        utils::float_autocast(kind_refvar, kind, builder, context, default_ptr, load);
 
         locals.insert(name.to_string(), default_ptr.into());
     }

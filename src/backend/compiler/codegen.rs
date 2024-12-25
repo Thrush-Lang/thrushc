@@ -266,6 +266,8 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     kind,
                     value,
                     self.file,
+                    &self.function.unwrap(),
+                    &mut self.diagnostics,
                 );
 
                 Instruction::Null

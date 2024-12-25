@@ -130,7 +130,7 @@ impl Diagnostic {
 
     fn print_header(&mut self, line: usize, title: &str) {
         println!(
-            "\n{} {}\n",
+            "● {} - {}\n",
             format_args!("{}", style(&self.file_name).bold().bright_red()),
             line
         );

@@ -1,5 +1,6 @@
 use {ahash::AHashMap as HashMap, inkwell::values::BasicValueEnum};
 
+#[derive(Debug)]
 pub struct CompilerLocals<'ctx> {
     pub blocks: Vec<HashMap<String, BasicValueEnum<'ctx>>>,
     pub scope: usize,

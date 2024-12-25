@@ -47,7 +47,11 @@ impl<'a> Lexer<'a> {
             exit(1);
         };
 
-        self.make(TokenKind::Eof);
+        self.tokens.push(Token {
+            lexeme: None,
+            kind: TokenKind::Eof,
+            line: self.line
+        });
 
         self.tokens.as_slice()
     }

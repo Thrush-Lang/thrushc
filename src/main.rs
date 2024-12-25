@@ -160,10 +160,12 @@ fn main() {
 
     cli.options.sort();
 
-    cli.options.args.extend([
-        "output/dist/vector.o".to_string(),
-        "output/dist/debug.o".to_string(),
-    ]);
+    if cli.options.executable || cli.options.library || cli.options.static_library {
+        cli.options.args.extend([
+            "output/dist/vector.o".to_string(),
+            "output/dist/debug.o".to_string(),
+        ]);
+    }
 
     let start_time: Instant = Instant::now();
 

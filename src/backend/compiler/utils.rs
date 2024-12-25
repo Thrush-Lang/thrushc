@@ -181,7 +181,7 @@ pub fn float_autocast<'ctx>(
     load: BasicValueEnum<'ctx>,
 ) {
     let store: InstructionValue<'_> = if origin_kind != kind {
-        let cast: BasicValueEnum<'ctx> = if kind == &DataTypes::F32 {
+        let cast: BasicValueEnum<'ctx> = if kind != &DataTypes::F32 {
             builder
                 .build_cast(
                     InstructionOpcode::FPExt,

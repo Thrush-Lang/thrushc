@@ -114,8 +114,14 @@ impl<'ctx> Instruction<'ctx> {
             Instruction::Char(_) => DataTypes::Char,
             Instruction::RefVar { kind, .. } => *kind,
             Instruction::Group { instr } => instr.get_data_type(),
-            Instruction::Binary { kind, .. } => *kind,
-            Instruction::Unary { kind, .. } => *kind,
+            Instruction::Binary { left, right, .. } => {
+                if left.get_data_type() as u8 > right.get_data_type() as u8 {
+                    return left.get_data_type();
+                }
+
+                right.get_data_type()
+            }
+            Instruction::Unary { value, .. } => value.get_data_type(),
 
             e => {
                 println!("{:?}", e);

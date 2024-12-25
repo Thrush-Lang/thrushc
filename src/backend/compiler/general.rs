@@ -212,15 +212,15 @@ pub fn compile_binary_op<'ctx>(
             let mut right_num: FloatValue<'_> =
                 utils::build_const_float(context, right_kind, *right_num);
 
-            if right_num.get_type() != left_num.get_type() {
+            if right_kind != kind {
                 left_num = builder
-                    .build_float_cast(left_num, right_num.get_type(), "")
+                    .build_float_cast(left_num, utils::datatype_float_to_type(context, kind), "")
                     .unwrap();
             }
 
-            if left_num.get_type() != right_num.get_type() {
+            if left_kind != kind {
                 right_num = builder
-                    .build_float_cast(right_num, left_num.get_type(), "")
+                    .build_float_cast(right_num, utils::datatype_float_to_type(context, kind), "")
                     .unwrap();
             }
 
@@ -507,33 +507,161 @@ pub fn compile_binary_op<'ctx>(
             let variable: PointerValue<'_> =
                 locals.find_and_get(name).unwrap().into_pointer_value();
 
-            let mut integer_num: IntValue<'_> =
+            let mut left_value: IntValue<'_> =
                 utils::build_const_integer(context, integer_kind, *num as u64);
 
-            if integer_num.get_type() != utils::datatype_int_to_type(context, kind) {
-                integer_num = builder
-                    .build_int_cast(integer_num, utils::datatype_int_to_type(context, kind), "")
+            if left_value.get_type() != utils::datatype_int_to_type(context, kind) {
+                left_value = builder
+                    .build_int_cast(left_value, utils::datatype_int_to_type(context, kind), "")
                     .unwrap();
             }
 
-            let last_value: IntValue<'_> = builder
+            let right_value: IntValue<'_> = builder
                 .build_load(utils::datatype_int_to_type(context, kind), variable, "")
                 .unwrap()
                 .into_int_value();
 
-            let new_value: IntValue<'_> = match op {
-                TokenKind::Plus => builder.build_int_sub(last_value, integer_num, "").unwrap(),
-                TokenKind::Minus => builder.build_int_add(last_value, integer_num, "").unwrap(),
-                TokenKind::Star => builder.build_int_mul(last_value, integer_num, "").unwrap(),
-                TokenKind::Slash => builder
-                    .build_int_signed_div(last_value, integer_num, name)
-                    .unwrap(),
+            if let TokenKind::Slash = op {
+                match kind {
+                    DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 => {
+                        let result: IntValue<'_> = builder
+                            .build_int_signed_div(left_value, right_value, "")
+                            .unwrap();
+
+                        builder.build_store(variable, result).unwrap();
+
+                        return variable.into();
+                    }
+
+                    DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64 => {
+                        let result: IntValue<'_> = builder
+                            .build_int_unsigned_div(left_value, right_value, "")
+                            .unwrap();
+
+                        builder.build_store(variable, result).unwrap();
+
+                        return variable.into();
+                    }
+
+                    _ => unreachable!(),
+                }
+            }
+
+            match kind {
+                DataTypes::I8 => builder
+                    .build_call(
+                        module
+                            .get_function(&format!(
+                                "llvm.s{}.with.overflow.i8",
+                                op.to_llvm_intrinsic_identifier()
+                            ))
+                            .unwrap(),
+                        &[left_value.into(), right_value.into()],
+                        "",
+                    )
+                    .unwrap()
+                    .try_as_basic_value()
+                    .unwrap_left(),
+                DataTypes::I16 => builder
+                    .build_call(
+                        module
+                            .get_function(&format!(
+                                "llvm.s{}.with.overflow.i16",
+                                op.to_llvm_intrinsic_identifier()
+                            ))
+                            .unwrap(),
+                        &[left_value.into(), right_value.into()],
+                        "",
+                    )
+                    .unwrap()
+                    .try_as_basic_value()
+                    .unwrap_left(),
+                DataTypes::I32 => builder
+                    .build_call(
+                        module
+                            .get_function(&format!(
+                                "llvm.s{}.with.overflow.i32",
+                                op.to_llvm_intrinsic_identifier()
+                            ))
+                            .unwrap(),
+                        &[left_value.into(), right_value.into()],
+                        "",
+                    )
+                    .unwrap()
+                    .try_as_basic_value()
+                    .unwrap_left(),
+                DataTypes::I64 => builder
+                    .build_call(
+                        module
+                            .get_function(&format!(
+                                "llvm.s{}.with.overflow.i64",
+                                op.to_llvm_intrinsic_identifier()
+                            ))
+                            .unwrap(),
+                        &[left_value.into(), right_value.into()],
+                        "",
+                    )
+                    .unwrap()
+                    .try_as_basic_value()
+                    .unwrap_left(),
+                DataTypes::U8 => builder
+                    .build_call(
+                        module
+                            .get_function(&format!(
+                                "llvm.s{}.with.overflow.i8",
+                                op.to_llvm_intrinsic_identifier()
+                            ))
+                            .unwrap(),
+                        &[left_value.into(), right_value.into()],
+                        "",
+                    )
+                    .unwrap()
+                    .try_as_basic_value()
+                    .unwrap_left(),
+                DataTypes::U16 => builder
+                    .build_call(
+                        module
+                            .get_function(&format!(
+                                "llvm.u{}.with.overflow.i16",
+                                op.to_llvm_intrinsic_identifier()
+                            ))
+                            .unwrap(),
+                        &[left_value.into(), right_value.into()],
+                        "",
+                    )
+                    .unwrap()
+                    .try_as_basic_value()
+                    .unwrap_left(),
+                DataTypes::U32 => builder
+                    .build_call(
+                        module
+                            .get_function(&format!(
+                                "llvm.u{}.with.overflow.i32",
+                                op.to_llvm_intrinsic_identifier()
+                            ))
+                            .unwrap(),
+                        &[left_value.into(), right_value.into()],
+                        "",
+                    )
+                    .unwrap()
+                    .try_as_basic_value()
+                    .unwrap_left(),
+                DataTypes::U64 => builder
+                    .build_call(
+                        module
+                            .get_function(&format!(
+                                "llvm.u{}.with.overflow.i64",
+                                op.to_llvm_intrinsic_identifier()
+                            ))
+                            .unwrap(),
+                        &[left_value.into(), right_value.into()],
+                        "",
+                    )
+                    .unwrap()
+                    .try_as_basic_value()
+                    .unwrap_left(),
                 _ => unreachable!(),
-            };
-
-            builder.build_store(variable, new_value).unwrap();
-
-            variable.into()
+            }
         }
 
         a => {

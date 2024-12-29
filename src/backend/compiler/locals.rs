@@ -1,8 +1,8 @@
-use {ahash::AHashMap as HashMap, inkwell::values::BasicValueEnum};
+use {ahash::AHashMap as HashMap, inkwell::values::PointerValue};
 
 #[derive(Debug)]
 pub struct CompilerLocals<'ctx> {
-    pub blocks: Vec<HashMap<String, BasicValueEnum<'ctx>>>,
+    pub blocks: Vec<HashMap<String, PointerValue<'ctx>>>,
     pub scope: usize,
 }
 
@@ -27,32 +27,33 @@ impl<'ctx> CompilerLocals<'ctx> {
     }
 
     #[inline]
-    pub fn insert(&mut self, name: String, value: BasicValueEnum<'ctx>) {
+    pub fn insert(&mut self, name: String, value: PointerValue<'ctx>) {
         self.blocks[self.scope - 1].insert(name, value);
     }
 
-    #[inline]
-    pub fn get_in_current(&self, name: &str) -> Option<&BasicValueEnum<'ctx>> {
-        self.blocks[self.scope - 1].get(name)
-    }
+    /*  #[inline]
+        pub fn get_in_current(&self, name: &str) -> Option<&PointerValue<'ctx>> {
+            self.blocks[self.scope - 1].get(name)
+        }
+
+        #[inline]
+        pub fn contains_in_current(&self, name: &str) -> bool {
+            self.blocks[self.scope - 1].contains_key(name)
+        }
+
+        #[inline]
+        pub fn contains_in_block(&self, position: usize, name: &str) -> bool {
+            self.blocks[position].contains_key(name)
+        }
+
+        #[inline]
+        pub fn get_in_block(&self, position: usize, name: &str) -> Option<&PointerValue<'ctx>> {
+            self.blocks[position].get(name)
+        }
+    */
 
     #[inline]
-    pub fn contains_in_current(&self, name: &str) -> bool {
-        self.blocks[self.scope - 1].contains_key(name)
-    }
-
-    #[inline]
-    pub fn contains_in_block(&self, position: usize, name: &str) -> bool {
-        self.blocks[position].contains_key(name)
-    }
-
-    #[inline]
-    pub fn get_in_block(&self, position: usize, name: &str) -> Option<&BasicValueEnum<'ctx>> {
-        self.blocks[position].get(name)
-    }
-
-    #[inline]
-    pub fn find_and_get(&self, name: &str) -> Option<BasicValueEnum<'ctx>> {
+    pub fn find_and_get(&self, name: &str) -> Option<PointerValue<'ctx>> {
         for position in (0..self.scope).rev() {
             if self.blocks[position].contains_key(name) {
                 return Some(*self.blocks[position].get(name).unwrap());

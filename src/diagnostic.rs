@@ -1,6 +1,9 @@
 use {
     super::backend::compiler::options::ThrushFile,
-    super::error::{ThrushError, ThrushErrorKind},
+    super::{
+        error::{ThrushError, ThrushErrorKind},
+        logging::LogType,
+    },
     std::{
         fs::File,
         io::{BufRead, BufReader},
@@ -10,7 +13,7 @@ use {
 
 #[derive(Debug)]
 pub struct Diagnostic {
-    pub file_name: String,
+    pub thrush_file: ThrushFile,
     buffer: String,
     drawer: String,
     lines: Vec<String>,
@@ -25,27 +28,27 @@ impl Diagnostic {
             .collect();
 
         Self {
+            thrush_file: thrush_file.clone(),
             buffer: String::new(),
             drawer: String::new(),
             lines,
-            file_name: thrush_file.name.clone(),
         }
     }
 
-    pub fn report(&mut self, error: &ThrushError) {
+    pub fn report(&mut self, error: &ThrushError, log_type: LogType) {
         if let ThrushError::Parse(
             ThrushErrorKind::ParsedNumber
             | ThrushErrorKind::UnreachableNumber
             | ThrushErrorKind::SyntaxError
             | ThrushErrorKind::UnreachableVariable
-            | ThrushErrorKind::VariableNotDefined
+            | ThrushErrorKind::ObjectNotDefined
             | ThrushErrorKind::VariableNotDeclared,
             title,
             help,
             line,
         ) = error
         {
-            self.print_report(title, help, *line);
+            self.print_report(title, help, *line, log_type);
         } else if let ThrushError::Lex(
             ThrushErrorKind::SyntaxError
             | ThrushErrorKind::ParsedNumber
@@ -56,45 +59,20 @@ impl Diagnostic {
             line,
         ) = error
         {
-            self.print_report(title, help, *line);
+            self.print_report(title, help, *line, log_type);
         } else if let ThrushError::Scope(
-            ThrushErrorKind::UnreachableVariable | ThrushErrorKind::VariableNotDefined,
+            ThrushErrorKind::UnreachableVariable | ThrushErrorKind::ObjectNotDefined,
             title,
             help,
             line,
         ) = error
         {
-            self.print_report(title, help, *line);
+            self.print_report(title, help, *line, log_type);
         }
     }
 
-    pub fn draw_only_line(&mut self, line: usize) -> &str {
-        let content: &str = if line > self.lines.len() - 1 {
-            self.lines.last().unwrap().trim()
-        } else {
-            self.lines[line - 1].trim()
-        };
-
-        self.drawer.push_str(&format!("{} | ", line));
-        self.buffer.push_str(&format!("{}\n", content));
-
-        for _ in 0..content.len() + 10 {
-            self.drawer
-                .push_str(style("─").bright_red().to_string().as_str());
-        }
-
-        self.buffer.push_str(&self.drawer);
-
-        &self.buffer
-    }
-
-    pub fn clear(&mut self) {
-        self.buffer.clear();
-        self.drawer.clear();
-    }
-
-    fn print_report(&mut self, title: &str, help: &str, line: usize) {
-        self.print_header(line, title);
+    fn print_report(&mut self, title: &str, help: &str, line: usize, log_type: LogType) {
+        self.print_header(line, title, log_type);
 
         let content: &str = if line > self.lines.len() - 1 {
             self.lines.last().unwrap().trim()
@@ -128,18 +106,14 @@ impl Diagnostic {
         );
     }
 
-    fn print_header(&mut self, line: usize, title: &str) {
+    fn print_header(&mut self, line: usize, title: &str, log_type: LogType) {
         println!(
             "{} - {}\n",
-            format_args!("{}", style(&self.file_name).bold().bright_red()),
+            format_args!("{}", style(&self.thrush_file.name).bold().bright_red()),
             line
         );
 
-        println!(
-            "{} {}\n",
-            style("ERROR").bold().underline().bright_red(),
-            title
-        );
+        println!("{} {}\n", log_type.to_styled(), title);
     }
 }
 

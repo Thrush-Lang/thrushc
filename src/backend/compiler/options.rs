@@ -21,7 +21,7 @@ pub enum Linking {
     Dynamic,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ThrushFile {
     pub name: String,
     pub path: PathBuf,
@@ -78,13 +78,6 @@ impl Default for CompilerOptions {
             files: Vec::new(),
             args: Vec::new(),
         }
-    }
-}
-
-impl CompilerOptions {
-    #[inline]
-    pub fn sort(&mut self) {
-        self.files.sort_by_key(|file| file.name != "main.th");
     }
 }
 

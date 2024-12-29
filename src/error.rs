@@ -1,6 +1,5 @@
 #[derive(Default, Debug)]
 pub enum ThrushError {
-    Compile(String),
     Parse(ThrushErrorKind, String, String, usize),
     Lex(ThrushErrorKind, String, String, usize),
     Scope(ThrushErrorKind, String, String, usize),
@@ -10,12 +9,12 @@ pub enum ThrushError {
 
 #[derive(Debug)]
 pub enum ThrushErrorKind {
-    TooManyArguments,
     SyntaxError,
     UnreachableNumber,
     ParsedNumber,
     UnknownChar,
     UnreachableVariable,
+    ObjectNotDefined,
     VariableNotDefined,
     VariableNotDeclared,
 }

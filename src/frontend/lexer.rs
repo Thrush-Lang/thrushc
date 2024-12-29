@@ -3,6 +3,7 @@ use {
         diagnostic::Diagnostic,
         error::{ThrushError, ThrushErrorKind},
         backend::compiler::options::ThrushFile,
+        logging::LogType,
     }, core::str, inkwell::{FloatPredicate, IntPredicate}, std::{num::ParseFloatError, process::exit}
 };
 
@@ -41,7 +42,7 @@ impl<'a> Lexer<'a> {
 
         if !self.errors.is_empty() {
             self.errors.iter().for_each(|error| {
-                self.diagnostic.report(error);
+                self.diagnostic.report(error, LogType::ERROR);
             });
        
             exit(1);
@@ -158,7 +159,9 @@ impl<'a> Lexer<'a> {
             "this" => self.make(TokenKind::This),
             "extends" => self.make(TokenKind::Extends),
             "public" => self.make(TokenKind::Public),
+            "builtin" => self.make(TokenKind::Builtin),
             "null" => self.make(TokenKind::Null),
+            "@import" => self.make(TokenKind::Import),
 
             "u8" => self.make(TokenKind::DataType(DataTypes::U8)),
             "u16" => self.make(TokenKind::DataType(DataTypes::U16)),
@@ -180,8 +183,6 @@ impl<'a> Lexer<'a> {
 
             "void" => self.make(TokenKind::DataType(DataTypes::Void)),
 
-            "float" => self.make(TokenKind::DataType(DataTypes::Float)),
-            "integer" => self.make(TokenKind::DataType(DataTypes::Integer)),
 
             _ => {
                 self.tokens.push(Token {
@@ -203,7 +204,7 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
 
-        let kind: DataTypes =
+        let kind: (DataTypes, bool) =
             self.eval_integer_type(self.lexeme())?;
 
         let num: Result<f64, ParseFloatError> = self.lexeme().parse::<f64>();
@@ -219,9 +220,9 @@ impl<'a> Lexer<'a> {
             ));
         }
 
-        if kind == DataTypes::F32 || kind == DataTypes::F64 {
+        if kind.0 == DataTypes::F32 || kind.0 == DataTypes::F64 {
             self.tokens.push(Token {
-                kind: TokenKind::Float(kind, *num.as_ref().unwrap()),
+                kind: TokenKind::Float(kind.0, *num.as_ref().unwrap(), kind.1),
                 lexeme: None,
                 line: self.line
             });
@@ -230,7 +231,7 @@ impl<'a> Lexer<'a> {
         }
 
         self.tokens.push(Token {
-            kind: TokenKind::Integer(kind, num.unwrap()),
+            kind: TokenKind::Integer(kind.0, num.unwrap(), kind.1),
             lexeme: None,
             line: self.line
         });
@@ -275,7 +276,6 @@ impl<'a> Lexer<'a> {
 
         Ok(())
 
-
     }
 
     fn string(&mut self) -> Result<(), ThrushError> {
@@ -300,9 +300,10 @@ impl<'a> Lexer<'a> {
         let mut string: String =
             String::from_utf8_lossy(&self.code[self.start + 1..self.current - 1]).to_string();
 
-        string.push('\0');
-
         string = string.replace("\\n", "\n");
+        string = string.replace("\\r", "\r");
+        string = string.replace("\\t", "\t");
+
 
         self.tokens.push(Token {
             kind: TokenKind::String,
@@ -314,20 +315,22 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn eval_integer_type(
-        &self,
+        &mut self,
         lexeme: String,
-    ) -> Result<DataTypes, ThrushError> {
+    ) -> Result<(DataTypes, bool), ThrushError> {
 
         if self.previous_token().kind == TokenKind::Minus && !lexeme.contains(".") && !self.tokens[self.tokens.len() - 2].kind.is_integer() {
+
+            self.tokens.remove(self.tokens.len() - 1);
 
             let lexeme: String = String::from("-") + &lexeme;
 
             return match lexeme.parse::<isize>() {
                 Ok(num) => match num {
-                    -128_isize..=127_isize => Ok(DataTypes::I8),
-                    -32_768isize..=32_767_isize => Ok(DataTypes::I16),
-                    -2147483648isize..=2147483647isize => Ok(DataTypes::I32),
-                    -9223372036854775808isize..=9223372036854775807isize => Ok(DataTypes::I64),
+                    -128_isize..=127_isize => Ok((DataTypes::I8, true)),
+                    -32_768isize..=32_767_isize => Ok((DataTypes::I16, true)),
+                    -2147483648isize..=2147483647isize => Ok((DataTypes::I32, true)),
+                    -9223372036854775808isize..=9223372036854775807isize => Ok((DataTypes::I64, true)),
                     _ => Err(ThrushError::Parse(
                         ThrushErrorKind::UnreachableNumber,
                         String::from("The number is out of bounds."),
@@ -352,9 +355,9 @@ impl<'a> Lexer<'a> {
                     self.line
                 ));
             } else if lexeme.parse::<f32>().is_ok() {
-                return Ok(DataTypes::F32);
+                return Ok((DataTypes::F32, false));
             } else if lexeme.parse::<f64>().is_ok() {
-                return Ok(DataTypes::F64);
+                return Ok((DataTypes::F64, false));
             } 
 
             return Err(ThrushError::Parse(
@@ -368,10 +371,10 @@ impl<'a> Lexer<'a> {
 
         match lexeme.parse::<isize>() {
             Ok(num) => match num {
-                0isize..=127isize => Ok(DataTypes::U8),
-                128isize..=65_535isize => Ok(DataTypes::U16),
-                65_536isize..=4_294_967_295isize => Ok(DataTypes::U32),
-                4_294_967_296isize..= 9_223_372_036_854_775_807isize => Ok(DataTypes::U64),
+                0isize..=127isize => Ok((DataTypes::U8, false)),
+                128isize..=65_535isize => Ok((DataTypes::U16, false)),
+                65_536isize..=4_294_967_295isize => Ok((DataTypes::U32, false)),
+                4_294_967_296isize..= 9_223_372_036_854_775_807isize => Ok((DataTypes::U64, false)),
                 _ => Err(ThrushError::Parse(
                     ThrushErrorKind::UnreachableNumber,
                     String::from("The number is out of bounds."),
@@ -489,13 +492,15 @@ pub enum TokenKind {
 
     // --- Literals ---
     Identifier,
-    Integer(DataTypes, f64),
-    Float(DataTypes, f64),
+    Integer(DataTypes, f64, bool),
+    Float(DataTypes, f64, bool),
     DataType(DataTypes),
     String,
     Char,
 
     // --- Keywords ---
+    Import,
+    Builtin,
     Public,
     And,
     Struct,
@@ -576,10 +581,12 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Const => write!(f, "const"),
             TokenKind::While => write!(f, "while"),
             TokenKind::Extends => write!(f, "extends"),
-            TokenKind::Integer(_, _) => write!(f, "integer"),
-            TokenKind::Float(_, _) => write!(f, "float"),
+            TokenKind::Integer(datatype, _, _) => write!(f, "{}", datatype),
+            TokenKind::Float(datatype, _, _) => write!(f, "{}", datatype),
             TokenKind::String => write!(f, "string"),
             TokenKind::Char => write!(f, "char"),
+            TokenKind::Builtin => write!(f, "built-in"),
+            TokenKind::Import => write!(f, "@import"),
             TokenKind::Eof => write!(f, "EOF"),
             TokenKind::DataType(datatype) => write!(f, "{}", datatype),
         }
@@ -589,7 +596,23 @@ impl std::fmt::Display for TokenKind {
 impl TokenKind {
     #[inline]
     pub fn is_integer(&self) -> bool {
-        matches!(self, TokenKind::Integer(_, _))
+        matches!(self, TokenKind::Integer(_, _, _))
+    }
+
+    #[inline]
+    pub fn get_possible_datatype(&self) -> DataTypes {
+        if self.is_possible_unary() {
+            if let TokenKind::PlusPlus | TokenKind::MinusMinus = self {
+                return DataTypes::U64;
+            }
+
+            if let TokenKind::Bang = self {
+                return DataTypes::Bool;
+            }
+
+        }
+
+        DataTypes::Void
     }
 
     #[inline]
@@ -603,20 +626,35 @@ impl TokenKind {
     }
 
     #[inline]
-    pub fn to_int_predicate(&self) -> IntPredicate {
+    pub fn as_int_predicate(&self, left_signed: bool, right_signed: bool) -> IntPredicate {
         match self {
             TokenKind::EqEq => IntPredicate::EQ,
             TokenKind::BangEq => IntPredicate::NE,
-            TokenKind::Greater => IntPredicate::SGT,
-            TokenKind::GreaterEq => IntPredicate::SGE,
-            TokenKind::Less => IntPredicate::SLT,
-            TokenKind::LessEq => IntPredicate::SLE,
+            TokenKind::Greater if !left_signed && !right_signed => IntPredicate::UGT,
+            TokenKind::Greater if left_signed | !right_signed => IntPredicate::SGT,
+            TokenKind::Greater if !left_signed && right_signed => IntPredicate::SGT,
+            TokenKind::Greater if left_signed && right_signed => IntPredicate::SGT,
+            TokenKind::GreaterEq if !left_signed && !right_signed => IntPredicate::UGE,
+            TokenKind::GreaterEq if left_signed && !right_signed => IntPredicate::SGE,
+            TokenKind::GreaterEq if !left_signed && right_signed => IntPredicate::SGE,
+            TokenKind::GreaterEq if left_signed && right_signed => IntPredicate::SGE,
+            TokenKind::Less if !left_signed && !right_signed => IntPredicate::ULT,
+            TokenKind::Less if left_signed && !right_signed => IntPredicate::SLT,
+            TokenKind::Less if !left_signed && right_signed => IntPredicate::SLT,
+            TokenKind::Less if left_signed && right_signed => IntPredicate::SLT,
+            TokenKind::LessEq if !left_signed && !right_signed => IntPredicate::ULE,
+            TokenKind::LessEq if left_signed && !right_signed => IntPredicate::SLE,
+            TokenKind::LessEq if !left_signed && right_signed => IntPredicate::SLE,
+            TokenKind::LessEq if left_signed && right_signed => IntPredicate::SLE,
             _ => unreachable!(),
         }
     }
 
     #[inline]
-    pub fn to_float_predicate(&self) -> FloatPredicate {
+    pub fn as_float_predicate(&self) -> FloatPredicate {
+
+        // ESTABILIZAR ESTA COSA EN EL FUTURO IGUAL QUE LOS INTEGER PREDICATE (DETERMINAR SI TIENE SIGNO Y CAMBIAR EL PREDICATE A CONVENIR)
+
         match self {
             TokenKind::EqEq => FloatPredicate::OEQ,
             TokenKind::BangEq => FloatPredicate::ONE,
@@ -627,6 +665,16 @@ impl TokenKind {
             _ => unreachable!(),
         }
     }
+
+    #[inline]
+    fn is_possible_unary(&self) -> bool {
+        if let TokenKind::PlusPlus | TokenKind::MinusMinus | TokenKind::Bang = self {
+            return true;
+        }
+
+        false
+    }
+
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -640,18 +688,16 @@ pub enum DataTypes {
     I16 = 5,
     I32 = 6,
     I64 = 7,
-    Integer = 8,
 
     // Floating Point DataTypes
     F32 = 9,
     F64 = 10,
-    Float = 11,
     // Boolean DataTypes
     Bool = 12,
 
     // String DataTypes
-    String = 13,
-    Char = 14,
+    Char = 13,
+    String = 14,
 
     // Void Type
     Void = 15,
@@ -660,7 +706,6 @@ pub enum DataTypes {
 
 impl std::fmt::Display for DataTypes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-
         match self {
             DataTypes::U8 => write!(f, "u8"),
             DataTypes::U16 => write!(f, "u16"),
@@ -675,71 +720,43 @@ impl std::fmt::Display for DataTypes {
             DataTypes::Bool => write!(f, "bool"),
             DataTypes::String => write!(f, "string"),
             DataTypes::Char => write!(f, "char"),
-            DataTypes::Void => write!(f, "void"),
-            DataTypes::Float => write!(f, "float"),
-            DataTypes::Integer => write!(f, "integer")
+            DataTypes::Void => write!(f, "()"),
         }
     }
 }
 
 impl DataTypes {
 
-    pub fn need_cast(&self, value: &DataTypes) -> bool {
-        match self {
-            DataTypes::U8
-                if value == &DataTypes::U16
-                    || value == &DataTypes::U32
-                    || value == &DataTypes::U64 =>
-            {
-                true
-            }
-            DataTypes::U16 if value == &DataTypes::U32 || value == &DataTypes::U64 => true,
-            DataTypes::U32 if value == &DataTypes::U64 => true,
-
-            DataTypes::I8
-                if value == &DataTypes::I16
-                    || value == &DataTypes::I32
-                    || value == &DataTypes::I64 =>
-            {
-                true
-            }
-            DataTypes::I16 if value == &DataTypes::I32 || value == &DataTypes::I64 => true,
-            DataTypes::I32 if value == &DataTypes::I64 => true,
-
-            DataTypes::F32 if value == &DataTypes::F64 => true,
-            DataTypes::F64 if value == &DataTypes::F32 => true,
-
-            _ => false, 
+    #[inline]
+    pub fn is_signed(&self) -> bool {
+        if let DataTypes::I64 | DataTypes::I32  | DataTypes::I16  | DataTypes::I8 = self {
+            return true;
         }
+
+        false
     }
 
-    pub fn is_unreachable_cast(&self, value: &DataTypes) -> bool {
-        matches!((self, value), (DataTypes::U8, DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64)
-        | (DataTypes::U16, DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 | DataTypes::U32 | DataTypes::U64)
-        | (DataTypes::U32, DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 | DataTypes::U64)
-        | (DataTypes::U64, DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64)
-        | (DataTypes::I8, DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64)
-        | (DataTypes::I16, DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64 | DataTypes::I32 | DataTypes::I64)
-        | (DataTypes::I32, DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64 | DataTypes::I64)
-        | (DataTypes::I64, DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64
-        ))
+
+    #[inline]
+    pub fn is_float(&self) -> bool {
+        if let DataTypes::F32 | DataTypes::F64 = self {
+            return true;
+        }
+
+        false
     }
 
-    pub fn check(&self, value: &DataTypes) -> bool {
-        self == value
-            || matches!(
-                (&self, value),
-                (
-                    DataTypes::U64 | DataTypes::U32 | DataTypes::U16 | DataTypes::U8,
-                    DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64
-                ) | (
-                    DataTypes::I64 | DataTypes::I32 | DataTypes::I16 | DataTypes::I8,
-                    DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64
-                ) | (DataTypes::F64, DataTypes::F32)
-                    | (DataTypes::F32, DataTypes::F64)
-            )
+    #[inline]
+    pub fn is_integer(&self) -> bool {
+        if let DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 | DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64 | DataTypes::Bool | DataTypes::Char = self {
+            return true;
+        }
+
+        false
     }
 
+
+    #[inline]
     pub fn as_llvm_identifier(&self) -> &str {
         match self {
             DataTypes::U8 | DataTypes::I8 => "i8",
@@ -748,6 +765,20 @@ impl DataTypes {
             DataTypes::U64 | DataTypes::I64 => "i64",
             DataTypes::F32 => "f32",
             DataTypes::F64 => "f64",
+            _ => unreachable!()
+        }
+    }
+
+    #[inline]
+    pub fn as_fmt(&self) -> &str {
+        match self {
+            DataTypes::U8 | DataTypes::I8 | DataTypes::Bool => "%d",
+            DataTypes::U16 | DataTypes::I16 => "%d",
+            DataTypes::U32 | DataTypes::I32 => "%ld",
+            DataTypes::U64 | DataTypes::I64 => "%ld",
+            DataTypes::Char => "%c",
+            DataTypes::String => "%s",
+            DataTypes::F32 | DataTypes::F64 => "%f",
             _ => unreachable!()
         }
     }

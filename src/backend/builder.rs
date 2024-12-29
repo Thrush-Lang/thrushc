@@ -79,9 +79,9 @@ impl<'a> LLC<'a> {
     }
 }
 
-pub struct LLVMOpt;
+pub struct LLVMOptimization;
 
-impl LLVMOpt {
+impl LLVMOptimization {
     pub fn optimize(path: &str, opt: &str, opt_lto: &str) {
         handle_command(
             Command::new(LLVM_BACKEND_COMPILER.join("opt"))

@@ -11,7 +11,7 @@ pub enum LogType {
 }
 
 impl LogType {
-    fn to_styled(&self) -> Styled<&str> {
+    pub fn to_styled(&self) -> Styled<&str> {
         match self {
             LogType::INFO => style("INFO").bold().bright_green(),
             LogType::WARN => style("WARN").bold().bright_yellow(),

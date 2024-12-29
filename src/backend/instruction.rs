@@ -8,7 +8,7 @@ pub enum Instruction<'ctx> {
     BasicValueEnum(BasicValueEnum<'ctx>),
     Println(Vec<Instruction<'ctx>>),
     Print(Vec<Instruction<'ctx>>),
-    String(String),
+    String(String, bool),
     Char(u8),
     ForLoop {
         variable: Option<Box<Instruction<'ctx>>>,
@@ -16,8 +16,8 @@ pub enum Instruction<'ctx> {
         actions: Option<Box<Instruction<'ctx>>>,
         block: Box<Instruction<'ctx>>,
     },
-    Integer(DataTypes, f64),
-    Float(DataTypes, f64),
+    Integer(DataTypes, f64, bool),
+    Float(DataTypes, f64, bool),
     Block {
         stmts: Vec<Instruction<'ctx>>,
     },
@@ -35,13 +35,13 @@ pub enum Instruction<'ctx> {
         return_kind: Option<DataTypes>,
         is_public: bool,
     },
-    Return(Box<Instruction<'ctx>>),
+    Return(Box<Instruction<'ctx>>, DataTypes),
     Var {
         name: &'ctx str,
         kind: DataTypes,
         value: Box<Instruction<'ctx>>,
         line: usize,
-        comptime: bool,
+        only_comptime: bool,
     },
     RefVar {
         name: &'ctx str,
@@ -55,8 +55,12 @@ pub enum Instruction<'ctx> {
     },
     Indexe {
         origin: &'ctx str,
-        name: Option<&'ctx str>,
         index: u64,
+        kind: DataTypes,
+    },
+    Call {
+        name: &'ctx str,
+        args: Vec<Instruction<'ctx>>,
         kind: DataTypes,
     },
     Binary {
@@ -70,16 +74,24 @@ pub enum Instruction<'ctx> {
         op: &'ctx TokenKind,
         value: Box<Instruction<'ctx>>,
         kind: DataTypes,
+        line: usize,
     },
     Group {
         instr: Box<Instruction<'ctx>>,
+        kind: DataTypes,
     },
     Free {
         name: &'ctx str,
+        free_only: bool,
         is_string: bool,
     },
+    External {
+        name: &'ctx str,
+        kind: DataTypes,
+        is_function: bool,
+        params: Option<Vec<DataTypes>>,
+    },
     Boolean(bool),
-
     #[default]
     Null,
 }
@@ -87,16 +99,16 @@ pub enum Instruction<'ctx> {
 impl PartialEq for Instruction<'_> {
     fn eq(&self, other: &Self) -> bool {
         match self {
-            Instruction::Integer(_, _) => {
-                matches!(other, Instruction::Integer(_, _))
+            Instruction::Integer(_, _, _) => {
+                matches!(other, Instruction::Integer(_, _, _))
             }
 
-            Instruction::Float(_, _) => {
-                matches!(other, Instruction::Float(_, _))
+            Instruction::Float(_, _, _) => {
+                matches!(other, Instruction::Float(_, _, _))
             }
 
-            Instruction::String(_) => {
-                matches!(other, Instruction::String(_))
+            Instruction::String(_, _) => {
+                matches!(other, Instruction::String(_, _))
             }
 
             _ => self == other,
@@ -105,39 +117,99 @@ impl PartialEq for Instruction<'_> {
 }
 
 impl<'ctx> Instruction<'ctx> {
+    #[inline]
+    pub fn is_binary(&self) -> bool {
+        if let Instruction::Binary { .. } = self {
+            return true;
+        }
+
+        false
+    }
+
+    #[inline]
+    pub fn is_var(&self) -> bool {
+        if let Instruction::Var { .. } | Instruction::RefVar { .. } = self {
+            return true;
+        }
+        false
+    }
+
+    #[inline]
+    pub fn is_indexe_return_of_string(&self) -> bool {
+        if self.is_return() {
+            if let Instruction::Return(indexe, DataTypes::Char) = self {
+                return indexe.is_indexe();
+            }
+
+            return false;
+        }
+
+        false
+    }
+
+    #[inline]
+    pub fn is_indexe(&self) -> bool {
+        if let Instruction::Indexe { .. } = self {
+            return true;
+        }
+
+        false
+    }
+
+    #[inline]
+    pub fn is_return(&self) -> bool {
+        if let Instruction::Return(_, _) = self {
+            return true;
+        }
+
+        false
+    }
+
+    pub fn get_binary_data(&self) -> (DataTypes, &TokenKind, DataTypes, usize) {
+        if let Instruction::Binary {
+            left,
+            op,
+            right,
+            line,
+            ..
+        } = self
+        {
+            return (left.get_data_type(), op, right.get_data_type(), *line);
+        }
+
+        unreachable!()
+    }
+
+    pub fn get_unary_data_for_overflow(&self) -> (DataTypes, &TokenKind, DataTypes, usize) {
+        if let Instruction::Unary {
+            op, value, line, ..
+        } = self
+        {
+            return (value.get_data_type(), op, op.get_possible_datatype(), *line);
+        }
+
+        unreachable!()
+    }
+
     pub fn get_data_type(&self) -> DataTypes {
         match self {
-            Instruction::Integer(data_type, _) => *data_type,
-            Instruction::Float(data_type, _) => *data_type,
-            Instruction::String(_) => DataTypes::String,
+            Instruction::Integer(datatype, _, _) => *datatype,
+            Instruction::Float(datatype, _, _) => *datatype,
+            Instruction::String(_, _) => DataTypes::String,
             Instruction::Boolean(_) => DataTypes::Bool,
             Instruction::Char(_) => DataTypes::Char,
             Instruction::RefVar { kind, .. } => *kind,
-            Instruction::Group { instr } => instr.get_data_type(),
-            Instruction::Binary { left, right, .. } => {
-                if left.get_data_type() as u8 > right.get_data_type() as u8 {
-                    return left.get_data_type();
-                }
-
-                right.get_data_type()
-            }
+            Instruction::Group { kind, .. } => *kind,
+            Instruction::Binary { kind, .. } => *kind,
             Instruction::Unary { value, .. } => value.get_data_type(),
-
+            Instruction::Param { kind, .. } => *kind,
+            Instruction::Call { kind, .. } => *kind,
+            Instruction::Indexe { kind, .. } => *kind,
             e => {
                 println!("{:?}", e);
 
                 unimplemented!()
             }
-        }
-    }
-
-    pub fn get_kind(&self) -> Option<DataTypes> {
-        match self {
-            Instruction::Var { kind, .. } => Some(*kind),
-            Instruction::Char(_) => Some(DataTypes::Char),
-            Instruction::Integer(kind, _) => Some(*kind),
-            Instruction::Float(kind, _) => Some(*kind),
-            _ => None,
         }
     }
 

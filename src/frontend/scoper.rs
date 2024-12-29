@@ -3,6 +3,7 @@ use {
         backend::{compiler::options::ThrushFile, instruction::Instruction},
         diagnostic::Diagnostic,
         error::{ThrushError, ThrushErrorKind},
+        logging::LogType,
     },
     std::process::exit,
 };
@@ -50,7 +51,7 @@ impl<'ctx> ThrushScoper<'ctx> {
 
         if !self.errors.is_empty() {
             self.errors.iter().for_each(|error| {
-                self.diagnostic.report(error);
+                self.diagnostic.report(error, LogType::ERROR);
             });
 
             exit(1);

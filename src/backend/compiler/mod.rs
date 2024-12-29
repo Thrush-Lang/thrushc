@@ -1,4 +1,5 @@
 pub mod codegen;
+mod functions;
 mod general;
 mod locals;
 pub mod options;
@@ -10,7 +11,6 @@ use {
     codegen::Codegen,
     inkwell::{builder::Builder, context::Context, module::Module},
     options::CompilerOptions,
-    options::ThrushFile,
 };
 
 pub struct Compiler;
@@ -23,8 +23,7 @@ impl<'a, 'ctx> Compiler {
         context: &'ctx Context,
         options: &'a CompilerOptions,
         instructions: &'ctx [Instruction<'ctx>],
-        file: &ThrushFile,
     ) {
-        Codegen::gen(module, builder, context, options, instructions, file);
+        Codegen::gen(module, builder, context, options, instructions);
     }
 }

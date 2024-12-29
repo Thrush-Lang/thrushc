@@ -7,9 +7,10 @@ mod frontend;
 mod logging;
 
 use {
+    ahash::AHashMap as HashMap,
     backend::{
         apis::{debug, vector},
-        builder::{Clang, LLVMOpt, LLC},
+        builder::{Clang, LLVMOptimization, LLC},
         compiler::Compiler,
         instruction::Instruction,
     },
@@ -27,8 +28,7 @@ use {
     },
     lazy_static::lazy_static,
     std::{
-        env,
-        fs::{self, read_to_string},
+        env, fs,
         path::{Path, PathBuf},
         process,
         time::Instant,
@@ -43,6 +43,32 @@ lazy_static! {
             "linux" => Some(PathBuf::from(env::var("HOME").unwrap())),
             _ => None,
         }
+    };
+    static ref CORE_LIBRARY_PATH: HashMap<&'static str, (String, String)> = {
+        if HOME.is_none() {
+            logging::log(
+                logging::LogType::ERROR,
+                &format!("Thrush Toolchain is unreacheable via path, re-install the entire toolchain via \"thorium install {}\".", env::consts::OS),
+            );
+
+            process::exit(1);
+        }
+
+        let mut imports: HashMap<&'static str, (String, String)> = HashMap::with_capacity(1);
+
+        imports.insert(
+            "core.fmt",
+            (
+                String::from("fmt.th"),
+                HOME.as_ref()
+                    .unwrap()
+                    .join("thrushlang/core/fmt.th")
+                    .to_string_lossy()
+                    .to_string(),
+            ),
+        );
+
+        imports
     };
     static ref LLVM_BACKEND_COMPILER: PathBuf = {
         if HOME.is_none() {
@@ -158,7 +184,7 @@ fn main() {
         debug::compile_debug_api(&mut cli.options);
     }
 
-    cli.options.sort();
+    cli.options.files.sort_by_key(|file| file.name != "main.th");
 
     if cli.options.executable || cli.options.library || cli.options.static_library {
         cli.options.args.extend([
@@ -178,7 +204,7 @@ fn main() {
             &file.path.to_string_lossy()
         );
 
-        let content: String = read_to_string(&file.path).unwrap();
+        let content: String = fs::read_to_string(&file.path).unwrap();
 
         let mut lexer: Lexer = Lexer::new(content.as_bytes(), file);
         let tokens: &[Token] = lexer.lex();
@@ -190,7 +216,7 @@ fn main() {
         let builder: Builder<'_> = context.create_builder();
         let module: Module<'_> = context.create_module(&file.name);
 
-        // println!("{:?}", instructions);
+        // println!("{:#?}", instructions);
 
         module.set_triple(&cli.options.target_triple);
 
@@ -210,14 +236,7 @@ fn main() {
 
         module.set_data_layout(&machine.get_target_data().get_data_layout());
 
-        Compiler::compile(
-            &module,
-            &builder,
-            &context,
-            &cli.options,
-            instructions,
-            file,
-        );
+        Compiler::compile(&module, &builder, &context, &cli.options, instructions);
 
         if cli.options.emit_llvm {
             if !Path::new("output/llvm/").exists() {
@@ -225,6 +244,7 @@ fn main() {
             }
 
             let _ = module.print_to_file(format!("output/llvm/{}.ll", &file.name));
+
             continue;
         }
 
@@ -254,7 +274,7 @@ fn main() {
 
         module.write_bitcode_to_path(Path::new(compiled_path));
 
-        LLVMOpt::optimize(
+        LLVMOptimization::optimize(
             compiled_path,
             cli.options.optimization.to_str(false, false),
             cli.options.optimization.to_str(true, false),

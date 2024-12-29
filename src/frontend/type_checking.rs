@@ -36,7 +36,6 @@ fn check_binary_instr_add(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
         ) => Ok(()),
         (DataTypes::String, DataTypes::Char) => Ok(()),
         (DataTypes::F32 | DataTypes::F64, DataTypes::F32 | DataTypes::F64) => Ok(()),
-        (DataTypes::Integer, DataTypes::Integer) => Ok(()),
 
         _ => Err(ThrushError::Parse(
             ThrushErrorKind::SyntaxError,
@@ -73,8 +72,6 @@ fn check_binary_instr_sub(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
     {
         return Ok(());
     } else if let (DataTypes::F32 | DataTypes::F64, DataTypes::F32 | DataTypes::F64) = (a, b) {
-        return Ok(());
-    } else if let (DataTypes::Integer, DataTypes::Integer) = (a, b) {
         return Ok(());
     }
 
@@ -113,8 +110,6 @@ fn check_binary_instr_div(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
         return Ok(());
     } else if let (DataTypes::F32 | DataTypes::F64, DataTypes::F32 | DataTypes::F64) = (a, b) {
         return Ok(());
-    } else if let (DataTypes::Integer, DataTypes::Integer) = (a, b) {
-        return Ok(());
     }
 
     Err(ThrushError::Parse(
@@ -151,8 +146,6 @@ fn check_binary_instr_mul(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
     {
         return Ok(());
     } else if let (DataTypes::F32 | DataTypes::F64, DataTypes::F32 | DataTypes::F64) = (a, b) {
-        return Ok(());
-    } else if let (DataTypes::Integer, DataTypes::Integer) = (a, b) {
         return Ok(());
     }
 
@@ -197,8 +190,6 @@ fn check_binary_instr_eqeq(a: &DataTypes, b: &DataTypes, line: usize) -> Result<
         return Ok(());
     } else if let (DataTypes::Char, DataTypes::Char) = (a, b) {
         return Ok(());
-    } else if let (DataTypes::Integer, DataTypes::Integer) = (a, b) {
-        return Ok(());
     }
 
     Err(ThrushError::Parse(
@@ -242,8 +233,6 @@ fn check_binary_instr_bangeq(a: &DataTypes, b: &DataTypes, line: usize) -> Resul
         return Ok(());
     } else if let (DataTypes::Char, DataTypes::Char) = (a, b) {
         return Ok(());
-    } else if let (DataTypes::Integer, DataTypes::Integer) = (a, b) {
-        return Ok(());
     }
 
     Err(ThrushError::Parse(
@@ -271,7 +260,8 @@ fn check_binary_instr_greater(
         | DataTypes::I8
         | DataTypes::I16
         | DataTypes::I32
-        | DataTypes::I64,
+        | DataTypes::I64
+        | DataTypes::Bool,
         DataTypes::U8
         | DataTypes::U16
         | DataTypes::U32
@@ -279,13 +269,12 @@ fn check_binary_instr_greater(
         | DataTypes::I8
         | DataTypes::I16
         | DataTypes::I32
-        | DataTypes::I64,
+        | DataTypes::I64
+        | DataTypes::Bool,
     ) = (a, b)
     {
         return Ok(());
     } else if let (DataTypes::F32 | DataTypes::F64, DataTypes::F32 | DataTypes::F64) = (a, b) {
-        return Ok(());
-    } else if let (DataTypes::Integer, DataTypes::Integer) = (a, b) {
         return Ok(());
     }
 
@@ -328,8 +317,6 @@ fn check_binary_instr_greatereq(
         return Ok(());
     } else if let (DataTypes::F32 | DataTypes::F64, DataTypes::F32 | DataTypes::F64) = (a, b) {
         return Ok(());
-    } else if let (DataTypes::Integer, DataTypes::Integer) = (a, b) {
-        return Ok(());
     }
 
     Err(ThrushError::Parse(
@@ -346,7 +333,8 @@ fn check_binary_instr_greatereq(
 #[inline]
 fn check_binary_instr_less(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
-        DataTypes::U8
+        DataTypes::Bool
+        | DataTypes::U8
         | DataTypes::U16
         | DataTypes::U32
         | DataTypes::U64
@@ -361,13 +349,12 @@ fn check_binary_instr_less(a: &DataTypes, b: &DataTypes, line: usize) -> Result<
         | DataTypes::I8
         | DataTypes::I16
         | DataTypes::I32
-        | DataTypes::I64,
+        | DataTypes::I64
+        | DataTypes::Bool,
     ) = (a, b)
     {
         return Ok(());
     } else if let (DataTypes::F32 | DataTypes::F64, DataTypes::F32 | DataTypes::F64) = (a, b) {
-        return Ok(());
-    } else if let (DataTypes::Integer, DataTypes::Integer) = (a, b) {
         return Ok(());
     }
 
@@ -406,8 +393,6 @@ fn check_binary_instr_lesseq(a: &DataTypes, b: &DataTypes, line: usize) -> Resul
         return Ok(());
     } else if let (DataTypes::F32 | DataTypes::F64, DataTypes::F32 | DataTypes::F64) = (a, b) {
         return Ok(());
-    } else if let (DataTypes::Integer, DataTypes::Integer) = (a, b) {
-        return Ok(());
     }
 
     Err(ThrushError::Parse(
@@ -444,8 +429,6 @@ fn check_binary_instr_and(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
     {
         return Ok(());
     } else if let (DataTypes::F32 | DataTypes::F64, DataTypes::F32 | DataTypes::F64) = (a, b) {
-        return Ok(());
-    } else if let (DataTypes::Integer, DataTypes::Integer) = (a, b) {
         return Ok(());
     } else if let (DataTypes::Bool, DataTypes::Bool) = (a, b) {
         return Ok(());
@@ -486,8 +469,6 @@ fn check_binary_instr_or(a: &DataTypes, b: &DataTypes, line: usize) -> Result<()
         return Ok(());
     } else if let (DataTypes::F32 | DataTypes::F64, DataTypes::F32 | DataTypes::F64) = (a, b) {
         return Ok(());
-    } else if let (DataTypes::Integer, DataTypes::Integer) = (a, b) {
-        return Ok(());
     } else if let (DataTypes::Bool, DataTypes::Bool) = (a, b) {
         return Ok(());
     }
@@ -527,43 +508,6 @@ pub fn check_binary_instr(
     }
 }
 
-#[inline]
-pub fn check_binary_int_with_parent_instr(
-    parent_kind: &DataTypes,
-    a: &DataTypes,
-    op: &TokenKind,
-    b: &DataTypes,
-    line: usize,
-) -> Result<(), ThrushError> {
-    if let DataTypes::U8
-    | DataTypes::U16
-    | DataTypes::U32
-    | DataTypes::U64
-    | DataTypes::I8
-    | DataTypes::I16
-    | DataTypes::I32
-    | DataTypes::I64
-    | DataTypes::F32
-    | DataTypes::F64 = parent_kind
-    {
-        if *a as u8 > *parent_kind as u8 || *b as u8 > *parent_kind as u8 {
-            return Err(ThrushError::Parse(
-                ThrushErrorKind::SyntaxError,
-                String::from("Type Checking"),
-                format!(
-                    "Arithmetic operation {} = ({} {} {}) is impossible. Check your operands and types.",
-                    parent_kind, a, op, b
-                ),
-                line,
-            ));
-        }
-
-        return Ok(());
-    }
-
-    unreachable!()
-}
-
 /*
 
 UNARY INSTRUCTION
@@ -580,8 +524,7 @@ fn check_unary_instr_negate(a: &DataTypes, line: usize) -> Result<(), ThrushErro
     | DataTypes::I32
     | DataTypes::I64
     | DataTypes::F32
-    | DataTypes::F64
-    | DataTypes::Integer = a
+    | DataTypes::F64 = a
     {
         return Ok(());
     }
@@ -608,8 +551,7 @@ fn check_unary_instr_minusminus(a: &DataTypes, line: usize) -> Result<(), Thrush
     | DataTypes::I32
     | DataTypes::I64
     | DataTypes::F32
-    | DataTypes::F64
-    | DataTypes::Integer = a
+    | DataTypes::F64 = a
     {
         return Ok(());
     }
@@ -636,8 +578,7 @@ fn check_unary_instr_plusplus(a: &DataTypes, line: usize) -> Result<(), ThrushEr
     | DataTypes::I32
     | DataTypes::I64
     | DataTypes::F32
-    | DataTypes::F64
-    | DataTypes::Integer = a
+    | DataTypes::F64 = a
     {
         return Ok(());
     }
@@ -682,19 +623,63 @@ pub fn check_unary_instr(op: &TokenKind, a: &DataTypes, line: usize) -> Result<(
 }
 
 #[inline]
-pub fn check_type(kind: &DataTypes, target: &DataTypes, line: usize) -> Result<(), ThrushError> {
-    if kind != target
-        && (*target as u8) > (*kind as u8)
-        && kind != &DataTypes::Char
-        && target != &DataTypes::String
-    {
-        return Err(ThrushError::Parse(
+pub fn check_type(
+    kind: DataTypes,
+    target: DataTypes,
+    line: usize,
+    title: String,
+    desc: String,
+) -> Result<(), ThrushError> {
+    match (kind, target) {
+        (DataTypes::Char, DataTypes::Char) => Ok(()),
+        (DataTypes::String, DataTypes::String) => Ok(()),
+        (
+            DataTypes::Bool
+            | DataTypes::U8
+            | DataTypes::U16
+            | DataTypes::U32
+            | DataTypes::U64
+            | DataTypes::I8
+            | DataTypes::I16
+            | DataTypes::I32
+            | DataTypes::I64,
+            DataTypes::Bool,
+        ) => Ok(()),
+        (
+            DataTypes::U8,
+            DataTypes::U8
+            | DataTypes::U16
+            | DataTypes::U32
+            | DataTypes::U64
+            | DataTypes::I8
+            | DataTypes::I16
+            | DataTypes::I32
+            | DataTypes::I64,
+        ) => Ok(()),
+        (
+            DataTypes::U16,
+            DataTypes::U16
+            | DataTypes::U32
+            | DataTypes::U64
+            | DataTypes::I16
+            | DataTypes::I32
+            | DataTypes::I64,
+        ) => Ok(()),
+        (DataTypes::U32, DataTypes::U32 | DataTypes::U64 | DataTypes::I32 | DataTypes::I64) => {
+            Ok(())
+        }
+        (DataTypes::U64, DataTypes::U64 | DataTypes::I64) => Ok(()),
+        (DataTypes::I8, DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64) => Ok(()),
+        (DataTypes::I16, DataTypes::I16 | DataTypes::I32 | DataTypes::I64) => Ok(()),
+        (DataTypes::I32, DataTypes::I32 | DataTypes::I64) => Ok(()),
+        (DataTypes::I64, DataTypes::I64) => Ok(()),
+        (DataTypes::F32, DataTypes::F32 | DataTypes::F64) => Ok(()),
+        (DataTypes::F64, DataTypes::F64) => Ok(()),
+        _ => Err(ThrushError::Parse(
             ThrushErrorKind::SyntaxError,
-            String::from("Type Mismatch"),
-            format!("Type mismatch. Expected '{}' but found '{}'.", kind, target),
+            title,
+            desc,
             line,
-        ));
+        )),
     }
-
-    Ok(())
 }

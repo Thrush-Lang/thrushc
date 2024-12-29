@@ -2,23 +2,15 @@
 
 use {
     super::{
-        super::super::{
-            diagnostic::{self, Diagnostic},
-            frontend::lexer::{DataTypes, TokenKind},
-        },
+        super::super::frontend::lexer::{DataTypes, TokenKind},
         locals::CompilerLocals,
-        options::ThrushFile,
         utils, Instruction,
     },
     inkwell::{
-        basic_block::BasicBlock,
         builder::Builder,
         context::Context,
         module::Module,
-        values::{
-            BasicValueEnum, FloatValue, FunctionValue, InstructionValue, IntValue, PointerValue,
-            StructValue,
-        },
+        values::{BasicValueEnum, FloatValue, FunctionValue, IntValue, PointerValue, StructValue},
     },
 };
 
@@ -29,15 +21,15 @@ pub fn compile_binary_op<'ctx>(
     left: &'ctx Instruction<'ctx>,
     op: &TokenKind,
     right: &'ctx Instruction<'ctx>,
-    kind: &DataTypes,
+    kind: &'ctx DataTypes,
     locals: &CompilerLocals<'ctx>,
-    _file: &ThrushFile,
+    function: FunctionValue<'ctx>,
 ) -> BasicValueEnum<'ctx> {
     match (left, op, right, kind) {
         (
-            Instruction::Integer(left_kind, left_num),
+            Instruction::Integer(left_kind, left_num, signed_one),
             TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash,
-            Instruction::Integer(right_kind, right_num),
+            Instruction::Integer(right_kind, right_num, signed_two),
             DataTypes::I8
             | DataTypes::I16
             | DataTypes::I32
@@ -48,20 +40,20 @@ pub fn compile_binary_op<'ctx>(
             | DataTypes::U64,
         ) => {
             let mut left_num: IntValue<'_> =
-                utils::build_const_integer(context, left_kind, *left_num as u64);
+                utils::build_const_integer(context, left_kind, *left_num as u64, *signed_one);
             let mut right_num: IntValue<'_> =
-                utils::build_const_integer(context, right_kind, *right_num as u64);
+                utils::build_const_integer(context, right_kind, *right_num as u64, *signed_two);
 
-            if utils::datatype_int_to_type(context, kind) != left_num.get_type() {
-                left_num = builder
-                    .build_int_cast(left_num, utils::datatype_int_to_type(context, kind), "")
-                    .unwrap();
+            if let Some(left) =
+                utils::integer_autocast(left_kind, kind, None, left_num.into(), builder, context)
+            {
+                left_num = left.into_int_value();
             }
 
-            if utils::datatype_int_to_type(context, kind) != right_num.get_type() {
-                right_num = builder
-                    .build_int_cast(right_num, utils::datatype_int_to_type(context, kind), "")
-                    .unwrap();
+            if let Some(right) =
+                utils::integer_autocast(right_kind, kind, None, right_num.into(), builder, context)
+            {
+                right_num = right.into_int_value();
             }
 
             if let TokenKind::Slash = op {
@@ -84,145 +76,17 @@ pub fn compile_binary_op<'ctx>(
                 }
             }
 
-            match kind {
-                DataTypes::I8 => builder
-                    .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.s{}.with.overflow.i8",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_num.into(), right_num.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
-                DataTypes::I16 => builder
-                    .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.s{}.with.overflow.i16",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_num.into(), right_num.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
-                DataTypes::I32 => builder
-                    .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.s{}.with.overflow.i32",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_num.into(), right_num.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
-                DataTypes::I64 => builder
-                    .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.s{}.with.overflow.i64",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_num.into(), right_num.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
-                DataTypes::U8 => builder
-                    .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.s{}.with.overflow.i8",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_num.into(), right_num.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
-                DataTypes::U16 => builder
-                    .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.u{}.with.overflow.i16",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_num.into(), right_num.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
-                DataTypes::U32 => builder
-                    .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.u{}.with.overflow.i32",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_num.into(), right_num.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
-                DataTypes::U64 => builder
-                    .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.u{}.with.overflow.i64",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_num.into(), right_num.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
-                _ => unreachable!(),
-            }
+            utils::build_overflow(module, builder, kind, op, left_num, right_num)
         }
 
         (
-            Instruction::Float(left_kind, left_num),
+            Instruction::Float(_, left_num, _),
             TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash,
-            Instruction::Float(right_kind, right_num),
+            Instruction::Float(_, right_num, _),
             DataTypes::F32 | DataTypes::F64,
         ) => {
-            let mut left_num: FloatValue<'_> =
-                utils::build_const_float(context, left_kind, *left_num);
-            let mut right_num: FloatValue<'_> =
-                utils::build_const_float(context, right_kind, *right_num);
-
-            if right_kind != kind {
-                left_num = builder
-                    .build_float_cast(left_num, utils::datatype_float_to_type(context, kind), "")
-                    .unwrap();
-            }
-
-            if left_kind != kind {
-                right_num = builder
-                    .build_float_cast(right_num, utils::datatype_float_to_type(context, kind), "")
-                    .unwrap();
-            }
+            let left_num: FloatValue<'_> = utils::build_const_float(context, kind, *left_num);
+            let right_num: FloatValue<'_> = utils::build_const_float(context, kind, *right_num);
 
             match op {
                 TokenKind::Plus => builder
@@ -253,36 +117,120 @@ pub fn compile_binary_op<'ctx>(
             | TokenKind::Greater
             | TokenKind::GreaterEq
             | TokenKind::LessEq,
-            Instruction::Integer(_, right_num),
+            Instruction::Integer(_, right_num, is_signed)
+            | Instruction::Float(_, right_num, is_signed),
             DataTypes::Bool,
         ) => {
-            let variable: PointerValue<'ctx> =
-                locals.find_and_get(name).unwrap().into_pointer_value();
+            let variable: PointerValue<'ctx> = locals.find_and_get(name).unwrap();
 
-            let left_num: IntValue<'ctx> = builder
-                .build_load(utils::datatype_int_to_type(context, kind), variable, "")
+            if !kind.is_float() {
+                let left_num: IntValue<'ctx> = builder
+                    .build_load(
+                        utils::datatype_integer_to_llvm_type(context, kind),
+                        variable,
+                        "",
+                    )
+                    .unwrap()
+                    .into_int_value();
+
+                let right_num: IntValue<'ctx> =
+                    utils::build_const_integer(context, kind, *right_num as u64, *is_signed);
+
+                let result: IntValue<'ctx> = builder
+                    .build_int_compare(
+                        op.as_int_predicate(kind.is_signed(), *is_signed),
+                        left_num,
+                        right_num,
+                        "",
+                    )
+                    .unwrap();
+
+                return result.into();
+            }
+
+            let left_num: FloatValue<'ctx> = builder
+                .build_load(
+                    utils::datatype_float_to_llvm_type(context, kind),
+                    variable,
+                    "",
+                )
                 .unwrap()
-                .into_int_value();
+                .into_float_value();
 
-            let right_num: IntValue<'ctx> =
-                utils::build_const_integer(context, kind, *right_num as u64);
+            let right_num: FloatValue<'ctx> = utils::build_const_float(context, kind, *right_num);
 
             let result: IntValue<'ctx> = builder
-                .build_int_compare(op.to_int_predicate(), left_num, right_num, "")
+                .build_float_compare(op.as_float_predicate(), left_num, right_num, "")
                 .unwrap();
 
             result.into()
         }
 
         (
-            Instruction::Float(left_kind, left_num),
+            Instruction::Integer(_, left, is_signed) | Instruction::Float(_, left, is_signed),
             TokenKind::EqEq
             | TokenKind::BangEq
             | TokenKind::Less
             | TokenKind::Greater
             | TokenKind::GreaterEq
             | TokenKind::LessEq,
-            Instruction::Float(right_kind, right_num),
+            Instruction::RefVar { name, kind, .. },
+            DataTypes::Bool,
+        ) => {
+            let variable: PointerValue<'ctx> = locals.find_and_get(name).unwrap();
+
+            if !kind.is_float() {
+                let left_num: IntValue<'ctx> =
+                    utils::build_const_integer(context, kind, *left as u64, *is_signed);
+
+                let right_num: IntValue<'ctx> = builder
+                    .build_load(
+                        utils::datatype_integer_to_llvm_type(context, kind),
+                        variable,
+                        "",
+                    )
+                    .unwrap()
+                    .into_int_value();
+
+                let result: IntValue<'ctx> = builder
+                    .build_int_compare(
+                        op.as_int_predicate(*is_signed, kind.is_signed()),
+                        left_num,
+                        right_num,
+                        "",
+                    )
+                    .unwrap();
+
+                return result.into();
+            }
+
+            let left_num: FloatValue<'ctx> = utils::build_const_float(context, kind, *left);
+
+            let right_num: FloatValue<'ctx> = builder
+                .build_load(
+                    utils::datatype_float_to_llvm_type(context, kind),
+                    variable,
+                    "",
+                )
+                .unwrap()
+                .into_float_value();
+
+            let result: IntValue<'ctx> = builder
+                .build_float_compare(op.as_float_predicate(), left_num, right_num, "")
+                .unwrap();
+
+            result.into()
+        }
+
+        (
+            Instruction::Float(left_kind, left_num, _),
+            TokenKind::EqEq
+            | TokenKind::BangEq
+            | TokenKind::Less
+            | TokenKind::Greater
+            | TokenKind::GreaterEq
+            | TokenKind::LessEq,
+            Instruction::Float(right_kind, right_num, _),
             DataTypes::Bool,
         ) => {
             let mut left_num: FloatValue<'ctx> =
@@ -290,108 +238,58 @@ pub fn compile_binary_op<'ctx>(
             let mut right_num: FloatValue<'ctx> =
                 utils::build_const_float(context, right_kind, *right_num);
 
-            if right_num.get_type() != left_num.get_type() {
-                right_num = builder
-                    .build_float_cast(right_num, left_num.get_type(), "")
-                    .unwrap();
+            if let Some(left) =
+                utils::float_autocast(left_kind, kind, None, left_num.into(), builder, context)
+            {
+                left_num = left.into_float_value();
             }
 
-            if left_num.get_type() != right_num.get_type() {
-                left_num = builder
-                    .build_float_cast(left_num, right_num.get_type(), "")
-                    .unwrap();
+            if let Some(right) =
+                utils::float_autocast(right_kind, kind, None, right_num.into(), builder, context)
+            {
+                right_num = right.into_float_value();
             }
 
             let result: IntValue<'_> = builder
-                .build_float_compare(op.to_float_predicate(), left_num, right_num, "")
+                .build_float_compare(op.as_float_predicate(), left_num, right_num, "")
                 .unwrap();
 
             result.into()
         }
 
         (
-            Instruction::Integer(left_kind, left_num),
+            Instruction::Integer(left_kind, left_num, is_signed),
             TokenKind::EqEq
             | TokenKind::BangEq
             | TokenKind::Less
             | TokenKind::Greater
             | TokenKind::GreaterEq
             | TokenKind::LessEq,
-            Instruction::Integer(right_kind, right_num),
+            Instruction::Integer(right_kind, right_num, is_signedd),
             DataTypes::Bool,
         ) => {
             let mut left_num: IntValue<'_> =
-                utils::build_const_integer(context, left_kind, *left_num as u64);
+                utils::build_const_integer(context, left_kind, *left_num as u64, *is_signed);
             let mut right_num: IntValue<'_> =
-                utils::build_const_integer(context, right_kind, *right_num as u64);
+                utils::build_const_integer(context, right_kind, *right_num as u64, *is_signedd);
 
-            if right_num.get_type() != left_num.get_type() {
-                right_num = builder
-                    .build_int_cast(right_num, left_num.get_type(), "")
-                    .unwrap();
+            if let Some(left) =
+                utils::integer_autocast(left_kind, kind, None, left_num.into(), builder, context)
+            {
+                left_num = left.into_int_value();
             }
 
-            if left_num.get_type() != right_num.get_type() {
-                left_num = builder
-                    .build_int_cast(left_num, right_num.get_type(), "")
-                    .unwrap();
-            }
-
-            builder
-                .build_int_compare(op.to_int_predicate(), left_num, right_num, "")
-                .unwrap()
-                .into()
-        }
-        (
-            Instruction::Binary {
-                left,
-                op,
-                right,
-                kind,
-                ..
-            },
-            TokenKind::EqEq
-            | TokenKind::BangEq
-            | TokenKind::Less
-            | TokenKind::Greater
-            | TokenKind::GreaterEq
-            | TokenKind::LessEq,
-            Instruction::Boolean(value),
-            DataTypes::Bool,
-        ) => {
-            let left: BasicValueEnum<'_> = compile_binary_op(
-                module, builder, context, left, op, right, kind, locals, _file,
-            );
-
-            let mut right: BasicValueEnum<'_> = if *value {
-                context.bool_type().const_int(1, false).into()
-            } else {
-                context.bool_type().const_int(0, false).into()
-            };
-
-            if left.is_float_value() {
-                right = if *value {
-                    context.f64_type().const_float(1.0).into()
-                } else {
-                    context.f64_type().const_float(0.0).into()
-                };
-
-                return builder
-                    .build_float_compare(
-                        op.to_float_predicate(),
-                        left.into_float_value(),
-                        right.into_float_value(),
-                        "",
-                    )
-                    .unwrap()
-                    .into();
+            if let Some(right) =
+                utils::integer_autocast(right_kind, kind, None, right_num.into(), builder, context)
+            {
+                right_num = right.into_int_value();
             }
 
             builder
                 .build_int_compare(
-                    op.to_int_predicate(),
-                    left.into_int_value(),
-                    right.into_int_value(),
+                    op.as_int_predicate(*is_signed, *is_signedd),
+                    left_num,
+                    right_num,
                     "",
                 )
                 .unwrap()
@@ -399,85 +297,52 @@ pub fn compile_binary_op<'ctx>(
         }
 
         (
-            Instruction::Boolean(value),
+            Instruction::Boolean(bool_one),
             TokenKind::EqEq
             | TokenKind::BangEq
             | TokenKind::Less
             | TokenKind::Greater
             | TokenKind::GreaterEq
             | TokenKind::LessEq,
-            Instruction::Binary {
-                left,
-                op,
-                right,
-                kind,
-                ..
-            },
+            Instruction::Boolean(bool_two),
             DataTypes::Bool,
         ) => {
-            let left: BasicValueEnum<'_> = compile_binary_op(
-                module, builder, context, left, op, right, kind, locals, _file,
-            );
+            let left_num: IntValue<'_> =
+                utils::build_const_integer(context, &DataTypes::Bool, *bool_one as u64, false);
 
-            let mut right: BasicValueEnum<'_> = if *value {
-                context.bool_type().const_int(1, false).into()
-            } else {
-                context.bool_type().const_int(0, false).into()
-            };
-
-            if left.is_float_value() {
-                right = if *value {
-                    context.f64_type().const_float(1.0).into()
-                } else {
-                    context.f64_type().const_float(0.0).into()
-                };
-
-                return builder
-                    .build_float_compare(
-                        op.to_float_predicate(),
-                        left.into_float_value(),
-                        right.into_float_value(),
-                        "",
-                    )
-                    .unwrap()
-                    .into();
-            }
+            let right_num: IntValue<'_> =
+                utils::build_const_integer(context, &DataTypes::Bool, *bool_two as u64, false);
 
             builder
-                .build_int_compare(
-                    op.to_int_predicate(),
-                    left.into_int_value(),
-                    right.into_int_value(),
-                    "",
-                )
+                .build_int_compare(op.as_int_predicate(false, false), left_num, right_num, "")
                 .unwrap()
                 .into()
         }
 
         (
-            Instruction::RefVar { name, kind, .. },
+            Instruction::RefVar {
+                name,
+                kind: refvar_kind,
+                ..
+            },
             TokenKind::Plus
             | TokenKind::Minus
             | TokenKind::Star
             | TokenKind::Slash
             | TokenKind::Arith,
-            Instruction::Float(float_kind, float_num),
-            DataTypes::Integer,
+            Instruction::Float(_, float_num, _),
+            DataTypes::F32 | DataTypes::F64,
         ) => {
-            let variable: PointerValue<'_> =
-                locals.find_and_get(name).unwrap().into_pointer_value();
+            let variable: PointerValue<'_> = locals.find_and_get(name).unwrap();
 
-            let mut float_num: FloatValue<'_> =
-                utils::build_const_float(context, float_kind, *float_num);
-
-            if float_num.get_type() != utils::datatype_float_to_type(context, kind) {
-                float_num = builder
-                    .build_float_cast(float_num, utils::datatype_float_to_type(context, kind), "")
-                    .unwrap();
-            }
+            let float_num: FloatValue<'_> = utils::build_const_float(context, kind, *float_num);
 
             let last_value: FloatValue<'_> = builder
-                .build_load(utils::datatype_float_to_type(context, kind), variable, "")
+                .build_load(
+                    utils::datatype_float_to_llvm_type(context, refvar_kind),
+                    variable,
+                    "",
+                )
                 .unwrap()
                 .into_float_value();
 
@@ -495,29 +360,37 @@ pub fn compile_binary_op<'ctx>(
         }
 
         (
-            Instruction::RefVar { name, kind, .. },
+            Instruction::RefVar {
+                name,
+                kind: refvar_kind,
+                ..
+            },
             TokenKind::Plus
             | TokenKind::Minus
             | TokenKind::Star
             | TokenKind::Slash
             | TokenKind::Arith,
-            Instruction::Integer(integer_kind, num),
-            DataTypes::Integer,
+            Instruction::Integer(_, num, is_signed),
+            DataTypes::I8
+            | DataTypes::I16
+            | DataTypes::I32
+            | DataTypes::I64
+            | DataTypes::U8
+            | DataTypes::U16
+            | DataTypes::U32
+            | DataTypes::U64,
         ) => {
-            let variable: PointerValue<'_> =
-                locals.find_and_get(name).unwrap().into_pointer_value();
+            let variable: PointerValue<'_> = locals.find_and_get(name).unwrap();
 
-            let mut left_value: IntValue<'_> =
-                utils::build_const_integer(context, integer_kind, *num as u64);
+            let left_num: IntValue<'_> =
+                utils::build_const_integer(context, kind, *num as u64, *is_signed);
 
-            if left_value.get_type() != utils::datatype_int_to_type(context, kind) {
-                left_value = builder
-                    .build_int_cast(left_value, utils::datatype_int_to_type(context, kind), "")
-                    .unwrap();
-            }
-
-            let right_value: IntValue<'_> = builder
-                .build_load(utils::datatype_int_to_type(context, kind), variable, "")
+            let right_num: IntValue<'_> = builder
+                .build_load(
+                    utils::datatype_integer_to_llvm_type(context, refvar_kind),
+                    variable,
+                    "",
+                )
                 .unwrap()
                 .into_int_value();
 
@@ -525,7 +398,7 @@ pub fn compile_binary_op<'ctx>(
                 match kind {
                     DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 => {
                         let result: IntValue<'_> = builder
-                            .build_int_signed_div(left_value, right_value, "")
+                            .build_int_signed_div(left_num, right_num, "")
                             .unwrap();
 
                         builder.build_store(variable, result).unwrap();
@@ -535,7 +408,7 @@ pub fn compile_binary_op<'ctx>(
 
                     DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64 => {
                         let result: IntValue<'_> = builder
-                            .build_int_unsigned_div(left_value, right_value, "")
+                            .build_int_unsigned_div(left_num, right_num, "")
                             .unwrap();
 
                         builder.build_store(variable, result).unwrap();
@@ -547,125 +420,171 @@ pub fn compile_binary_op<'ctx>(
                 }
             }
 
-            match kind {
-                DataTypes::I8 => builder
+            utils::build_overflow(module, builder, kind, op, left_num, right_num)
+        }
+
+        (
+            Instruction::String(string_one, _),
+            TokenKind::Plus,
+            Instruction::String(string_two, _),
+            DataTypes::String,
+        ) => {
+            let from_string: PointerValue<'_> =
+                utils::build_dynamic_string(module, builder, context, string_one);
+
+            string_two.as_bytes().iter().for_each(|byte| {
+                builder
                     .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.s{}.with.overflow.i8",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_value.into(), right_value.into()],
+                        module.get_function("Vec.push_i8").unwrap(),
+                        &[
+                            from_string.into(),
+                            context.i8_type().const_int(*byte as u64, false).into(),
+                        ],
+                        "",
+                    )
+                    .unwrap();
+            });
+
+            from_string.into()
+        }
+
+        (
+            Instruction::Binary {
+                left: left_bin,
+                op: op_bin,
+                right,
+                kind,
+                ..
+            },
+            TokenKind::Plus
+            | TokenKind::Minus
+            | TokenKind::Arith
+            | TokenKind::Slash
+            | TokenKind::EqEq
+            | TokenKind::BangEq
+            | TokenKind::Less
+            | TokenKind::Greater
+            | TokenKind::GreaterEq
+            | TokenKind::LessEq,
+            Instruction::Integer(right_kind, num, is_signed),
+            DataTypes::I8
+            | DataTypes::I16
+            | DataTypes::I32
+            | DataTypes::I64
+            | DataTypes::U8
+            | DataTypes::U16
+            | DataTypes::U32
+            | DataTypes::U64
+            | DataTypes::Bool,
+        ) => {
+            let mut left_num: BasicValueEnum<'_> = compile_binary_op(
+                module, builder, context, left_bin, op_bin, right, kind, locals, function,
+            );
+
+            if left_num.is_struct_value() {
+                left_num = utils::build_possible_overflow(
+                    module,
+                    context,
+                    builder,
+                    left_num.into_struct_value(),
+                    left.get_binary_data(),
+                    function,
+                )
+            }
+
+            let mut right_num: IntValue<'_> =
+                utils::build_const_integer(context, right_kind, *num as u64, *is_signed);
+
+            if let Some(right) =
+                utils::integer_autocast(right_kind, kind, None, right_num.into(), builder, context)
+            {
+                right_num = right.into_int_value();
+            }
+
+            match op {
+                TokenKind::Plus | TokenKind::Minus | TokenKind::Arith => utils::build_overflow(
+                    module,
+                    builder,
+                    kind,
+                    op,
+                    left_num.into_int_value(),
+                    right_num,
+                ),
+                TokenKind::EqEq
+                | TokenKind::BangEq
+                | TokenKind::Less
+                | TokenKind::Greater
+                | TokenKind::GreaterEq
+                | TokenKind::LessEq => builder
+                    .build_int_compare(
+                        op.as_int_predicate(kind.is_signed(), *is_signed),
+                        left_num.into_int_value(),
+                        right_num,
                         "",
                     )
                     .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
-                DataTypes::I16 => builder
-                    .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.s{}.with.overflow.i16",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_value.into(), right_value.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
-                DataTypes::I32 => builder
-                    .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.s{}.with.overflow.i32",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_value.into(), right_value.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
-                DataTypes::I64 => builder
-                    .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.s{}.with.overflow.i64",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_value.into(), right_value.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
-                DataTypes::U8 => builder
-                    .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.s{}.with.overflow.i8",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_value.into(), right_value.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
-                DataTypes::U16 => builder
-                    .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.u{}.with.overflow.i16",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_value.into(), right_value.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
-                DataTypes::U32 => builder
-                    .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.u{}.with.overflow.i32",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_value.into(), right_value.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
-                DataTypes::U64 => builder
-                    .build_call(
-                        module
-                            .get_function(&format!(
-                                "llvm.u{}.with.overflow.i64",
-                                op.to_llvm_intrinsic_identifier()
-                            ))
-                            .unwrap(),
-                        &[left_value.into(), right_value.into()],
-                        "",
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_left(),
+                    .into(),
                 _ => unreachable!(),
             }
         }
 
+        (
+            Instruction::Binary {
+                left,
+                op,
+                right,
+                kind,
+                ..
+            },
+            TokenKind::Plus
+            | TokenKind::Minus
+            | TokenKind::Arith
+            | TokenKind::Slash
+            | TokenKind::EqEq
+            | TokenKind::BangEq
+            | TokenKind::Less
+            | TokenKind::Greater
+            | TokenKind::GreaterEq
+            | TokenKind::LessEq,
+            Instruction::String(string, _),
+            DataTypes::String,
+        ) => {
+            let left: PointerValue<'_> = compile_binary_op(
+                module, builder, context, left, op, right, kind, locals, function,
+            )
+            .into_pointer_value();
+
+            string.as_bytes().iter().for_each(|byte| {
+                builder
+                    .build_call(
+                        module.get_function("Vec.push_i8").unwrap(),
+                        &[
+                            left.into(),
+                            context.i8_type().const_int(*byte as u64, false).into(),
+                        ],
+                        "",
+                    )
+                    .unwrap();
+            });
+
+            left.into()
+        }
+
+        (
+            Instruction::Group {
+                instr: instr_one, ..
+            },
+            TokenKind::And | TokenKind::Or,
+            Instruction::Group {
+                instr: instr_two, ..
+            },
+            DataTypes::Bool,
+        ) => {
+            todo!()
+        }
+
         a => {
-            println!("{:?}", a);
+            println!("{:#?}", a);
             todo!()
         }
     }
@@ -675,35 +594,31 @@ pub fn compile_unary_op<'ctx>(
     module: &Module<'ctx>,
     builder: &Builder<'ctx>,
     context: &'ctx Context,
-    op: &TokenKind,
-    value: &Instruction<'ctx>,
-    kind: &DataTypes,
+    instr: &Instruction<'ctx>,
     locals: &CompilerLocals<'ctx>,
-    function: &FunctionValue<'ctx>,
-    diagnostics: &mut Diagnostic,
-    file: &ThrushFile,
+    function: FunctionValue<'ctx>,
 ) -> BasicValueEnum<'ctx> {
-    match (op, value, kind) {
-        (TokenKind::PlusPlus, Instruction::RefVar { name, kind, line }, _) => {
-            let variable: PointerValue<'ctx> =
-                locals.find_and_get(name).unwrap().into_pointer_value();
+    if let Instruction::Unary {
+        op, value, kind, ..
+    } = instr
+    {
+        if let (TokenKind::PlusPlus, Instruction::RefVar { name, kind, .. }, _) =
+            (op, &**value, kind)
+        {
+            let variable: PointerValue<'ctx> = locals.find_and_get(name).unwrap();
 
-            if let DataTypes::I8
-            | DataTypes::I16
-            | DataTypes::I32
-            | DataTypes::I64
-            | DataTypes::U8
-            | DataTypes::U16
-            | DataTypes::U32
-            | DataTypes::U64 = *kind
-            {
+            if kind.is_integer() {
                 let left_num: IntValue<'ctx> = builder
-                    .build_load(utils::datatype_int_to_type(context, kind), variable, "")
+                    .build_load(
+                        utils::datatype_integer_to_llvm_type(context, kind),
+                        variable,
+                        "",
+                    )
                     .unwrap()
                     .into_int_value();
 
                 let right_num: IntValue<'ctx> =
-                    utils::datatype_int_to_type(context, kind).const_int(1, false);
+                    utils::datatype_integer_to_llvm_type(context, kind).const_int(1, false);
 
                 let result: StructValue<'_> = match kind {
                     DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 => {
@@ -742,102 +657,40 @@ pub fn compile_unary_op<'ctx>(
                 }
                 .into_struct_value();
 
-                let overflowed: IntValue<'_> = builder
-                    .build_extract_value(result, 1, "")
-                    .unwrap()
-                    .into_int_value();
-
-                let true_block: BasicBlock<'_> = context.append_basic_block(*function, "");
-                let false_block: BasicBlock<'_> = context.append_basic_block(*function, "");
-
-                builder
-                    .build_conditional_branch(overflowed, true_block, false_block)
-                    .unwrap();
-
-                builder.position_at_end(true_block);
-
-                builder
-                    .build_call(
-                        module.get_function("panic").unwrap(),
-                        &[
-                            module
-                                .get_global("stderr")
-                                .unwrap()
-                                .as_pointer_value()
-                                .into(),
-                            utils::build_string_constant(module, builder, context, "%s\0").into(),
-                            utils::build_string_constant(
-                                module,
-                                builder,
-                                context,
-                                &format!(
-                            "{}
-
-Details:
-
-    ● File: {}
-    ● Line: {}
-    ● Instruction: {} {} {}
-    ● Operation: {}
-
-    Code:
-
-        {}
-
-{} \n\0",
-                            diagnostic::create_panic_message("Integer / Float Overflow"),
-                            file.path.to_string_lossy(),
-                            line,
-                            kind,
-                            TokenKind::Plus,
-                            kind,
-                            op,
-                            diagnostics.draw_only_line(*line),
-                            diagnostic::create_help_message(
-                                "Check that the limit of a primitive type has not been overflowed."
-                            )
-                        ),
-                            )
-                            .into(),
-                        ],
-                        "",
-                    )
-                    .unwrap();
-
-                diagnostics.clear();
-
-                builder.build_unreachable().unwrap();
-
-                builder.position_at_end(false_block);
-
-                let result: IntValue<'_> = builder
-                    .build_extract_value(result, 0, "")
-                    .unwrap()
-                    .into_int_value();
+                let result = utils::build_possible_overflow(
+                    module,
+                    context,
+                    builder,
+                    result,
+                    instr.get_unary_data_for_overflow(),
+                    function,
+                );
 
                 builder.build_store(variable, result).unwrap();
 
-                return result.into();
+                return result;
             }
 
             let left_num: FloatValue<'ctx> = builder
-                .build_load(utils::datatype_float_to_type(context, kind), variable, "")
+                .build_load(
+                    utils::datatype_float_to_llvm_type(context, kind),
+                    variable,
+                    "",
+                )
                 .unwrap()
                 .into_float_value();
 
             let right_num: FloatValue<'ctx> =
-                utils::datatype_float_to_type(context, kind).const_float(1.0);
+                utils::datatype_float_to_llvm_type(context, kind).const_float(1.0);
 
             let result: FloatValue<'ctx> =
                 builder.build_float_add(left_num, right_num, "").unwrap();
 
-            let store: InstructionValue<'ctx> = builder.build_store(variable, result).unwrap();
+            builder.build_store(variable, result).unwrap();
 
-            store.set_alignment(4).unwrap();
-
-            result.into()
+            return result.into();
         }
-
-        _ => unreachable!(),
     }
+
+    unreachable!()
 }

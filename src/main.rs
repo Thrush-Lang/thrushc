@@ -10,7 +10,7 @@ use {
     ahash::AHashMap as HashMap,
     backend::{
         apis::{debug, vector},
-        builder::{Clang, LLVMOptimization, LLC},
+        builder::{Clang, LLVMOptimizator},
         compiler::Compiler,
         instruction::Instruction,
     },
@@ -145,6 +145,18 @@ lazy_static! {
         } else if !HOME
             .as_ref()
             .unwrap()
+            .join("thrushlang/backends/llvm/backend/bin/llvm-dis")
+            .exists()
+        {
+            logging::log(
+            logging::LogType::ERROR,
+            &format!("LLVM Dissambler don't exists in Thrush Toolchain, re-install the entire toolchain via \"thorium install {}\".", env::consts::OS),
+        );
+
+            process::exit(1);
+        } else if !HOME
+            .as_ref()
+            .unwrap()
             .join("thrushlang/backends/llvm/backend/bin/llvm-config")
             .exists()
         {
@@ -187,10 +199,9 @@ fn main() {
     cli.options.files.sort_by_key(|file| file.name != "main.th");
 
     if cli.options.executable || cli.options.library || cli.options.static_library {
-        cli.options.args.extend([
-            "output/dist/vector.o".to_string(),
-            "output/dist/debug.o".to_string(),
-        ]);
+        cli.options
+            .args
+            .extend(["output/vector.o".to_string(), "output/debug.o".to_string()]);
     }
 
     let start_time: Instant = Instant::now();
@@ -238,61 +249,26 @@ fn main() {
 
         Compiler::compile(&module, &builder, &context, &cli.options, instructions);
 
-        if cli.options.emit_llvm {
-            if !Path::new("output/llvm/").exists() {
-                let _ = fs::create_dir_all("output/llvm/");
-            }
-
-            let _ = module.print_to_file(format!("output/llvm/{}.ll", &file.name));
-
-            continue;
-        }
-
-        if cli.options.emit_asm {
-            if !Path::new("output/asm/").exists() {
-                let _ = fs::create_dir_all("output/asm/");
-            }
-
-            let _ = module.print_to_file(format!("output/asm/{}.ll", &file.name));
-
-            LLC::new(
-                &[PathBuf::from(format!("output/asm/{}.ll", &file.name))],
-                &cli.options,
-            )
-            .compile();
-
-            let _ = fs::remove_file(format!("output/asm/{}.ll", &file.name));
-
-            continue;
-        }
-
-        if !Path::new("output/dist/").exists() {
-            let _ = fs::create_dir_all("output/dist/");
-        }
-
-        let compiled_path: &str = &format!("output/dist/{}.bc", &file.name);
+        let compiled_path: &str = &format!("output/{}.bc", &file.name);
 
         module.write_bitcode_to_path(Path::new(compiled_path));
 
-        LLVMOptimization::optimize(
+        LLVMOptimizator::optimize(
             compiled_path,
-            cli.options.optimization.to_str(false, false),
+            cli.options.optimization.to_llvm_17_passes(),
             cli.options.optimization.to_str(true, false),
         );
 
-        compiled.push(PathBuf::from(format!("output/dist/{}.bc", &file.name)));
+        compiled.push(PathBuf::from(compiled_path));
     }
 
-    if cli.options.executable {
-        compiled.sort_by_key(|path| *path != PathBuf::from("output/dist/main.th.bc"));
-        Clang::new(&compiled, &cli.options).compile();
-    } else {
-        Clang::new(&compiled, &cli.options).compile();
-    }
+    compiled.sort_by_key(|path| *path != PathBuf::from("output/main.th.bc"));
+
+    Clang::new(&compiled, &cli.options).compile();
 
     let _ = fs::copy(
         &cli.options.output,
-        format!("output/dist/{}", cli.options.output),
+        format!("output/{}", cli.options.output),
     );
 
     let _ = fs::remove_file(&cli.options.output);
@@ -300,6 +276,9 @@ fn main() {
     compiled.iter().for_each(|path| {
         let _ = fs::remove_file(path);
     });
+
+    let _ = fs::remove_file("output/vector.o");
+    let _ = fs::remove_file("output/debug.o");
 
     println!(
         "\r{} {}",
@@ -312,9 +291,4 @@ fn main() {
         .bold()
         .fg(Color::Rgb(141, 141, 142))
     );
-
-    if cli.options.delete_built_in_apis_after {
-        let _ = fs::remove_file("output/dist/vector.o");
-        let _ = fs::remove_file("output/dist/debug.o");
-    }
 }

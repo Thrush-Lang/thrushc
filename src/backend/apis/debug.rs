@@ -1,21 +1,21 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
-
-use inkwell::{
-    basic_block::BasicBlock,
-    builder::Builder,
-    context::Context,
-    module::{Linkage, Module},
-    targets::{Target, TargetMachine},
-    values::{FunctionValue, PointerValue},
-    AddressSpace,
-};
-
-use super::super::super::backend::{
-    builder::{Clang, LLC},
-    compiler::options::CompilerOptions,
+use {
+    super::super::super::backend::{
+        builder::{Clang, LLVMOptimizator},
+        compiler::options::CompilerOptions,
+    },
+    inkwell::{
+        basic_block::BasicBlock,
+        builder::Builder,
+        context::Context,
+        module::{Linkage, Module},
+        targets::{Target, TargetMachine},
+        values::{FunctionValue, PointerValue},
+        AddressSpace,
+    },
+    std::{
+        fs,
+        path::{Path, PathBuf},
+    },
 };
 
 pub struct DebugAPI<'a, 'ctx> {
@@ -144,42 +144,18 @@ pub fn compile_debug_api(options: &mut CompilerOptions) {
 
     DebugAPI::include(&debug_api_module, &debug_api_builder, &debug_api_context);
 
-    if options.emit_llvm {
-        if !Path::new("output/llvm/").exists() {
-            let _ = fs::create_dir_all("output/llvm/");
-        }
-
-        debug_api_module
-            .print_to_file("output/llvm/debug.ll")
-            .unwrap();
-
-        return;
+    if !Path::new("output/").exists() {
+        let _ = fs::create_dir_all("output/");
     }
 
-    if options.emit_asm {
-        if !Path::new("output/asm/").exists() {
-            let _ = fs::create_dir_all("output/asm/");
-        }
+    if !PathBuf::from("output/debug.o").exists() {
+        debug_api_module.write_bitcode_to_path(Path::new("output/debug.bc"));
 
-        debug_api_module
-            .print_to_file("output/asm/debug.ll")
-            .unwrap();
-
-        LLC::new(&[PathBuf::from("output/asm/debug.ll")], options).compile();
-
-        let _ = fs::remove_file("output/asm/debug.ll");
-
-        return;
-    }
-
-    if !Path::new("output/dist/").exists() {
-        let _ = fs::create_dir_all("output/dist/");
-    }
-
-    if !PathBuf::from("output/dist/debug.o").exists() {
-        debug_api_module
-            .print_to_file("output/dist/debug.ll")
-            .unwrap();
+        LLVMOptimizator::optimize(
+            "output/debug.bc",
+            options.optimization.to_llvm_17_passes(),
+            options.optimization.to_str(true, false),
+        );
 
         let previous_library: bool = options.library;
         let previous_executable: bool = options.executable;
@@ -191,17 +167,15 @@ pub fn compile_debug_api(options: &mut CompilerOptions) {
         options.executable = false;
         options.output = String::from("debug.o");
 
-        Clang::new(&[PathBuf::from("output/dist/debug.ll")], options).compile();
+        Clang::new(&[PathBuf::from("output/debug.bc")], options).compile();
 
         options.library = previous_library;
         options.executable = previous_executable;
         options.static_library = previous_static_library;
         options.output = previous_output;
 
-        let _ = fs::remove_file("output/dist/debug.ll");
-
-        let _ = fs::copy("debug.o", "output/dist/debug.o");
-
+        let _ = fs::remove_file("output/debug.bc");
+        let _ = fs::copy("debug.o", "output/debug.o");
         let _ = fs::remove_file("debug.o");
     }
 }

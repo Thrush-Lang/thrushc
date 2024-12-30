@@ -74,12 +74,6 @@ impl Cli {
                 self.options.output = self.args[self.extract_relative_index(*index)].to_string();
             }
 
-            "--delete-built-in-apis" | "-delete-built-in-apis" => {
-                *index += 1;
-
-                self.options.delete_built_in_apis_after = true;
-            }
-
             "-opt" | "--optimization" => {
                 *index += 1;
 
@@ -92,37 +86,36 @@ impl Cli {
                         "O0" => Opt::None,
                         "O1" => Opt::Low,
                         "O2" => Opt::Mid,
-                        "O3" => Opt::Mcqueen,
-                        _ => Opt::default(),
+                        "mcqueen" => Opt::Mcqueen,
+                        any => {
+                            self.report_error(&format!("Unknown optimization level \"{}\"", any));
+                            Opt::default()
+                        }
                     };
 
                 *index += 1;
             }
 
-            "--emit-only-llvm" | "-emit-only-llvm" => {
+            "--emit" | "-emit" => {
                 *index += 1;
 
-                if self.options.emit_asm {
-                    self.report_error(&format!(
-                        "You can't use \"{}\" and \"{}\" together.",
-                        "--emit-only-llvm", "--emit-only-asm"
-                    ));
+                if *index > self.args.len() {
+                    self.report_error(&format!("Missing argument for {}", arg));
                 }
 
-                self.options.emit_llvm = true;
-            }
+                match self.args[self.extract_relative_index(*index)].as_str() {
+                    "llvm-ir" => self.options.emit_llvm_ir = true,
+                    "llvm-bc" => self.options.emit_llvm_bitcode = true,
+                    "asm" => self.options.emit_asm = true,
+                    any => {
+                        self.report_error(&format!(
+                            "\"{}\" is invalid target to emit raw compiled code. Maybe \"(--emit || -emit) llvm-ir || llvm-bc || asm\", is the command?",
+                            any
+                        ));
+                    }
+                }
 
-            "--emit-only-asm" | "-emit-only-asm" => {
                 *index += 1;
-
-                if self.options.emit_asm {
-                    self.report_error(&format!(
-                        "You can't use \"{}\" and \"{}\" together.",
-                        "--emit-only-llvm", "--emit-only-asm"
-                    ));
-                }
-
-                self.options.emit_asm = true;
             }
 
             "--library" | "-lib" => {
@@ -402,23 +395,9 @@ impl Cli {
         println!(
             "{} ({} | {}) {}",
             style("•").bold(),
-            style("--emit-only-llvm")
-                .bold()
-                .fg(Color::Rgb(141, 141, 142)),
-            style("-emit-only-llvm")
-                .bold()
-                .fg(Color::Rgb(141, 141, 142)),
-            style("Compile the code only to LLVM IR.").bold()
-        );
-
-        println!(
-            "{} ({} | {}) {}",
-            style("•").bold(),
-            style("--emit-only-asm")
-                .bold()
-                .fg(Color::Rgb(141, 141, 142)),
-            style("-emit-only-asm").bold().fg(Color::Rgb(141, 141, 142)),
-            style("Compile the code only to Assembler Code.").bold()
+            style("--emit").bold().fg(Color::Rgb(141, 141, 142)),
+            style("-emit").bold().fg(Color::Rgb(141, 141, 142)),
+            style("Compile the code to Assembler or LLVM IR.").bold()
         );
 
         println!(
@@ -427,18 +406,6 @@ impl Cli {
             style("--include").bold().fg(Color::Rgb(141, 141, 142)),
             style("-include").bold().fg(Color::Rgb(141, 141, 142)),
             style("Include a Native API Code in the IR.").bold()
-        );
-
-        println!(
-            "{} ({} | {}) {}",
-            style("•").bold(),
-            style("--delete-built-in-apis")
-                .bold()
-                .fg(Color::Rgb(141, 141, 142)),
-            style("-delete-built-in-apis")
-                .bold()
-                .fg(Color::Rgb(141, 141, 142)),
-            style("Delete Compiler built-in API'S after the Compilation.").bold()
         );
 
         println!(

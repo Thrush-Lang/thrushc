@@ -5,7 +5,7 @@ use {
         super::{logging, LLVM_BACKEND_COMPILER},
         compiler::options::CompilerOptions,
     },
-    std::{path::PathBuf, process::Command},
+    std::{fs, path::PathBuf, process::Command},
 };
 
 pub struct Clang<'a> {
@@ -19,6 +19,28 @@ impl<'a> Clang<'a> {
     }
 
     pub fn compile(&self) {
+        if self.options.emit_llvm_ir {
+            LLVMDissambler::new(self.files).dissamble();
+
+            self.files.iter().for_each(|path| {
+                let _ = fs::remove_file(path);
+            });
+
+            return;
+        }
+
+        if self.options.emit_asm {
+            LLC::new(self.files, self.options).compile();
+
+            self.files.iter().for_each(|path| {
+                let _ = fs::remove_file(path);
+            });
+        }
+
+        if self.options.emit_llvm_bitcode {
+            return;
+        }
+
         let mut clang_command: Command = Command::new(LLVM_BACKEND_COMPILER.join("clang-17"));
 
         if self.options.executable {
@@ -79,30 +101,27 @@ impl<'a> LLC<'a> {
     }
 }
 
-pub struct LLVMOptimization;
+pub struct LLVMDissambler<'a> {
+    files: &'a [PathBuf],
+}
 
-impl LLVMOptimization {
+impl<'a> LLVMDissambler<'a> {
+    pub fn new(files: &'a [PathBuf]) -> Self {
+        Self { files }
+    }
+
+    pub fn dissamble(&self) {
+        handle_command(Command::new(LLVM_BACKEND_COMPILER.join("llvm-dis")).args(self.files));
+    }
+}
+
+pub struct LLVMOptimizator;
+
+impl LLVMOptimizator {
     pub fn optimize(path: &str, opt: &str, opt_lto: &str) {
         handle_command(
             Command::new(LLVM_BACKEND_COMPILER.join("opt"))
                 .arg(format!("-p={}", opt))
-                .arg("-p=globalopt")
-                .arg("-p=globaldce")
-                .arg("-p=dce")
-                .arg("-p=instcombine")
-                .arg("-p=agressive-instcombine")
-                .arg("-p=loop-deletion")
-                .arg("-p=loop-simplify")
-                .arg("-p=strip-dead-prototypes")
-                .arg("-p=strip-dead-debug-info")
-                .arg("-p=strip")
-                .arg("-p=mem2reg")
-                .arg("-p=memcpyopt")
-                .arg("-p=inline")
-                .arg("-p=loop-simplifycfg")
-                .arg("-p=instsimplify")
-                .arg("-p=loop-instsimplify")
-                .arg("-p=simplifycfg")
                 .arg(path)
                 .arg("-o")
                 .arg(path),

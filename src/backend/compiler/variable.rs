@@ -421,7 +421,7 @@ fn compile_integer_var<'ctx>(
                 context,
                 builder,
                 result.into_struct_value(),
-                value.get_binary_data(),
+                value.get_binary_data_types(),
                 function,
             )
         }

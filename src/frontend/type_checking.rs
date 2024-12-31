@@ -17,22 +17,8 @@ fn check_binary_instr_add(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
     match (a, b) {
         (DataTypes::String, DataTypes::String) => Ok(()),
         (
-            DataTypes::U8
-            | DataTypes::U16
-            | DataTypes::U32
-            | DataTypes::U64
-            | DataTypes::I8
-            | DataTypes::I16
-            | DataTypes::I32
-            | DataTypes::I64,
-            DataTypes::U8
-            | DataTypes::U16
-            | DataTypes::U32
-            | DataTypes::U64
-            | DataTypes::I8
-            | DataTypes::I16
-            | DataTypes::I32
-            | DataTypes::I64,
+            DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
+            DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
         ) => Ok(()),
         (DataTypes::String, DataTypes::Char) => Ok(()),
         (DataTypes::F32 | DataTypes::F64, DataTypes::F32 | DataTypes::F64) => Ok(()),
@@ -52,22 +38,8 @@ fn check_binary_instr_add(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
 #[inline]
 fn check_binary_instr_sub(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
     ) = (a, b)
     {
         return Ok(());
@@ -89,22 +61,8 @@ fn check_binary_instr_sub(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
 #[inline]
 fn check_binary_instr_div(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
     ) = (a, b)
     {
         return Ok(());
@@ -126,22 +84,8 @@ fn check_binary_instr_div(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
 #[inline]
 fn check_binary_instr_mul(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
     ) = (a, b)
     {
         return Ok(());
@@ -163,22 +107,8 @@ fn check_binary_instr_mul(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
 #[inline]
 fn check_binary_instr_eqeq(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
     ) = (a, b)
     {
         return Ok(());
@@ -206,22 +136,8 @@ fn check_binary_instr_eqeq(a: &DataTypes, b: &DataTypes, line: usize) -> Result<
 #[inline]
 fn check_binary_instr_bangeq(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
     ) = (a, b)
     {
         return Ok(());
@@ -253,24 +169,8 @@ fn check_binary_instr_greater(
     line: usize,
 ) -> Result<(), ThrushError> {
     if let (
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64
-        | DataTypes::Bool,
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64
-        | DataTypes::Bool,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 | DataTypes::Bool,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 | DataTypes::Bool,
     ) = (a, b)
     {
         return Ok(());
@@ -296,22 +196,8 @@ fn check_binary_instr_greatereq(
     line: usize,
 ) -> Result<(), ThrushError> {
     if let (
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
     ) = (a, b)
     {
         return Ok(());
@@ -333,24 +219,8 @@ fn check_binary_instr_greatereq(
 #[inline]
 fn check_binary_instr_less(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
-        DataTypes::Bool
-        | DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64
-        | DataTypes::Bool,
+        DataTypes::Bool | DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 | DataTypes::Bool,
     ) = (a, b)
     {
         return Ok(());
@@ -372,22 +242,8 @@ fn check_binary_instr_less(a: &DataTypes, b: &DataTypes, line: usize) -> Result<
 #[inline]
 fn check_binary_instr_lesseq(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
     ) = (a, b)
     {
         return Ok(());
@@ -408,29 +264,7 @@ fn check_binary_instr_lesseq(a: &DataTypes, b: &DataTypes, line: usize) -> Resul
 
 #[inline]
 fn check_binary_instr_and(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
-    if let (
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
-    ) = (a, b)
-    {
-        return Ok(());
-    } else if let (DataTypes::F32 | DataTypes::F64, DataTypes::F32 | DataTypes::F64) = (a, b) {
-        return Ok(());
-    } else if let (DataTypes::Bool, DataTypes::Bool) = (a, b) {
+    if let (DataTypes::Bool, DataTypes::Bool) = (a, b) {
         return Ok(());
     }
 
@@ -448,22 +282,8 @@ fn check_binary_instr_and(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(
 #[inline]
 fn check_binary_instr_or(a: &DataTypes, b: &DataTypes, line: usize) -> Result<(), ThrushError> {
     if let (
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
+        DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
     ) = (a, b)
     {
         return Ok(());
@@ -542,11 +362,7 @@ fn check_unary_instr_negate(a: &DataTypes, line: usize) -> Result<(), ThrushErro
 
 #[inline]
 fn check_unary_instr_minusminus(a: &DataTypes, line: usize) -> Result<(), ThrushError> {
-    if let DataTypes::U8
-    | DataTypes::U16
-    | DataTypes::U32
-    | DataTypes::U64
-    | DataTypes::I8
+    if let DataTypes::I8
     | DataTypes::I16
     | DataTypes::I32
     | DataTypes::I64
@@ -569,11 +385,7 @@ fn check_unary_instr_minusminus(a: &DataTypes, line: usize) -> Result<(), Thrush
 
 #[inline]
 fn check_unary_instr_plusplus(a: &DataTypes, line: usize) -> Result<(), ThrushError> {
-    if let DataTypes::U8
-    | DataTypes::U16
-    | DataTypes::U32
-    | DataTypes::U64
-    | DataTypes::I8
+    if let DataTypes::I8
     | DataTypes::I16
     | DataTypes::I32
     | DataTypes::I64
@@ -633,42 +445,7 @@ pub fn check_type(
     match (kind, target) {
         (DataTypes::Char, DataTypes::Char) => Ok(()),
         (DataTypes::String, DataTypes::String) => Ok(()),
-        (
-            DataTypes::Bool
-            | DataTypes::U8
-            | DataTypes::U16
-            | DataTypes::U32
-            | DataTypes::U64
-            | DataTypes::I8
-            | DataTypes::I16
-            | DataTypes::I32
-            | DataTypes::I64,
-            DataTypes::Bool,
-        ) => Ok(()),
-        (
-            DataTypes::U8,
-            DataTypes::U8
-            | DataTypes::U16
-            | DataTypes::U32
-            | DataTypes::U64
-            | DataTypes::I8
-            | DataTypes::I16
-            | DataTypes::I32
-            | DataTypes::I64,
-        ) => Ok(()),
-        (
-            DataTypes::U16,
-            DataTypes::U16
-            | DataTypes::U32
-            | DataTypes::U64
-            | DataTypes::I16
-            | DataTypes::I32
-            | DataTypes::I64,
-        ) => Ok(()),
-        (DataTypes::U32, DataTypes::U32 | DataTypes::U64 | DataTypes::I32 | DataTypes::I64) => {
-            Ok(())
-        }
-        (DataTypes::U64, DataTypes::U64 | DataTypes::I64) => Ok(()),
+        (DataTypes::Bool, DataTypes::Bool) => Ok(()),
         (DataTypes::I8, DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64) => Ok(()),
         (DataTypes::I16, DataTypes::I16 | DataTypes::I32 | DataTypes::I64) => Ok(()),
         (DataTypes::I32, DataTypes::I32 | DataTypes::I64) => Ok(()),

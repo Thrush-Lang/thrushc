@@ -24,6 +24,7 @@ pub struct Parser<'instr> {
     tokens: &'instr [Token],
     in_function: bool,
     in_type_function: DataTypes,
+    in_var_type: DataTypes,
     current: usize,
     globals: ParserGlobals<'instr>,
     locals: ParserLocals<'instr>,
@@ -43,6 +44,7 @@ impl<'instr> Parser<'instr> {
             current: 0,
             in_function: false,
             in_type_function: DataTypes::Void,
+            in_var_type: DataTypes::Void,
             globals: HashMap::new(),
             locals: vec![HashMap::new()],
             scope: 0,
@@ -97,7 +99,7 @@ impl<'instr> Parser<'instr> {
             TokenKind::Public => Ok(self.public()?),
             TokenKind::Var => Ok(self.variable(false)?),
             TokenKind::For => Ok(self.for_loop()?),
-            _ => Ok(self.expression(DataTypes::Void)?),
+            _ => Ok(self.expression()?),
         }
     }
 
@@ -108,7 +110,7 @@ impl<'instr> Parser<'instr> {
 
         let variable: Instruction<'instr> = self.variable(false)?;
 
-        let cond: Instruction<'instr> = self.expression(DataTypes::Void)?;
+        let cond: Instruction<'instr> = self.expression()?;
 
         self.consume(
             TokenKind::SemiColon,
@@ -118,7 +120,7 @@ impl<'instr> Parser<'instr> {
             start_line,
         )?;
 
-        let actions: Instruction<'instr> = self.expression(DataTypes::Void)?;
+        let actions: Instruction<'instr> = self.expression()?;
 
         let mut variable_clone: Instruction<'instr> = variable.clone();
 
@@ -233,7 +235,9 @@ impl<'instr> Parser<'instr> {
             name.line,
         )?;
 
-        let value: Instruction<'instr> = self.expression(kind)?;
+        self.in_var_type = kind;
+
+        let value: Instruction<'instr> = self.expression()?;
         let value_type: DataTypes = value.get_data_type();
 
         if let Err(e) = type_checking::check_type(
@@ -328,7 +332,7 @@ impl<'instr> Parser<'instr> {
             ));
         }
 
-        let value: Instruction<'instr> = self.expression(DataTypes::Void)?;
+        let value: Instruction<'instr> = self.expression()?;
 
         if let Instruction::RefVar { name, kind, .. } = value {
             if kind == DataTypes::String {
@@ -604,7 +608,7 @@ impl<'instr> Parser<'instr> {
                 continue;
             }
 
-            args.push(self.expression(DataTypes::Void)?);
+            args.push(self.expression()?);
         }
 
         self.parse_string_formatted(&args, start.line, true);
@@ -638,7 +642,7 @@ impl<'instr> Parser<'instr> {
                 continue;
             }
 
-            args.push(self.expression(DataTypes::Void)?);
+            args.push(self.expression()?);
         }
 
         self.parse_string_formatted(&args, start.line, false);
@@ -654,8 +658,8 @@ impl<'instr> Parser<'instr> {
         Ok(Instruction::Println(args))
     }
 
-    fn expression(&mut self, default_kind: DataTypes) -> Result<Instruction<'instr>, ThrushError> {
-        let instr: Instruction = self.or(default_kind)?;
+    fn expression(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+        let instr: Instruction = self.or()?;
 
         self.locals.iter_mut().for_each(|scope| {
             scope.values_mut().for_each(|variable| {
@@ -668,12 +672,12 @@ impl<'instr> Parser<'instr> {
         Ok(instr)
     }
 
-    fn or(&mut self, default_kind: DataTypes) -> Result<Instruction<'instr>, ThrushError> {
-        let mut instr: Instruction<'_> = self.and(default_kind)?;
+    fn or(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+        let mut instr: Instruction<'_> = self.and()?;
 
         while self.match_token(TokenKind::Or)? {
             let op: &TokenKind = &self.previous().kind;
-            let right: Instruction<'instr> = self.and(default_kind)?;
+            let right: Instruction<'instr> = self.and()?;
 
             type_checking::check_binary_instr(
                 op,
@@ -694,12 +698,12 @@ impl<'instr> Parser<'instr> {
         Ok(instr)
     }
 
-    fn and(&mut self, default_kind: DataTypes) -> Result<Instruction<'instr>, ThrushError> {
-        let mut instr: Instruction<'_> = self.equality(default_kind)?;
+    fn and(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+        let mut instr: Instruction<'_> = self.equality()?;
 
         while self.match_token(TokenKind::And)? {
             let op: &TokenKind = &self.previous().kind;
-            let right: Instruction<'_> = self.equality(default_kind)?;
+            let right: Instruction<'_> = self.equality()?;
 
             type_checking::check_binary_instr(
                 op,
@@ -720,12 +724,12 @@ impl<'instr> Parser<'instr> {
         Ok(instr)
     }
 
-    fn equality(&mut self, default_kind: DataTypes) -> Result<Instruction<'instr>, ThrushError> {
-        let mut instr: Instruction<'_> = self.comparison(default_kind)?;
+    fn equality(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+        let mut instr: Instruction<'_> = self.comparison()?;
 
         while self.match_token(TokenKind::BangEq)? || self.match_token(TokenKind::EqEq)? {
             let op: &TokenKind = &self.previous().kind;
-            let right: Instruction<'_> = self.comparison(default_kind)?;
+            let right: Instruction<'_> = self.comparison()?;
 
             type_checking::check_binary_instr(
                 op,
@@ -746,8 +750,8 @@ impl<'instr> Parser<'instr> {
         Ok(instr)
     }
 
-    fn comparison(&mut self, default_kind: DataTypes) -> Result<Instruction<'instr>, ThrushError> {
-        let mut instr: Instruction<'_> = self.term(default_kind)?;
+    fn comparison(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+        let mut instr: Instruction<'_> = self.term()?;
 
         while self.match_token(TokenKind::Greater)?
             || self.match_token(TokenKind::GreaterEq)?
@@ -755,7 +759,7 @@ impl<'instr> Parser<'instr> {
             || self.match_token(TokenKind::LessEq)?
         {
             let op: &TokenKind = &self.previous().kind;
-            let right: Instruction<'_> = self.term(default_kind)?;
+            let right: Instruction<'_> = self.term()?;
 
             type_checking::check_binary_instr(
                 op,
@@ -776,7 +780,7 @@ impl<'instr> Parser<'instr> {
         Ok(instr)
     }
 
-    fn term(&mut self, default_kind: DataTypes) -> Result<Instruction<'instr>, ThrushError> {
+    fn term(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         let mut instr: Instruction<'_> = self.unary()?;
 
         while self.match_token(TokenKind::Plus)?
@@ -786,6 +790,15 @@ impl<'instr> Parser<'instr> {
         {
             let op: &TokenKind = &self.previous().kind;
             let right: Instruction<'_> = self.unary()?;
+
+            let left_type: DataTypes = instr.get_data_type();
+            let right_type: DataTypes = right.get_data_type();
+
+            let kind: DataTypes = if left_type.is_integer() && right_type.is_integer() {
+                left_type.determinate_integer_datatype(right_type)
+            } else {
+                self.in_var_type
+            };
 
             type_checking::check_binary_instr(
                 op,
@@ -798,7 +811,7 @@ impl<'instr> Parser<'instr> {
                 left: Box::from(instr),
                 op,
                 right: Box::from(right),
-                kind: default_kind,
+                kind,
                 line: self.previous().line,
             };
         }
@@ -828,7 +841,15 @@ impl<'instr> Parser<'instr> {
             let line: usize = self.previous().line;
 
             let op: &TokenKind = &self.previous().kind;
-            let value: Instruction<'instr> = self.primary()?;
+            let mut value: Instruction<'instr> = self.primary()?;
+
+            if let Instruction::Integer(_, _, is_signed) = &mut value {
+                if *op == TokenKind::Minus {
+                    *is_signed = true;
+                    return Ok(value);
+                }
+            }
+
             let value_type: &DataTypes = &value.get_data_type();
 
             type_checking::check_unary_instr(op, value_type, self.previous().line)?;
@@ -853,7 +874,7 @@ impl<'instr> Parser<'instr> {
 
                 self.only_advance()?;
 
-                let instr: Instruction<'instr> = self.expression(DataTypes::Void)?;
+                let instr: Instruction<'instr> = self.expression()?;
                 let kind: DataTypes = instr.get_data_type();
 
                 if !instr.is_binary() {
@@ -902,11 +923,6 @@ impl<'instr> Parser<'instr> {
                         DataTypes::I16 => Instruction::Integer(DataTypes::I16, *num, *is_signed),
                         DataTypes::I32 => Instruction::Integer(DataTypes::I32, *num, *is_signed),
                         DataTypes::I64 => Instruction::Integer(DataTypes::I64, *num, *is_signed),
-                        DataTypes::U8 => Instruction::Integer(DataTypes::U8, *num, *is_signed),
-                        DataTypes::U16 => Instruction::Integer(DataTypes::U16, *num, *is_signed),
-                        DataTypes::U32 => Instruction::Integer(DataTypes::U32, *num, *is_signed),
-                        DataTypes::U64 => Instruction::Integer(DataTypes::U64, *num, *is_signed),
-
                         _ => unreachable!(),
                     };
 
@@ -1025,7 +1041,7 @@ impl<'instr> Parser<'instr> {
                     } else if self.peek().kind == TokenKind::Eq {
                         self.only_advance()?;
 
-                        let expr: Instruction<'instr> = self.expression(DataTypes::Void)?;
+                        let expr: Instruction<'instr> = self.expression()?;
 
                         if let Err(err) = type_checking::check_type(
                             expr.get_data_type(),
@@ -1178,7 +1194,7 @@ impl<'instr> Parser<'instr> {
                 continue;
             }
 
-            args.push(self.expression(DataTypes::Void)?);
+            args.push(self.expression()?);
         }
 
         self.consume(

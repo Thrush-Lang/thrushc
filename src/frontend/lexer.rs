@@ -1,10 +1,7 @@
 use {
     super::super::{
-        diagnostic::Diagnostic,
-        error::{ThrushError, ThrushErrorKind},
-        backend::compiler::options::ThrushFile,
-        logging::LogType,
-    }, core::str, inkwell::{FloatPredicate, IntPredicate}, std::{num::ParseFloatError, process::exit}
+        backend::compiler::options::ThrushFile, diagnostic::Diagnostic, error::{ThrushError, ThrushErrorKind}, logging::LogType
+    }, ahash::{HashMap, HashMapExt}, core::str, inkwell::{FloatPredicate, IntPredicate}, std::{num::ParseFloatError, process::exit}
 };
 
 pub struct Lexer<'a> {
@@ -163,11 +160,6 @@ impl<'a> Lexer<'a> {
             "null" => self.make(TokenKind::Null),
             "@import" => self.make(TokenKind::Import),
 
-            "u8" => self.make(TokenKind::DataType(DataTypes::U8)),
-            "u16" => self.make(TokenKind::DataType(DataTypes::U16)),
-            "u32" => self.make(TokenKind::DataType(DataTypes::U32)),
-            "u64" => self.make(TokenKind::DataType(DataTypes::U64)),
-
             "i8" => self.make(TokenKind::DataType(DataTypes::I8)),
             "i16" => self.make(TokenKind::DataType(DataTypes::I16)),
             "i32" => self.make(TokenKind::DataType(DataTypes::I32)),
@@ -182,7 +174,6 @@ impl<'a> Lexer<'a> {
             "char" => self.make(TokenKind::DataType(DataTypes::Char)),
 
             "void" => self.make(TokenKind::DataType(DataTypes::Void)),
-
 
             _ => {
                 self.tokens.push(Token {
@@ -205,7 +196,7 @@ impl<'a> Lexer<'a> {
         }
 
         let kind: (DataTypes, bool) =
-            self.eval_integer_type(self.lexeme())?;
+            self.eval_integer_or_float_type(self.lexeme())?;
 
         let num: Result<f64, ParseFloatError> = self.lexeme().parse::<f64>();
 
@@ -220,7 +211,7 @@ impl<'a> Lexer<'a> {
             ));
         }
 
-        if kind.0 == DataTypes::F32 || kind.0 == DataTypes::F64 {
+        if kind.0.is_float() {
             self.tokens.push(Token {
                 kind: TokenKind::Float(kind.0, *num.as_ref().unwrap(), kind.1),
                 lexeme: None,
@@ -304,7 +295,6 @@ impl<'a> Lexer<'a> {
         string = string.replace("\\r", "\r");
         string = string.replace("\\t", "\t");
 
-
         self.tokens.push(Token {
             kind: TokenKind::String,
             lexeme: Some(string),
@@ -314,38 +304,12 @@ impl<'a> Lexer<'a> {
         Ok(())
     }
 
-    pub fn eval_integer_type(
+    pub fn eval_integer_or_float_type(
         &mut self,
         lexeme: String,
     ) -> Result<(DataTypes, bool), ThrushError> {
 
-        if self.previous_token().kind == TokenKind::Minus && !lexeme.contains(".") && !self.tokens[self.tokens.len() - 2].kind.is_integer() {
-
-            self.tokens.remove(self.tokens.len() - 1);
-
-            let lexeme: String = String::from("-") + &lexeme;
-
-            return match lexeme.parse::<isize>() {
-                Ok(num) => match num {
-                    -128_isize..=127_isize => Ok((DataTypes::I8, true)),
-                    -32_768isize..=32_767_isize => Ok((DataTypes::I16, true)),
-                    -2147483648isize..=2147483647isize => Ok((DataTypes::I32, true)),
-                    -9223372036854775808isize..=9223372036854775807isize => Ok((DataTypes::I64, true)),
-                    _ => Err(ThrushError::Parse(
-                        ThrushErrorKind::UnreachableNumber,
-                        String::from("The number is out of bounds."),
-                        String::from("The size is out of bounds of an isize (-n to n)."),
-                        self.line,
-                    )),
-                },
-                Err(_) => Err(ThrushError::Parse(
-                    ThrushErrorKind::ParsedNumber,
-                    String::from("The number is too long for an signed integer or float."),
-                    String::from("Did you provide a valid number with the correct format and not out of bounds?"),
-                    self.line,
-                )),
-            };
-        } else if lexeme.contains(".") {
+        if lexeme.contains(".") {
 
             if lexeme.chars().filter(|ch| *ch == '.').count() > 1 {
                 return Err(ThrushError::Lex(
@@ -371,30 +335,26 @@ impl<'a> Lexer<'a> {
 
         match lexeme.parse::<isize>() {
             Ok(num) => match num {
-                0isize..=127isize => Ok((DataTypes::U8, false)),
-                128isize..=65_535isize => Ok((DataTypes::U16, false)),
-                65_536isize..=4_294_967_295isize => Ok((DataTypes::U32, false)),
-                4_294_967_296isize..= 9_223_372_036_854_775_807isize => Ok((DataTypes::U64, false)),
+                -128isize..=127isize => Ok((DataTypes::I8, false)),
+                -32728isize..=32767isize => Ok((DataTypes::I16, false)),
+                -2147483648isize..=2147483647isize => Ok((DataTypes::I32, false)),
+                -9223372036854775808isize..= 9223372036854775807isize => Ok((DataTypes::I64, false)),
                 _ => Err(ThrushError::Parse(
                     ThrushErrorKind::UnreachableNumber,
-                    String::from("The number is out of bounds."),
+                    String::from("Unreacheable Number."),
                     String::from("The size is out of bounds of an isize (0 to n)."),
                     self.line,
                 )),
             },
             Err(_) => Err(ThrushError::Parse(
                 ThrushErrorKind::ParsedNumber,
-                String::from("The number is too long for an unsigned integer_or_float."),
+                String::from("Unreacheable Number"),
                 String::from(
                     "Did you provide a valid number with the correct format and not out of bounds?",
                 ),
                 self.line,
             )),
         }
-    }
-
-    fn previous_token(&self) -> &Token {
-        &self.tokens[self.tokens.len() - 1]
     }
 
     fn advance(&mut self) -> u8 {
@@ -594,16 +554,12 @@ impl std::fmt::Display for TokenKind {
 }
 
 impl TokenKind {
-    #[inline]
-    pub fn is_integer(&self) -> bool {
-        matches!(self, TokenKind::Integer(_, _, _))
-    }
 
     #[inline]
     pub fn get_possible_datatype(&self) -> DataTypes {
         if self.is_possible_unary() {
             if let TokenKind::PlusPlus | TokenKind::MinusMinus = self {
-                return DataTypes::U64;
+                return DataTypes::I64;
             }
 
             if let TokenKind::Bang = self {
@@ -680,37 +636,30 @@ impl TokenKind {
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum DataTypes {
     // Integer DataTypes
-    U8 = 0,
-    U16 = 1,
-    U32 = 2,
-    U64 = 3,
     I8 = 4,
-    I16 = 5,
-    I32 = 6,
-    I64 = 7,
+    I16 = 8,
+    I32 = 16,
+    I64 = 32,
 
     // Floating Point DataTypes
-    F32 = 9,
-    F64 = 10,
+    F32,
+    F64,
     // Boolean DataTypes
-    Bool = 12,
+    Bool,
 
+    // Char DataType
+    Char,
     // String DataTypes
-    Char = 13,
-    String = 14,
+    String,
 
     // Void Type
-    Void = 15,
+    Void,
 }
 
 
 impl std::fmt::Display for DataTypes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DataTypes::U8 => write!(f, "u8"),
-            DataTypes::U16 => write!(f, "u16"),
-            DataTypes::U32 => write!(f, "u32"),
-            DataTypes::U64 => write!(f, "u64"),
             DataTypes::I8 => write!(f, "i8"),
             DataTypes::I16 => write!(f, "i16"),
             DataTypes::I32 => write!(f, "i32"),
@@ -726,6 +675,32 @@ impl std::fmt::Display for DataTypes {
 }
 
 impl DataTypes {
+
+    #[inline]
+    pub fn determinate_integer_datatype(self, other: DataTypes) -> DataTypes {
+        let mut types: HashMap<u8, DataTypes> = HashMap::new();
+
+        types.insert(4, DataTypes::I8);
+        types.insert(8, DataTypes::I16);
+        types.insert(16, DataTypes::I32);
+        types.insert(32, DataTypes::I64);
+
+        let calc: u8 = self as u8 + other as u8;
+
+        if calc == 12 {
+            return DataTypes::I16;
+        }
+
+        if calc == 25 {
+            return DataTypes::I32;
+        }
+
+        if types.contains_key(&calc) {
+            return *types.get(&calc).unwrap();
+        }
+
+        DataTypes::I64
+    }
 
     #[inline]
     pub fn is_signed(&self) -> bool {
@@ -748,7 +723,7 @@ impl DataTypes {
 
     #[inline]
     pub fn is_integer(&self) -> bool {
-        if let DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 | DataTypes::U8 | DataTypes::U16 | DataTypes::U32 | DataTypes::U64 | DataTypes::Bool | DataTypes::Char = self {
+        if let DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 | DataTypes::Bool | DataTypes::Char = self {
             return true;
         }
 
@@ -759,10 +734,10 @@ impl DataTypes {
     #[inline]
     pub fn as_llvm_identifier(&self) -> &str {
         match self {
-            DataTypes::U8 | DataTypes::I8 => "i8",
-            DataTypes::U16 | DataTypes::I16 => "i16",
-            DataTypes::U32 | DataTypes::I32 => "i32",
-            DataTypes::U64 | DataTypes::I64 => "i64",
+            DataTypes::I8 => "i8",
+            DataTypes::I16 => "i16",
+            DataTypes::I32 => "i32",
+            DataTypes::I64 => "i64",
             DataTypes::F32 => "f32",
             DataTypes::F64 => "f64",
             _ => unreachable!()
@@ -772,10 +747,10 @@ impl DataTypes {
     #[inline]
     pub fn as_fmt(&self) -> &str {
         match self {
-            DataTypes::U8 | DataTypes::I8 | DataTypes::Bool => "%d",
-            DataTypes::U16 | DataTypes::I16 => "%d",
-            DataTypes::U32 | DataTypes::I32 => "%ld",
-            DataTypes::U64 | DataTypes::I64 => "%ld",
+            DataTypes::I8 | DataTypes::Bool => "%d",
+            DataTypes::I16 => "%d",
+            DataTypes::I32 => "%d",
+          | DataTypes::I64 => "%ld",
             DataTypes::Char => "%c",
             DataTypes::String => "%s",
             DataTypes::F32 | DataTypes::F64 => "%f",

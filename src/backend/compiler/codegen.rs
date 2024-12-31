@@ -685,14 +685,7 @@ fn reference_of_a_variable_into_basicametadatavaluenum<'ctx, 'a>(
     let var: PointerValue<'ctx> = locals.find_and_get(name).unwrap();
 
     match kind {
-        DataTypes::U8
-        | DataTypes::U16
-        | DataTypes::U32
-        | DataTypes::U64
-        | DataTypes::I8
-        | DataTypes::I16
-        | DataTypes::I32
-        | DataTypes::I64 => builder
+        kind if kind.is_integer() => builder
             .build_load(utils::datatype_integer_to_llvm_type(context, kind), var, "")
             .unwrap()
             .into(),

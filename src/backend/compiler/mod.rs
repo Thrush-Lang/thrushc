@@ -1,10 +1,10 @@
 pub mod codegen;
-mod functions;
-mod general;
-mod locals;
+pub mod functions;
+pub mod general;
+pub mod locals;
 pub mod options;
-mod utils;
-mod variable;
+pub mod utils;
+pub mod variable;
 
 use {
     super::instruction::Instruction,

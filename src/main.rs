@@ -273,13 +273,6 @@ fn main() {
 
     let _ = fs::remove_file(&cli.options.output);
 
-    compiled.iter().for_each(|path| {
-        let _ = fs::remove_file(path);
-    });
-
-    let _ = fs::remove_file("output/vector.o");
-    let _ = fs::remove_file("output/debug.o");
-
     println!(
         "\r{} {}",
         style("Finished").bold().fg(Color::Rgb(141, 141, 142)),
@@ -291,4 +284,11 @@ fn main() {
         .bold()
         .fg(Color::Rgb(141, 141, 142))
     );
+
+    compiled.iter().for_each(|path| {
+        let _ = fs::remove_file(path);
+    });
+
+    let _ = fs::remove_file("output/vector.o");
+    let _ = fs::remove_file("output/debug.o");
 }

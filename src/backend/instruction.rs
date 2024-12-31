@@ -1,6 +1,14 @@
 use {
-    super::super::frontend::lexer::{DataTypes, TokenKind},
-    inkwell::values::BasicValueEnum,
+    super::{
+        super::frontend::lexer::{DataTypes, TokenKind},
+        compiler::{general, locals::CompilerLocals},
+    },
+    inkwell::{
+        builder::Builder,
+        context::Context,
+        module::Module,
+        values::{BasicValueEnum, FunctionValue},
+    },
 };
 
 #[derive(Debug, Clone, Default)]
@@ -165,7 +173,26 @@ impl<'ctx> Instruction<'ctx> {
         false
     }
 
-    pub fn get_binary_data(&self) -> (DataTypes, &TokenKind, DataTypes, usize) {
+    pub fn as_binary(&self) -> (&Instruction, &TokenKind, &Instruction, &DataTypes) {
+        if let Instruction::Binary {
+            left,
+            op,
+            right,
+            kind,
+            ..
+        } = self
+        {
+            return (&**left, op, &**right, kind);
+        }
+
+        if let Instruction::Group { instr, .. } = self {
+            return instr.as_binary();
+        }
+
+        unreachable!()
+    }
+
+    pub fn get_binary_data_types(&self) -> (DataTypes, &TokenKind, DataTypes, usize) {
         if let Instruction::Binary {
             left,
             op,
@@ -211,6 +238,21 @@ impl<'ctx> Instruction<'ctx> {
                 unimplemented!()
             }
         }
+    }
+
+    pub fn compile_group_as_binary(
+        &'ctx self,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        context: &'ctx Context,
+        locals: &CompilerLocals<'ctx>,
+        function: FunctionValue<'ctx>,
+    ) -> BasicValueEnum<'ctx> {
+        let instr: (&Instruction<'_>, &TokenKind, &Instruction<'_>, &DataTypes) = self.as_binary();
+
+        general::compile_binary_op(
+            module, builder, context, instr.0, instr.1, instr.2, instr.3, locals, function,
+        )
     }
 
     pub fn as_basic_value(&self) -> &BasicValueEnum<'ctx> {

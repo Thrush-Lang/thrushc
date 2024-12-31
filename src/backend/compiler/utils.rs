@@ -29,11 +29,6 @@ pub fn datatype_integer_to_llvm_type<'ctx>(
         DataTypes::I16 => context.i16_type(),
         DataTypes::I32 => context.i32_type(),
         DataTypes::I64 => context.i64_type(),
-
-        DataTypes::U8 => context.i8_type(),
-        DataTypes::U16 => context.i16_type(),
-        DataTypes::U32 => context.i32_type(),
-        DataTypes::U64 => context.i64_type(),
         DataTypes::Bool => context.bool_type(),
 
         _ => unreachable!(),
@@ -72,17 +67,7 @@ pub fn build_const_integer<'ctx>(
     is_signed: bool,
 ) -> IntValue<'ctx> {
     match kind {
-        DataTypes::U8 | DataTypes::Char if is_signed => {
-            context.i8_type().const_int(num, is_signed).const_neg()
-        }
-        DataTypes::Bool => context.bool_type().const_int(num, false),
-        DataTypes::U8 | DataTypes::Char => context.i8_type().const_int(num, is_signed),
-        DataTypes::U16 if is_signed => context.i16_type().const_int(num, is_signed).const_neg(),
-        DataTypes::U16 => context.i16_type().const_int(num, is_signed),
-        DataTypes::U32 if is_signed => context.i32_type().const_int(num, is_signed).const_neg(),
-        DataTypes::U32 => context.i32_type().const_int(num, is_signed),
-        DataTypes::U64 if is_signed => context.i64_type().const_int(num, is_signed).const_neg(),
-        DataTypes::U64 => context.i64_type().const_int(num, is_signed),
+        DataTypes::Char => context.i8_type().const_int(num, is_signed).const_neg(),
         DataTypes::I8 if is_signed => context.i8_type().const_int(num, is_signed).const_neg(),
         DataTypes::I8 => context.i8_type().const_int(num, is_signed),
         DataTypes::I16 if is_signed => context.i16_type().const_int(num, is_signed).const_neg(),
@@ -91,6 +76,7 @@ pub fn build_const_integer<'ctx>(
         DataTypes::I32 => context.i32_type().const_int(num, is_signed),
         DataTypes::I64 if is_signed => context.i64_type().const_int(num, is_signed).const_neg(),
         DataTypes::I64 => context.i64_type().const_int(num, is_signed),
+        DataTypes::Bool => context.bool_type().const_int(num, false),
 
         _ => unreachable!(),
     }
@@ -124,10 +110,10 @@ pub fn build_int_array_type_from_size(
     size: u32,
 ) -> ArrayType<'_> {
     match kind {
-        DataTypes::I8 | DataTypes::U8 => context.i8_type().array_type(size),
-        DataTypes::I16 | DataTypes::U16 => context.i16_type().array_type(size),
-        DataTypes::I32 | DataTypes::U32 => context.i32_type().array_type(size),
-        DataTypes::I64 | DataTypes::U64 => context.i64_type().array_type(size),
+        DataTypes::I8 => context.i8_type().array_type(size),
+        DataTypes::I16 => context.i16_type().array_type(size),
+        DataTypes::I32 => context.i32_type().array_type(size),
+        DataTypes::I64 => context.i64_type().array_type(size),
 
         _ => unreachable!(),
     }
@@ -154,10 +140,6 @@ pub fn datatype_to_fn_type<'ctx>(
             DataTypes::I16 => context.i16_type().fn_type(&param_types, true),
             DataTypes::I32 => context.i32_type().fn_type(&param_types, true),
             DataTypes::I64 => context.i64_type().fn_type(&param_types, true),
-            DataTypes::U8 => context.i8_type().fn_type(&param_types, true),
-            DataTypes::U16 => context.i16_type().fn_type(&param_types, true),
-            DataTypes::U32 => context.i32_type().fn_type(&param_types, true),
-            DataTypes::U64 => context.i64_type().fn_type(&param_types, true),
             DataTypes::Void => context.void_type().fn_type(&param_types, true),
             DataTypes::String => context
                 .ptr_type(AddressSpace::default())
@@ -180,10 +162,6 @@ pub fn datatype_to_basicmetadata_type_enum<'ctx>(
         DataTypes::I16 => context.i16_type().into(),
         DataTypes::I32 => context.i32_type().into(),
         DataTypes::I64 => context.i64_type().into(),
-        DataTypes::U8 => context.i8_type().into(),
-        DataTypes::U16 => context.i16_type().into(),
-        DataTypes::U32 => context.i32_type().into(),
-        DataTypes::U64 => context.bool_type().into(),
         DataTypes::F32 => context.f32_type().into(),
         DataTypes::F64 => context.f64_type().into(),
         DataTypes::String => context.ptr_type(AddressSpace::default()).into(),
@@ -442,7 +420,7 @@ pub fn build_possible_overflow<'ctx>(
     context: &'ctx Context,
     builder: &Builder<'ctx>,
     result: StructValue<'ctx>,
-    instr_data: (DataTypes, &TokenKind, DataTypes, usize),
+    instr_data_types: (DataTypes, &TokenKind, DataTypes, usize),
     current_function: FunctionValue<'ctx>,
 ) -> BasicValueEnum<'ctx> {
     let overflowed: IntValue<'_> = builder
@@ -484,11 +462,11 @@ Details:
 
 {} \n\0",
                         diagnostic::create_panic_message("Integer / Float Overflow"),
-                        instr_data.3,
-                        instr_data.0,
-                        instr_data.1,
-                        instr_data.2,
-                        instr_data.1,
+                        instr_data_types.3,
+                        instr_data_types.0,
+                        instr_data_types.1,
+                        instr_data_types.2,
+                        instr_data_types.1,
                         diagnostic::create_help_message(
                             "Check that the limit of a primitive type has not been overflowed."
                         )
@@ -572,62 +550,7 @@ pub fn build_overflow<'ctx>(
             .unwrap()
             .try_as_basic_value()
             .unwrap_left(),
-        DataTypes::U8 => builder
-            .build_call(
-                module
-                    .get_function(&format!(
-                        "llvm.s{}.with.overflow.i8",
-                        op.to_llvm_intrinsic_identifier()
-                    ))
-                    .unwrap(),
-                &[left_num.into(), right_num.into()],
-                "",
-            )
-            .unwrap()
-            .try_as_basic_value()
-            .unwrap_left(),
-        DataTypes::U16 => builder
-            .build_call(
-                module
-                    .get_function(&format!(
-                        "llvm.u{}.with.overflow.i16",
-                        op.to_llvm_intrinsic_identifier()
-                    ))
-                    .unwrap(),
-                &[left_num.into(), right_num.into()],
-                "",
-            )
-            .unwrap()
-            .try_as_basic_value()
-            .unwrap_left(),
-        DataTypes::U32 => builder
-            .build_call(
-                module
-                    .get_function(&format!(
-                        "llvm.u{}.with.overflow.i32",
-                        op.to_llvm_intrinsic_identifier()
-                    ))
-                    .unwrap(),
-                &[left_num.into(), right_num.into()],
-                "",
-            )
-            .unwrap()
-            .try_as_basic_value()
-            .unwrap_left(),
-        DataTypes::U64 => builder
-            .build_call(
-                module
-                    .get_function(&format!(
-                        "llvm.u{}.with.overflow.i64",
-                        op.to_llvm_intrinsic_identifier()
-                    ))
-                    .unwrap(),
-                &[left_num.into(), right_num.into()],
-                "",
-            )
-            .unwrap()
-            .try_as_basic_value()
-            .unwrap_left(),
+
         _ => unreachable!(),
     }
 }

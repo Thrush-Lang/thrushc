@@ -1,7 +1,7 @@
 pub mod codegen;
 pub mod functions;
 pub mod general;
-pub mod locals;
+pub mod objects;
 pub mod options;
 pub mod utils;
 pub mod variable;

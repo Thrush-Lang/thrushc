@@ -73,7 +73,9 @@ impl<'ctx> ThrushScoper<'ctx> {
         }
 
         if let Instruction::Function { body, .. } = instr {
-            self.analyze_instruction(body, depth)?;
+            if body.is_some() {
+                self.analyze_instruction(body.as_ref().unwrap(), depth)?;
+            }
         }
 
         if let Instruction::EntryPoint { body } = instr {

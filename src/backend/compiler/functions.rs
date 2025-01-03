@@ -1,6 +1,6 @@
 use {
     super::{
-        super::super::frontend::lexer::DataTypes, codegen, locals::CompilerLocals, Instruction,
+        super::super::frontend::lexer::DataTypes, codegen, objects::CompilerObjects, Instruction,
     },
     inkwell::{
         builder::Builder,
@@ -17,7 +17,7 @@ pub fn compile_call<'ctx>(
     name: &str,
     args: &'ctx [Instruction<'ctx>],
     kind: &DataTypes,
-    locals: &CompilerLocals<'ctx>,
+    objects: &CompilerObjects<'ctx>,
 ) -> Option<BasicValueEnum<'ctx>> {
     let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::with_capacity(args.len());
 
@@ -30,23 +30,31 @@ pub fn compile_call<'ctx>(
                 arg,
                 &[],
                 arg.is_var(),
-                locals,
+                objects,
             )
             .into(),
         );
     });
 
-    if kind != &DataTypes::Void {
+    if *kind != DataTypes::Void {
         Some(
             builder
-                .build_call(module.get_function(name).unwrap(), &compiled_args, "")
+                .build_call(
+                    objects.find_and_get_function(name).unwrap(),
+                    &compiled_args,
+                    "",
+                )
                 .unwrap()
                 .try_as_basic_value()
                 .unwrap_left(),
         )
     } else {
         builder
-            .build_call(module.get_function(name).unwrap(), &compiled_args, "")
+            .build_call(
+                objects.find_and_get_function(name).unwrap(),
+                &compiled_args,
+                "",
+            )
             .unwrap();
 
         None

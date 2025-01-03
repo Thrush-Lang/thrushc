@@ -63,6 +63,7 @@ impl<'a> Lexer<'a> {
             b'{' => self.make(TokenKind::LBrace),
             b'}' => self.make(TokenKind::RBrace),
             b',' => self.make(TokenKind::Comma),
+            b'.' if self.char_match(b'.') && self.char_match(b'.') => self.make(TokenKind::Pass),
             b'.' => self.make(TokenKind::Dot),
             b'%' => self.make(TokenKind::Arith),
             b'*' => self.make(TokenKind::Star),
@@ -113,7 +114,7 @@ impl<'a> Lexer<'a> {
             b'\'' => self.char()?,
             b'"' => self.string()?,
             b'0'..=b'9' => self.integer_or_float()?,
-            b'a'..=b'z' | b'A'..=b'Z' | b'_' => self.identifier()?,
+            b'a'..=b'z' | b'A'..=b'Z' | b'_'  | b'@' => self.identifier()?,
             _ => {
                 return Err(ThrushError::Lex(
                     ThrushErrorKind::UnknownChar,
@@ -150,15 +151,14 @@ impl<'a> Lexer<'a> {
             "return" => self.make(TokenKind::Return),
             "break" => self.make(TokenKind::Break),
             "continue" => self.make(TokenKind::Continue),
-            "println" => self.make(TokenKind::Println),
-            "print" => self.make(TokenKind::Print),
             "super" => self.make(TokenKind::Super),
             "this" => self.make(TokenKind::This),
             "extends" => self.make(TokenKind::Extends),
             "public" => self.make(TokenKind::Public),
             "builtin" => self.make(TokenKind::Builtin),
-            "null" => self.make(TokenKind::Null),
             "@import" => self.make(TokenKind::Import),
+            "@external" => self.make(TokenKind::External),
+            "null" => self.make(TokenKind::Null),
 
             "i8" => self.make(TokenKind::DataType(DataTypes::I8)),
             "i16" => self.make(TokenKind::DataType(DataTypes::I16)),
@@ -449,6 +449,7 @@ pub enum TokenKind {
     LessEq,    // ' <= '
     PlusPlus,     // ' ++ '
     MinusMinus,   // ' -- '
+    Pass, // ...
 
     // --- Literals ---
     Identifier,
@@ -460,6 +461,7 @@ pub enum TokenKind {
 
     // --- Keywords ---
     Import,
+    External,
     Builtin,
     Public,
     And,
@@ -546,7 +548,9 @@ impl std::fmt::Display for TokenKind {
             TokenKind::String => write!(f, "string"),
             TokenKind::Char => write!(f, "char"),
             TokenKind::Builtin => write!(f, "built-in"),
+            TokenKind::External => write!(f, "external"),
             TokenKind::Import => write!(f, "@import"),
+            TokenKind::Pass => write!(f, "..."),
             TokenKind::Eof => write!(f, "EOF"),
             TokenKind::DataType(datatype) => write!(f, "{}", datatype),
         }
@@ -677,8 +681,8 @@ impl std::fmt::Display for DataTypes {
 impl DataTypes {
 
     #[inline]
-    pub fn determinate_integer_datatype(self, other: DataTypes) -> DataTypes {
-        let mut types: HashMap<u8, DataTypes> = HashMap::new();
+    pub fn calculate_integer_datatype(self, other: DataTypes) -> DataTypes {
+        let mut types: HashMap<u8, DataTypes> = HashMap::with_capacity(4);
 
         types.insert(4, DataTypes::I8);
         types.insert(8, DataTypes::I16);
@@ -689,13 +693,9 @@ impl DataTypes {
 
         if calc == 12 {
             return DataTypes::I16;
-        }
-
-        if calc == 25 {
+        } else if calc == 25 {
             return DataTypes::I32;
-        }
-
-        if types.contains_key(&calc) {
+        } else if types.contains_key(&calc) {
             return *types.get(&calc).unwrap();
         }
 

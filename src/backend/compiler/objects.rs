@@ -1,14 +1,19 @@
-use {ahash::AHashMap as HashMap, inkwell::values::PointerValue};
+use {
+    ahash::AHashMap as HashMap,
+    inkwell::values::{FunctionValue, PointerValue},
+};
 
 #[derive(Debug)]
-pub struct CompilerLocals<'ctx> {
+pub struct CompilerObjects<'ctx> {
+    pub functions: HashMap<&'ctx str, FunctionValue<'ctx>>,
     pub blocks: Vec<HashMap<String, PointerValue<'ctx>>>,
     pub scope: usize,
 }
 
-impl<'ctx> CompilerLocals<'ctx> {
+impl<'ctx> CompilerObjects<'ctx> {
     pub fn new() -> Self {
         Self {
+            functions: HashMap::new(),
             blocks: Vec::new(),
             scope: 0,
         }
@@ -29,6 +34,11 @@ impl<'ctx> CompilerLocals<'ctx> {
     #[inline]
     pub fn insert(&mut self, name: String, value: PointerValue<'ctx>) {
         self.blocks[self.scope - 1].insert(name, value);
+    }
+
+    #[inline]
+    pub fn insert_function(&mut self, name: &'ctx str, function: FunctionValue<'ctx>) {
+        self.functions.insert(name, function);
     }
 
     /*  #[inline]
@@ -58,6 +68,15 @@ impl<'ctx> CompilerLocals<'ctx> {
             if self.blocks[position].contains_key(name) {
                 return Some(*self.blocks[position].get(name).unwrap());
             }
+        }
+
+        None
+    }
+
+    #[inline]
+    pub fn find_and_get_function(&self, name: &str) -> Option<FunctionValue<'ctx>> {
+        if self.functions.contains_key(name) {
+            return Some(*self.functions.get(name).unwrap());
         }
 
         None

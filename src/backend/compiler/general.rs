@@ -3,7 +3,7 @@
 use {
     super::{
         super::super::frontend::lexer::{DataTypes, TokenKind},
-        locals::CompilerLocals,
+        objects::CompilerObjects,
         utils, Instruction,
     },
     inkwell::{
@@ -22,7 +22,7 @@ pub fn compile_binary_op<'ctx>(
     op: &TokenKind,
     right: &'ctx Instruction<'ctx>,
     kind: &'ctx DataTypes,
-    locals: &CompilerLocals<'ctx>,
+    objects: &CompilerObjects<'ctx>,
     function: FunctionValue<'ctx>,
 ) -> BasicValueEnum<'ctx> {
     match (left, op, right, kind) {
@@ -103,7 +103,7 @@ pub fn compile_binary_op<'ctx>(
             | Instruction::Float(_, right_num, is_signed),
             DataTypes::Bool,
         ) => {
-            let variable: PointerValue<'ctx> = locals.find_and_get(name).unwrap();
+            let variable: PointerValue<'ctx> = objects.find_and_get(name).unwrap();
 
             if !kind.is_float() {
                 let left_num: IntValue<'ctx> = builder
@@ -159,7 +159,7 @@ pub fn compile_binary_op<'ctx>(
             Instruction::RefVar { name, kind, .. },
             DataTypes::Bool,
         ) => {
-            let variable: PointerValue<'ctx> = locals.find_and_get(name).unwrap();
+            let variable: PointerValue<'ctx> = objects.find_and_get(name).unwrap();
 
             if !kind.is_float() {
                 let left_num: IntValue<'ctx> =
@@ -315,7 +315,7 @@ pub fn compile_binary_op<'ctx>(
             Instruction::Float(_, float_num, _),
             DataTypes::F32 | DataTypes::F64,
         ) => {
-            let variable: PointerValue<'_> = locals.find_and_get(name).unwrap();
+            let variable: PointerValue<'_> = objects.find_and_get(name).unwrap();
 
             let float_num: FloatValue<'_> = utils::build_const_float(context, kind, *float_num);
 
@@ -355,7 +355,7 @@ pub fn compile_binary_op<'ctx>(
             Instruction::Integer(_, num, is_signed),
             DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
         ) => {
-            let variable: PointerValue<'_> = locals.find_and_get(name).unwrap();
+            let variable: PointerValue<'_> = objects.find_and_get(name).unwrap();
 
             let left_num: IntValue<'_> =
                 utils::build_const_integer(context, kind, *num as u64, *is_signed);
@@ -426,7 +426,7 @@ pub fn compile_binary_op<'ctx>(
             DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64 | DataTypes::Bool,
         ) => {
             let mut left_num: BasicValueEnum<'_> = compile_binary_op(
-                module, builder, context, left_bin, op_bin, right, kind, locals, function,
+                module, builder, context, left_bin, op_bin, right, kind, objects, function,
             );
 
             if left_num.is_struct_value() {
@@ -498,7 +498,7 @@ pub fn compile_binary_op<'ctx>(
             DataTypes::String,
         ) => {
             let left: PointerValue<'_> = compile_binary_op(
-                module, builder, context, left, op, right, kind, locals, function,
+                module, builder, context, left, op, right, kind, objects, function,
             )
             .into_pointer_value();
 
@@ -531,10 +531,16 @@ pub fn compile_binary_op<'ctx>(
             Instruction::Group {
                 instr: instr_two, ..
             },
-            DataTypes::Bool | DataTypes::I8 | DataTypes::I16 | DataTypes::I32 | DataTypes::I64,
+            DataTypes::Bool
+            | DataTypes::I8
+            | DataTypes::I16
+            | DataTypes::I32
+            | DataTypes::I64
+            | DataTypes::F32
+            | DataTypes::F64,
         ) => {
             let mut left: BasicValueEnum<'ctx> =
-                left.compile_group_as_binary(module, builder, context, locals, function);
+                left.compile_group_as_binary(module, builder, context, objects, function);
 
             if left.is_struct_value() {
                 left = utils::build_possible_overflow(
@@ -548,7 +554,7 @@ pub fn compile_binary_op<'ctx>(
             }
 
             let mut right: BasicValueEnum<'ctx> =
-                right.compile_group_as_binary(module, builder, context, locals, function);
+                right.compile_group_as_binary(module, builder, context, objects, function);
 
             if right.is_struct_value() {
                 right = utils::build_possible_overflow(
@@ -561,20 +567,45 @@ pub fn compile_binary_op<'ctx>(
                 )
             }
 
-            match op {
-                TokenKind::And => builder
+            if let TokenKind::Or = op {
+                return builder
+                    .build_or(left.into_int_value(), right.into_int_value(), "")
+                    .unwrap()
+                    .into();
+            }
+
+            if let TokenKind::And = op {
+                return builder
                     .build_and(left.into_int_value(), right.into_int_value(), "")
                     .unwrap()
-                    .into(),
-                TokenKind::Or => builder
-                    .build_or(left.into_int_value(), right.into_int_value(), "")
+                    .into();
+            }
+
+            match op {
+                TokenKind::Slash if !left.is_float_value() && !right.is_float_value() => builder
+                    .build_int_signed_div(left.into_int_value(), right.into_int_value(), "")
                     .unwrap()
                     .into(),
 
                 TokenKind::Slash => builder
-                    .build_int_signed_div(left.into_int_value(), right.into_int_value(), "")
+                    .build_float_div(left.into_float_value(), right.into_float_value(), "")
                     .unwrap()
                     .into(),
+                TokenKind::Plus if left.is_float_value() && right.is_float_value() => builder
+                    .build_float_add(left.into_float_value(), right.into_float_value(), "")
+                    .unwrap()
+                    .into(),
+
+                TokenKind::Minus if left.is_float_value() && right.is_float_value() => builder
+                    .build_float_sub(left.into_float_value(), right.into_float_value(), "")
+                    .unwrap()
+                    .into(),
+
+                TokenKind::Arith if left.is_float_value() && right.is_float_value() => builder
+                    .build_float_mul(left.into_float_value(), right.into_float_value(), "")
+                    .unwrap()
+                    .into(),
+
                 TokenKind::Plus | TokenKind::Minus | TokenKind::Arith => utils::build_overflow(
                     module,
                     builder,
@@ -602,7 +633,7 @@ pub fn compile_binary_op<'ctx>(
             DataTypes::Bool,
         ) => {
             let mut left_compiled: BasicValueEnum<'ctx> =
-                right.compile_group_as_binary(module, builder, context, locals, function);
+                right.compile_group_as_binary(module, builder, context, objects, function);
 
             if left_compiled.is_struct_value() {
                 left_compiled = utils::build_possible_overflow(
@@ -616,7 +647,7 @@ pub fn compile_binary_op<'ctx>(
             }
 
             let mut right: BasicValueEnum<'ctx> = compile_binary_op(
-                module, builder, context, left_bin, op_bin, right_bin, kind, locals, function,
+                module, builder, context, left_bin, op_bin, right_bin, kind, objects, function,
             );
 
             if right.is_struct_value() {
@@ -658,7 +689,7 @@ pub fn compile_binary_op<'ctx>(
             DataTypes::Bool,
         ) => {
             let mut left_compiled: BasicValueEnum<'ctx> =
-                left.compile_group_as_binary(module, builder, context, locals, function);
+                left.compile_group_as_binary(module, builder, context, objects, function);
 
             if left_compiled.is_struct_value() {
                 left_compiled = utils::build_possible_overflow(
@@ -672,7 +703,7 @@ pub fn compile_binary_op<'ctx>(
             }
 
             let mut right_compiled: BasicValueEnum<'ctx> = compile_binary_op(
-                module, builder, context, left_bin, op_bin, right_bin, kind, locals, function,
+                module, builder, context, left_bin, op_bin, right_bin, kind, objects, function,
             );
 
             if right_compiled.is_struct_value() {
@@ -719,7 +750,7 @@ pub fn compile_unary_op<'ctx>(
     builder: &Builder<'ctx>,
     context: &'ctx Context,
     instr: &Instruction<'ctx>,
-    locals: &CompilerLocals<'ctx>,
+    objects: &CompilerObjects<'ctx>,
     function: FunctionValue<'ctx>,
 ) -> BasicValueEnum<'ctx> {
     if let Instruction::Unary {
@@ -729,7 +760,7 @@ pub fn compile_unary_op<'ctx>(
         if let (TokenKind::PlusPlus, Instruction::RefVar { name, kind, .. }, _) =
             (op, &**value, kind)
         {
-            let variable: PointerValue<'ctx> = locals.find_and_get(name).unwrap();
+            let variable: PointerValue<'ctx> = objects.find_and_get(name).unwrap();
 
             if kind.is_integer() {
                 let left_num: IntValue<'ctx> = builder

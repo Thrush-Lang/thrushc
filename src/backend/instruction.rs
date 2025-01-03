@@ -1,7 +1,7 @@
 use {
     super::{
         super::frontend::lexer::{DataTypes, TokenKind},
-        compiler::{general, locals::CompilerLocals},
+        compiler::{general, objects::CompilerObjects},
     },
     inkwell::{
         builder::Builder,
@@ -38,10 +38,12 @@ pub enum Instruction<'ctx> {
     },
     Function {
         name: &'ctx str,
+        external_name: &'ctx str,
         params: Vec<Instruction<'ctx>>,
-        body: Box<Instruction<'ctx>>,
+        body: Option<Box<Instruction<'ctx>>>,
         return_kind: Option<DataTypes>,
         is_public: bool,
+        is_external: bool,
     },
     Return(Box<Instruction<'ctx>>, DataTypes),
     Var {
@@ -93,13 +95,9 @@ pub enum Instruction<'ctx> {
         free_only: bool,
         is_string: bool,
     },
-    External {
-        name: &'ctx str,
-        kind: DataTypes,
-        is_function: bool,
-        params: Option<Vec<DataTypes>>,
-    },
     Boolean(bool),
+    Pass,
+
     #[default]
     Null,
 }
@@ -245,7 +243,7 @@ impl<'ctx> Instruction<'ctx> {
         module: &Module<'ctx>,
         builder: &Builder<'ctx>,
         context: &'ctx Context,
-        locals: &CompilerLocals<'ctx>,
+        locals: &CompilerObjects<'ctx>,
         function: FunctionValue<'ctx>,
     ) -> BasicValueEnum<'ctx> {
         let instr: (&Instruction<'_>, &TokenKind, &Instruction<'_>, &DataTypes) = self.as_binary();

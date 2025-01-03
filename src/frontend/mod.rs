@@ -1,4 +1,5 @@
 pub mod lexer;
+mod objects;
 pub mod parser;
-pub mod scoper;
-pub mod type_checking;
+mod scoper;
+mod type_checking;

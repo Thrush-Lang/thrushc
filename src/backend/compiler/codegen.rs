@@ -6,7 +6,7 @@ use {
             instruction::Instruction,
         },
         functions, general,
-        locals::CompilerLocals,
+        objects::CompilerObjects,
         options::CompilerOptions,
         utils, variable,
     },
@@ -30,7 +30,7 @@ pub struct Codegen<'a, 'ctx> {
     context: &'ctx Context,
     instructions: &'ctx [Instruction<'ctx>],
     current: usize,
-    locals: CompilerLocals<'ctx>,
+    objects: CompilerObjects<'ctx>,
     options: &'a CompilerOptions,
     function: Option<FunctionValue<'ctx>>,
 }
@@ -49,7 +49,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             context,
             instructions,
             current: 0,
-            locals: CompilerLocals::new(),
+            objects: CompilerObjects::new(),
             options,
             function: None,
         }
@@ -83,13 +83,13 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
     fn codegen(&mut self, instr: &'ctx Instruction<'ctx>) -> Instruction<'ctx> {
         match instr {
             Instruction::Block { stmts, .. } => {
-                self.locals.push();
+                self.objects.push();
 
                 stmts.iter().for_each(|instr| {
                     self.codegen(instr);
                 });
 
-                self.locals.pop();
+                self.objects.pop();
 
                 Instruction::Null
             }
@@ -99,7 +99,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 is_string,
                 free_only,
             } => {
-                let var: PointerValue<'ctx> = self.locals.find_and_get(name).unwrap();
+                let var: PointerValue<'ctx> = self.objects.find_and_get(name).unwrap();
 
                 if *is_string && !free_only {
                     self.builder
@@ -162,12 +162,21 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
 
             Instruction::Function {
                 name,
+                external_name,
                 params,
                 body,
                 return_kind,
                 is_public,
+                is_external,
             } => {
-                self.emit_function(name, params, body, return_kind, is_public, false);
+                if let Some(body) = body {
+                    self.compile_function(name, params, body, return_kind, *is_public, false);
+                    return Instruction::Null;
+                }
+
+                if *is_external {
+                    self.compile_external_function(name, params, return_kind, external_name);
+                }
 
                 Instruction::Null
             }
@@ -185,7 +194,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     instr,
                     &[],
                     false,
-                    &self.locals,
+                    &self.objects,
                 );
                 Instruction::Null
             }
@@ -218,7 +227,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     name,
                     kind,
                     value,
-                    &mut self.locals,
+                    &mut self.objects,
                     self.function.unwrap(),
                 );
 
@@ -230,7 +239,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     self.module,
                     self.builder,
                     self.context,
-                    &mut self.locals,
+                    &mut self.objects,
                     name,
                     kind,
                     value,
@@ -245,7 +254,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 index,
                 ..
             } => {
-                let variable: PointerValue<'ctx> = self.locals.find_and_get(origin_name).unwrap();
+                let variable: PointerValue<'ctx> = self.objects.find_and_get(origin_name).unwrap();
 
                 let value: IntValue<'_> = self
                     .builder
@@ -281,7 +290,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 op,
                 right,
                 kind,
-                &self.locals,
+                &self.objects,
                 self.function.unwrap(),
             )),
 
@@ -290,7 +299,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 self.builder,
                 self.context,
                 instr,
-                &self.locals,
+                &self.objects,
                 self.function.unwrap(),
             )),
 
@@ -314,7 +323,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     name,
                     args,
                     kind,
-                    &self.locals,
+                    &self.objects,
                 );
 
                 Instruction::Null
@@ -364,7 +373,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                         instr,
                         instrs,
                         false,
-                        &self.locals,
+                        &self.objects,
                     )
                     .into(),
                 );
@@ -375,7 +384,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     self.context,
                     name,
                     kind,
-                    &mut self.locals,
+                    &mut self.objects,
                 ));
             }
 
@@ -408,7 +417,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
         }
 
         if let Instruction::Indexe { origin, index, .. } = instr {
-            let var: PointerValue<'ctx> = self.locals.find_and_get(origin).unwrap();
+            let var: PointerValue<'ctx> = self.objects.find_and_get(origin).unwrap();
 
             let char: IntValue<'_> = self
                 .builder
@@ -439,7 +448,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     instr,
                     &[],
                     true,
-                    &self.locals,
+                    &self.objects,
                 )))
                 .unwrap();
 
@@ -467,7 +476,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
         if let Instruction::RefVar { name, .. } = instr {
             if let DataTypes::String = kind {
                 self.builder
-                    .build_return(Some(&self.locals.find_and_get(name).unwrap()))
+                    .build_return(Some(&self.objects.find_and_get(name).unwrap()))
                     .unwrap();
 
                 return;
@@ -478,7 +487,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     .builder
                     .build_load(
                         utils::datatype_integer_to_llvm_type(self.context, kind),
-                        self.locals.find_and_get(name).unwrap(),
+                        self.objects.find_and_get(name).unwrap(),
                         "",
                     )
                     .unwrap()
@@ -494,7 +503,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     .builder
                     .build_load(
                         utils::datatype_float_to_llvm_type(self.context, kind),
-                        self.locals.find_and_get(name).unwrap(),
+                        self.objects.find_and_get(name).unwrap(),
                         "",
                     )
                     .unwrap()
@@ -509,13 +518,28 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
         todo!()
     }
 
-    fn emit_function(
+    fn compile_external_function(
         &mut self,
-        name: &str,
+        name: &'ctx str,
+        params: &[Instruction<'ctx>],
+        return_kind: &Option<DataTypes>,
+        external_name: &str,
+    ) {
+        let kind: FunctionType<'_> = utils::datatype_to_fn_type(self.context, return_kind, params);
+        let function: FunctionValue<'_> =
+            self.module
+                .add_function(external_name, kind, Some(Linkage::External));
+
+        self.objects.insert_function(name, function);
+    }
+
+    fn compile_function(
+        &mut self,
+        name: &'ctx str,
         params: &[Instruction<'ctx>],
         body: &'ctx Instruction<'ctx>,
         return_kind: &Option<DataTypes>,
-        is_public: &bool,
+        is_public: bool,
         only_define: bool,
     ) {
         if only_define && self.module.get_function(name).is_none() {
@@ -540,12 +564,14 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
 
             self.function = Some(function);
 
+            self.objects.insert_function(name, function);
+
             return;
         }
 
         let function: FunctionValue<'ctx> = self.module.get_function(name).unwrap();
 
-        self.function = Some(function);
+        // self.function = Some(function);
 
         let entry: BasicBlock = self.context.append_basic_block(function, "");
 
@@ -579,9 +605,19 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 body,
                 return_kind,
                 is_public,
+                ..
             } = instr
             {
-                self.emit_function(name, params, body, return_kind, is_public, true);
+                if body.is_some() {
+                    self.compile_function(
+                        name,
+                        params,
+                        body.as_ref().unwrap(),
+                        return_kind,
+                        *is_public,
+                        true,
+                    );
+                }
             }
         });
     }
@@ -680,9 +716,9 @@ fn reference_of_a_variable_into_basicametadatavaluenum<'ctx, 'a>(
     context: &'ctx Context,
     name: &'ctx str,
     kind: &'ctx DataTypes,
-    locals: &mut CompilerLocals<'ctx>,
+    objects: &mut CompilerObjects<'ctx>,
 ) -> BasicMetadataValueEnum<'ctx> {
-    let var: PointerValue<'ctx> = locals.find_and_get(name).unwrap();
+    let var: PointerValue<'ctx> = objects.find_and_get(name).unwrap();
 
     match kind {
         kind if kind.is_integer() => builder
@@ -763,7 +799,7 @@ pub fn compile_instr_as_basic_value_enum<'ctx>(
     instr: &'ctx Instruction,
     extra: &[Instruction],
     is_var: bool,
-    locals: &CompilerLocals<'ctx>,
+    objects: &CompilerObjects<'ctx>,
 ) -> BasicValueEnum<'ctx> {
     if let Instruction::String(str, is_fmt) = instr {
         if *is_fmt {
@@ -794,7 +830,7 @@ pub fn compile_instr_as_basic_value_enum<'ctx>(
     }
 
     if let Instruction::RefVar { name, kind, .. } = instr {
-        let var: PointerValue<'ctx> = locals.find_and_get(name).unwrap();
+        let var: PointerValue<'ctx> = objects.find_and_get(name).unwrap();
 
         if kind.is_float() {
             return builder

@@ -5,18 +5,10 @@ use {
             diagnostic::Diagnostic,
             error::{ThrushError, ThrushErrorKind},
             logging::{self, LogType},
-        },
-        lexer::{DataTypes, Token, TokenKind},
-        scoper::ThrushScoper,
-        type_checking,
+        }, lexer::{DataTypes, Token, TokenKind}, objects::ParserObjects, scoper::ThrushScoper, type_checking
     },
-    ahash::AHashMap as HashMap,
     std::{mem, process},
 };
-
-type ParserGlobals<'instr> = HashMap<&'instr str, (DataTypes, bool, Vec<DataTypes>)>;
-type ParserLocals<'instr> = Vec<HashMap<&'instr str, (DataTypes, bool, bool, bool, usize)>>;
-type GetObjectResult = Result<(DataTypes, bool, bool, Vec<DataTypes>), ThrushError>;
 
 pub struct Parser<'instr> {
     stmts: Vec<Instruction<'instr>>,
@@ -26,8 +18,7 @@ pub struct Parser<'instr> {
     in_type_function: DataTypes,
     in_var_type: DataTypes,
     current: usize,
-    globals: ParserGlobals<'instr>,
-    locals: ParserLocals<'instr>,
+    objects: ParserObjects<'instr>,
     scope: usize,
     scoper: ThrushScoper<'instr>,
     diagnostic: Diagnostic,
@@ -45,18 +36,17 @@ impl<'instr> Parser<'instr> {
             in_function: false,
             in_type_function: DataTypes::Void,
             in_var_type: DataTypes::Void,
-            globals: HashMap::new(),
-            locals: vec![HashMap::new()],
             scope: 0,
-            scoper: ThrushScoper::new(file),
-            diagnostic: Diagnostic::new(file),
             has_entry_point: false,
             is_main: file.is_main,
+            scoper: ThrushScoper::new(file),
+            diagnostic: Diagnostic::new(file),
+            objects: ParserObjects::new(),
         }
     }
 
     pub fn start(&mut self) -> &[Instruction<'instr>] {
-        self.predefine_functions();
+        self.forward_declare_functions();
 
         while !self.end() {
             match self.parse() {
@@ -93,13 +83,51 @@ impl<'instr> Parser<'instr> {
         match &self.peek().kind {
             TokenKind::Println => Ok(self.println()?),
             TokenKind::Print => Ok(self.print()?),
-            TokenKind::Fn => Ok(self.function(false)?),
+            TokenKind::Fn => Ok(self.function(false, false, "")?),
             TokenKind::LBrace => Ok(self.block(&mut [])?),
             TokenKind::Return => Ok(self.ret()?),
             TokenKind::Public => Ok(self.public()?),
             TokenKind::Var => Ok(self.variable(false)?),
             TokenKind::For => Ok(self.for_loop()?),
+            TokenKind::External => Ok(self.external()?),
             _ => Ok(self.expression()?),
+        }
+    }
+
+    fn external(&mut self) -> Result<Instruction<'instr>, ThrushError> {
+        let is_public: bool = self.previous_is(TokenKind::Public);
+
+        self.only_advance()?;
+
+        let line: usize = self.previous().line;
+
+        self.consume(
+            TokenKind::LParen,
+            ThrushErrorKind::SyntaxError,
+            String::from("Syntax Error"),
+            String::from("Expected '('."),
+            line,
+        )?;
+
+        let name: &Token = self.consume(
+            TokenKind::String,
+            ThrushErrorKind::SyntaxError,
+            String::from("Syntax Error"),
+            String::from("Expected String literal for @external(\"NAME\")."),
+            line,
+        )?;
+
+        self.consume(
+            TokenKind::RParen,
+            ThrushErrorKind::SyntaxError,
+            String::from("Syntax Error"),
+            String::from("Expected ')'."),
+            line,
+        )?;
+
+        match self.peek().kind {
+            TokenKind::Fn => self.function(is_public, true, name.lexeme.as_ref().unwrap()),
+            _ => unreachable!(),
         }
     }
 
@@ -216,7 +244,7 @@ impl<'instr> Parser<'instr> {
                 name.line,
             )?;
 
-            self.define_local(name.lexeme.as_ref().unwrap(), (kind, true, false, false, 0));
+            self.objects.insert_new_local(self.scope, name.lexeme.as_ref().unwrap(), (kind, true, false, false,  0));
 
             return Ok(Instruction::Var {
                 name: name.lexeme.as_ref().unwrap(),
@@ -253,14 +281,15 @@ impl<'instr> Parser<'instr> {
             self.errors.push(e);
         }
 
-        self.define_local(
+        self.objects.insert_new_local(
+            self.scope,
             name.lexeme.as_ref().unwrap(),
             (kind, false, false, false, 0),
         );
 
         if let Instruction::RefVar { kind, .. } = &value {
             if kind == &DataTypes::String {
-                self.modify_deallocation(name.lexeme.as_ref().unwrap(), true, false);
+                self.objects.modify_deallocation(name.lexeme.as_ref().unwrap(), true, false);
             }
         }
 
@@ -287,7 +316,8 @@ impl<'instr> Parser<'instr> {
         self.only_advance()?;
 
         match &self.peek().kind {
-            TokenKind::Fn => Ok(self.function(true)?),
+            TokenKind::Fn => Ok(self.function(true, false, "")?),
+            TokenKind::External => Ok(self.external()?),
             _ => unimplemented!(),
         }
     }
@@ -324,8 +354,6 @@ impl<'instr> Parser<'instr> {
                 ));
             }
 
-            self.emit_deallocators();
-
             return Ok(Instruction::Return(
                 Box::new(Instruction::Null),
                 DataTypes::Void,
@@ -336,7 +364,7 @@ impl<'instr> Parser<'instr> {
 
         if let Instruction::RefVar { name, kind, .. } = value {
             if kind == DataTypes::String {
-                self.modify_deallocation(name, false, true);
+                self.objects.modify_deallocation(name, false, true);
             }
         }
 
@@ -378,7 +406,7 @@ impl<'instr> Parser<'instr> {
     ) -> Result<Instruction<'instr>, ThrushError> {
         self.only_advance()?;
 
-        self.begin_scope();
+        self.objects.begin_local_scope();
 
         let mut stmts: Vec<Instruction> = Vec::new();
         let mut was_emited_deallocators: bool = false;
@@ -401,7 +429,7 @@ impl<'instr> Parser<'instr> {
                     ));
                 }
 
-                let deallocators: Vec<Instruction<'_>> = self.emit_deallocators();
+                let deallocators: Vec<Instruction<'_>> = self.objects.create_deallocators(self.scope);
 
                 stmts.extend(deallocators);
 
@@ -412,17 +440,22 @@ impl<'instr> Parser<'instr> {
         }
 
         if !was_emited_deallocators {
-            stmts.extend(self.emit_deallocators());
+            stmts.extend(self.objects.create_deallocators(self.scope));
         }
 
-        self.end_scope();
+        self.objects.end_local_scope();
 
         self.scoper.add_scope(stmts.clone());
 
         Ok(Instruction::Block { stmts })
     }
 
-    fn function(&mut self, is_public: bool) -> Result<Instruction<'instr>, ThrushError> {
+    fn function(
+        &mut self,
+        is_public: bool,
+        is_external: bool,
+        external_name: &'instr str,
+    ) -> Result<Instruction<'instr>, ThrushError> {
         self.only_advance()?;
 
         if self.scope != 0 {
@@ -442,7 +475,7 @@ impl<'instr> Parser<'instr> {
             TokenKind::Identifier,
             ThrushErrorKind::SyntaxError,
             String::from("Expected function name"),
-            String::from("Expected fn < name >."),
+            String::from("Expected a name to the function."),
             self.previous().line,
         )?;
 
@@ -512,6 +545,10 @@ impl<'instr> Parser<'instr> {
                 continue;
             }
 
+            if self.match_token(TokenKind::Pass)? {
+                continue;
+            }
+
             if !self.match_token(TokenKind::Identifier)? {
                 self.errors.push(ThrushError::Parse(
                     ThrushErrorKind::SyntaxError,
@@ -577,16 +614,32 @@ impl<'instr> Parser<'instr> {
             DataTypes::Void
         };
 
+        if self.match_token(TokenKind::SemiColon)? {
+            self.in_function = false;
+
+            return Ok(Instruction::Function {
+                name: name.lexeme.as_ref().unwrap(),
+                external_name,
+                params,
+                body: None,
+                return_kind,
+                is_public,
+                is_external,
+            });
+        }
+
         let body: Box<Instruction> = Box::new(self.block(&mut [])?);
 
         self.in_function = false;
 
         Ok(Instruction::Function {
             name: name.lexeme.as_ref().unwrap(),
+            external_name,
             params,
-            body,
+            body: Some(body),
             return_kind,
             is_public,
+            is_external,
         })
     }
 
@@ -661,13 +714,7 @@ impl<'instr> Parser<'instr> {
     fn expression(&mut self) -> Result<Instruction<'instr>, ThrushError> {
         let instr: Instruction = self.or()?;
 
-        self.locals.iter_mut().for_each(|scope| {
-            scope.values_mut().for_each(|variable| {
-                if variable.4 > 0 {
-                    variable.4 -= 1;
-                }
-            });
-        });
+        self.objects.decrease_local_references();
 
         Ok(instr)
     }
@@ -795,7 +842,7 @@ impl<'instr> Parser<'instr> {
             let right_type: DataTypes = right.get_data_type();
 
             let kind: DataTypes = if left_type.is_integer() && right_type.is_integer() {
-                left_type.determinate_integer_datatype(right_type)
+                left_type.calculate_integer_datatype(right_type)
             } else {
                 self.in_var_type
             };
@@ -979,9 +1026,9 @@ impl<'instr> Parser<'instr> {
                     let current: &Token = self.peek();
                     let line: usize = self.peek().line;
 
-                    // type is_null, is_function, ?params
-                    let var: (DataTypes, bool, bool, Vec<DataTypes>) =
-                        self.get_object(current.lexeme.as_ref().unwrap())?;
+                    // type is_null, is_function, ignore_more_params?, ?params
+                    let var: (DataTypes, bool, bool, bool, bool, Vec<DataTypes>, usize) =
+                        self.objects.get_object(current.lexeme.as_ref().unwrap(), line)?;
 
                     let name: &str = current.lexeme.as_ref().unwrap();
 
@@ -1057,8 +1104,6 @@ impl<'instr> Parser<'instr> {
                             self.errors.push(err);
                         }
 
-                        self.locals[self.scope].insert(name, (var.0, false, false, false, 0));
-
                         self.consume(
                             TokenKind::SemiColon,
                             ThrushErrorKind::SyntaxError,
@@ -1067,11 +1112,14 @@ impl<'instr> Parser<'instr> {
                             line,
                         )?;
 
+                        self.objects.insert_new_local(self.scope, name, (var.0, false, false, false, 0));
+
                         return Ok(Instruction::MutVar {
                             name,
                             value: Box::new(expr),
                             kind: var.0,
                         });
+
                     } else if self.peek().kind == TokenKind::LParen {
                         self.only_advance()?;
 
@@ -1126,6 +1174,11 @@ impl<'instr> Parser<'instr> {
                     refvar
                 }
 
+                TokenKind::Pass => {
+                    self.only_advance()?;
+                    Instruction::Pass
+                }
+
                 TokenKind::True => {
                     self.only_advance()?;
                     Instruction::Boolean(true)
@@ -1175,14 +1228,24 @@ impl<'instr> Parser<'instr> {
     fn call(
         &mut self,
         name: &'instr str,
-        object: (DataTypes, bool, bool, Vec<DataTypes>),
+        object:  (
+            DataTypes,      // Main Type
+            bool,           // is null?
+            bool,           // is freeded?
+            bool,           // is function?
+            bool,           // ignore the params if is a function?
+            Vec<DataTypes>, // params types
+            usize,          // Number the references
+        ),
         line: usize,
     ) -> Result<Instruction<'instr>, ThrushError> {
-        if !object.2 {
+        if !object.3 {
             return Err(ThrushError::Parse(
                 ThrushErrorKind::SyntaxError,
                 String::from("Syntax Error"),
-                String::from("The object called is don't a function. Call only functions."),
+                String::from(
+                    "The object called is don't a function. Call is only allowed for functions.",
+                ),
                 line,
             ));
         }
@@ -1205,7 +1268,9 @@ impl<'instr> Parser<'instr> {
             line,
         )?;
 
-        if object.3.len() != args.len() {
+        let mut index: usize = 0;
+
+        if object.5.len() != args.len() && !object.4 {
             let args_types: String = if !args.is_empty() {
                 args.iter()
                     .map(|param| param.get_data_type().to_string())
@@ -1221,7 +1286,7 @@ impl<'instr> Parser<'instr> {
                 format!(
                     "Function called expected all arguments with types '{}' don't '{}'.",
                     object
-                        .3
+                        .5
                         .iter()
                         .map(|param| param.to_string())
                         .collect::<Vec<_>>()
@@ -1232,26 +1297,26 @@ impl<'instr> Parser<'instr> {
             ));
         }
 
-        let mut index: usize = 0;
-
-        args.iter().for_each(|arg| {
-            let arg_kind: DataTypes = arg.get_data_type();
-
-            if object.3.len() >= index && object.3[index] != arg_kind {
-                self.errors.push(ThrushError::Parse(
-                    ThrushErrorKind::SyntaxError,
-                    String::from("Syntax Error"),
-                    format!(
-                        "Function called, expected '{}' argument type in position {} don't '{}' type.",
-                        object.3[index], index, arg_kind
-                    ),
-                    line,
-                ));
-            }
-
-            index += 1;
-        });
-
+        if !object.4 {
+            args.iter().for_each(|arg| {
+                let arg_kind: DataTypes = arg.get_data_type();
+    
+                if object.5.len() > index && object.5[index] != arg_kind  {
+                    self.errors.push(ThrushError::Parse(
+                        ThrushErrorKind::SyntaxError,
+                        String::from("Syntax Error"),
+                        format!(
+                            "Function called, expected '{}' argument type in position {} don't '{}' type.",
+                            object.5[index], index, arg_kind
+                        ),
+                        line,
+                    ));
+                }
+    
+                index += 1;
+            });
+        }
+        
         Ok(Instruction::Call {
             name,
             args,
@@ -1305,55 +1370,20 @@ impl<'instr> Parser<'instr> {
             });
         }
     }
-    #[inline]
-    fn get_object(&mut self, name: &'instr str) -> GetObjectResult {
-        for scope in self.locals.iter_mut().rev() {
-            if scope.contains_key(name) {
-                // DataTypes, bool <- (is_null), bool <- (is_freeded), usize <- (number of references)
-                let mut var: (DataTypes, bool, bool, bool, usize) = *scope.get(name).unwrap();
 
-                var.4 += 1;
 
-                scope.insert(name, var);
-
-                return Ok((var.0, var.1, false, Vec::new()));
-            }
-        }
-
-        if self.globals.contains_key(name) {
-            let global: &(DataTypes, bool, Vec<DataTypes>) = self.globals.get(name).unwrap();
-
-            let mut possible_params: Vec<DataTypes> = Vec::new();
-
-            possible_params.clone_from(&global.2);
-
-            // type, //is null, //is_function, //params
-            return Ok((global.0, false, global.1, possible_params));
-        }
-
-        Err(ThrushError::Parse(
-            ThrushErrorKind::ObjectNotDefined,
-            String::from("Object Not Defined"),
-            format!(
-                "The object with name `{}` is not defined in this scope or global.",
-                name
-            ),
-            self.previous().line,
-        ))
-    }
-
-    fn predefine_functions(&mut self) {
+    fn forward_declare_functions(&mut self) {
         let mut functions_positions: Vec<usize> = Vec::new();
-        let mut current_pos: usize = 0;
+        let mut pos: usize = 0;
 
         self.tokens.iter().for_each(|tok| match tok.kind {
             TokenKind::Fn => {
-                functions_positions.push(current_pos);
+                functions_positions.push(pos);
 
-                current_pos += 1;
+                pos += 1;
             }
             _ => {
-                current_pos += 1;
+                pos += 1;
             }
         });
 
@@ -1364,6 +1394,20 @@ impl<'instr> Parser<'instr> {
 
     fn predefine_function(&mut self, index: usize) -> Result<(), ThrushError> {
         self.current = index;
+
+        let is_external: bool = if self.current < 4 {
+            false
+        } else {
+            self.tokens[self.current - 4].kind == TokenKind::External
+        };
+
+        if is_external {
+            while self.peek().kind != TokenKind::Fn {
+                self.only_advance()?;
+            }
+        }
+
+        let mut ignore_more_params: bool = false;
 
         self.only_advance()?;
 
@@ -1387,6 +1431,11 @@ impl<'instr> Parser<'instr> {
 
         while !self.match_token(TokenKind::RParen)? {
             if self.match_token(TokenKind::Comma)? {
+                continue;
+            }
+
+            if self.match_token(TokenKind::Pass)? {
+                ignore_more_params = true;
                 continue;
             }
 
@@ -1429,6 +1478,17 @@ impl<'instr> Parser<'instr> {
             params.push(kind)
         }
 
+        if ignore_more_params && !is_external {
+            self.errors.push(ThrushError::Parse(
+                ThrushErrorKind::SyntaxError,
+                String::from("Syntax Error"),
+                String::from(
+                    "Pass statement \"(...)\" in functions is only allowed in external funtions.",
+                ),
+                name.line,
+            ));
+        }
+
         if self.peek().kind == TokenKind::Colon {
             self.consume(
                 TokenKind::Colon,
@@ -1450,79 +1510,16 @@ impl<'instr> Parser<'instr> {
         self.current = 0;
 
         if let Some(kind) = &return_kind {
-            self.define_global(name.lexeme.as_ref().unwrap(), *kind, true, params);
+            self.objects.insert_new_global(name.lexeme.as_ref().unwrap(), (*kind, params, true, ignore_more_params));
 
             return Ok(());
         }
 
-        self.define_global(name.lexeme.as_ref().unwrap(), DataTypes::Void, true, params);
+        self.objects.insert_new_global(name.lexeme.as_ref().unwrap(), (DataTypes::Void, params, true, ignore_more_params));
 
         Ok(())
     }
 
-    fn emit_deallocators(&mut self) -> Vec<Instruction<'instr>> {
-        let mut frees: Vec<Instruction> = Vec::new();
-
-        for stmt in self.locals[self.scope].iter_mut() {
-            if let (_, (DataTypes::String, false, false, free_only, 0)) = stmt {
-                frees.push(Instruction::Free {
-                    name: stmt.0,
-                    is_string: true,
-                    free_only: *free_only,
-                });
-
-                stmt.1 .2 = true;
-            }
-        }
-
-        frees
-    }
-
-    #[inline]
-    fn modify_deallocation(&mut self, name: &'instr str, free_only: bool, freeded: bool) {
-        for scope in self.locals.iter_mut().rev() {
-            if scope.contains_key(name) {
-                // DataTypes, bool <- (is_null), bool <- (is_freeded), bool <- (free_only), usize <- (number of references)
-
-                let mut var: (DataTypes, bool, bool, bool, usize) = *scope.get(name).unwrap();
-
-                var.2 = freeded;
-                var.3 = free_only;
-
-                scope.insert(name, var);
-
-                return;
-            }
-        }
-    }
-
-    #[inline]
-    fn define_global(
-        &mut self,
-        name: &'instr str,
-        kind: DataTypes,
-        is_function: bool,
-        params: Vec<DataTypes>,
-    ) {
-        self.globals.insert(name, (kind, is_function, params));
-    }
-
-    #[inline]
-    fn define_local(&mut self, name: &'instr str, value: (DataTypes, bool, bool, bool, usize)) {
-        self.locals[self.scope].insert(name, value);
-    }
-
-    #[inline]
-    fn begin_scope(&mut self) {
-        self.scope += 1;
-        self.locals.push(HashMap::new());
-    }
-
-    #[inline]
-    fn end_scope(&mut self) {
-        self.scope -= 1;
-        self.locals.pop();
-    }
 
     fn match_token(&mut self, kind: TokenKind) -> Result<bool, ThrushError> {
         if self.end() {
@@ -1575,6 +1572,15 @@ impl<'instr> Parser<'instr> {
 
             self.current += 1;
         }
+    }
+
+    #[inline]
+    fn previous_is(&self, kind: TokenKind) -> bool {
+        if self.current == 0 {
+            return false;
+        }
+
+        self.previous().kind == kind
     }
 
     #[inline]
